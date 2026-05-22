@@ -1,0 +1,107 @@
+import type { FastifyInstance } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import { z } from 'zod';
+import { TeamsService } from '../services/teamsService.js';
+import { TeamsController } from '../controllers/teamsController.js';
+import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import {
+  addMemberBody,
+  createTeamBody,
+  teamDetailResponse,
+  teamMemberResponse,
+  teamResponse,
+  updateMemberRoleBody,
+  updateTeamBody,
+} from '../schemas/teams.js';
+
+export async function teamsRoutes(app: FastifyInstance): Promise<void> {
+  const svc = new TeamsService();
+  const ctrl = new TeamsController(svc);
+  const r = app.withTypeProvider<ZodTypeProvider>();
+
+  // Every endpoint requires a valid bearer token. Team-role gating is layered on
+  // for write operations.
+  r.addHook('preHandler', requireAuth);
+
+  r.post('/', {
+    schema: {
+      tags: ['teams'],
+      summary: 'Create a new team — caller becomes its MANAGER',
+      body: createTeamBody,
+      response: { 201: teamResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.create,
+  });
+
+  r.get('/', {
+    schema: {
+      tags: ['teams'],
+      summary: 'List teams the caller belongs to',
+      response: { 200: z.array(teamResponse) },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.listMine,
+  });
+
+  r.get('/:teamId', {
+    schema: {
+      tags: ['teams'],
+      summary: 'Get team detail with member list (caller must be a member)',
+      params: z.object({ teamId: z.string() }),
+      response: { 200: teamDetailResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.getDetail,
+  });
+
+  r.patch('/:teamId', {
+    preHandler: requireTeamRole('MANAGER'),
+    schema: {
+      tags: ['teams'],
+      summary: 'Update team name/slug (MANAGER only)',
+      params: z.object({ teamId: z.string() }),
+      body: updateTeamBody,
+      response: { 200: teamResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.update,
+  });
+
+  r.post('/:teamId/members', {
+    preHandler: requireTeamRole('MANAGER'),
+    schema: {
+      tags: ['teams'],
+      summary: 'Add an existing user as a team member (MANAGER only)',
+      params: z.object({ teamId: z.string() }),
+      body: addMemberBody,
+      response: { 201: teamMemberResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.addMember,
+  });
+
+  r.patch('/:teamId/members/:userId', {
+    preHandler: requireTeamRole('MANAGER'),
+    schema: {
+      tags: ['teams'],
+      summary: 'Change a member role (MANAGER only)',
+      params: z.object({ teamId: z.string(), userId: z.string() }),
+      body: updateMemberRoleBody,
+      response: { 200: teamMemberResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.updateMemberRole,
+  });
+
+  r.delete('/:teamId/members/:userId', {
+    preHandler: requireTeamRole('MANAGER'),
+    schema: {
+      tags: ['teams'],
+      summary: 'Remove a member (MANAGER only — last MANAGER cannot be removed)',
+      params: z.object({ teamId: z.string(), userId: z.string() }),
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.removeMember,
+  });
+}

@@ -1,0 +1,104 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel in-flight runs on the same ref when a newer push arrives — saves CI
+# minutes when iterating on a branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (typecheck + integration tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: taskhub
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: taskhub_test
+        ports:
+          - 5432:5432
+        # Wait until postgres is ready before launching the test job — without
+        # this the first migrate-deploy can race the container's bootstrap.
+        options: >-
+          --health-cmd "pg_isready -U taskhub -d taskhub_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://taskhub:testpass@localhost:5432/taskhub_test?schema=public
+      NODE_ENV: test
+      # Test-only secrets — must be ≥32 chars to pass the env validator.
+      JWT_ACCESS_SECRET: ci_access_secret_at_least_32_chars_long_xx
+      JWT_REFRESH_SECRET: ci_refresh_secret_at_least_32_chars_long_x
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 30d
+      CORS_ORIGINS: http://localhost:5173
+      COOKIE_SECURE: 'false'
+      UPLOAD_DIR: /tmp/uploads
+      PORT: '4000'
+      # High limit so the test suite's many register/login calls don't 429.
+      AUTH_RATE_LIMIT_MAX: '100000'
+      AUTH_RATE_LIMIT_WINDOW: 1 minute
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations to test DB
+        run: npx prisma migrate deploy
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Run integration tests
+        run: npm test
+
+  frontend:
+    name: frontend (typecheck + build)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run build` is `tsc --noEmit && vite build`, so this covers
+      # typecheck and the production bundle in one step.
+      - name: Build (typecheck + vite)
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: /api

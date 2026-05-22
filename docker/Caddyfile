@@ -1,0 +1,36 @@
+# SITE_HOST examples:
+#   "taskhub.example.com"   -> automatic HTTPS via Let's Encrypt (requires ACME_EMAIL + public DNS + ports 80/443 open)
+#   ":80"                   -> local HTTP only (dev / LAN)
+{
+    email {$ACME_EMAIL}
+}
+
+{$SITE_HOST} {
+    encode zstd gzip
+
+    # Security headers. HSTS is only meaningful on HTTPS but harmless on :80.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        Permissions-Policy        "geolocation=(), microphone=(), camera=()"
+        # Caddy adds Server header; strip it.
+        -Server
+    }
+
+    # API: reverse proxy to backend. Use `handle` (not `handle_path`) so the
+    # `/api` prefix is preserved — the backend mounts its routes under /api/*
+    # and serves Swagger at /api/docs; handle_path would strip the prefix and
+    # cause every /api request to 404.
+    handle /api/* {
+        reverse_proxy backend:4000
+    }
+
+    # Static SPA. Try file then fall back to index.html for client-side routing.
+    handle {
+        root * /srv/www
+        try_files {path} /index.html
+        file_server
+    }
+}

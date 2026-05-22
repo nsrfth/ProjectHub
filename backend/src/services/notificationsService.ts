@@ -1,0 +1,139 @@
+import type { Prisma, NotifyType } from '@prisma/client';
+import { prisma } from '../data/prisma.js';
+import { Errors } from '../lib/errors.js';
+
+// One service handles both the read-side (list, count, mark-read) and the
+// write-side (fan-out helpers called from tasks/comments services).
+//
+// Fan-out helpers accept a Prisma transaction client so notification rows
+// commit atomically with the mutation that triggered them — a comment without
+// its notification (or vice versa) would be a confusing UX.
+
+type Client = Prisma.TransactionClient | typeof prisma;
+
+interface RecipientContext {
+  taskId: string;
+  teamId: string;
+  actorId: string; // never notify the user who caused the event
+}
+
+async function loadTaskRecipients(
+  client: Client,
+  taskId: string,
+  actorId: string,
+): Promise<string[]> {
+  const task = await client.task.findUnique({
+    where: { id: taskId },
+    select: { assigneeId: true, creatorId: true },
+  });
+  if (!task) return [];
+  // Deduplicated, actor excluded.
+  return [task.assigneeId, task.creatorId]
+    .filter((id): id is string => !!id && id !== actorId)
+    .filter((id, i, arr) => arr.indexOf(id) === i);
+}
+
+async function insertMany(
+  client: Client,
+  type: NotifyType,
+  ctx: RecipientContext,
+  recipients: string[],
+  payload: Prisma.InputJsonValue,
+): Promise<void> {
+  if (recipients.length === 0) return;
+  try {
+    await client.notification.createMany({
+      data: recipients.map((userId) => ({
+        userId,
+        teamId: ctx.teamId,
+        type,
+        payload,
+      })),
+    });
+  } catch {
+    // Best-effort fan-out. Failures shouldn't fail the parent mutation.
+  }
+}
+
+export const notifications = {
+  async onTaskAssigned(
+    client: Client,
+    ctx: RecipientContext & { newAssigneeId: string; taskTitle: string },
+  ): Promise<void> {
+    // Only the new assignee is notified for assignment. Don't notify if the
+    // assignee is the actor (they assigned themselves).
+    if (ctx.newAssigneeId === ctx.actorId) return;
+    await insertMany(client, 'TASK_ASSIGNED', ctx, [ctx.newAssigneeId], {
+      taskId: ctx.taskId,
+      taskTitle: ctx.taskTitle,
+      assignedBy: ctx.actorId,
+    });
+  },
+
+  async onCommentAdded(
+    client: Client,
+    ctx: RecipientContext & { commentId: string; excerpt: string; taskTitle: string },
+  ): Promise<void> {
+    const recipients = await loadTaskRecipients(client, ctx.taskId, ctx.actorId);
+    await insertMany(client, 'TASK_COMMENT', ctx, recipients, {
+      taskId: ctx.taskId,
+      taskTitle: ctx.taskTitle,
+      commentId: ctx.commentId,
+      excerpt: ctx.excerpt,
+      commenterId: ctx.actorId,
+    });
+  },
+
+  async onStatusChanged(
+    client: Client,
+    ctx: RecipientContext & { from: string; to: string; taskTitle: string },
+  ): Promise<void> {
+    const recipients = await loadTaskRecipients(client, ctx.taskId, ctx.actorId);
+    await insertMany(client, 'TASK_STATUS', ctx, recipients, {
+      taskId: ctx.taskId,
+      taskTitle: ctx.taskTitle,
+      from: ctx.from,
+      to: ctx.to,
+      changedBy: ctx.actorId,
+    });
+  },
+};
+
+export class NotificationsService {
+  async list(userId: string, opts: { unreadOnly?: boolean; limit?: number }) {
+    return prisma.notification.findMany({
+      where: { userId, ...(opts.unreadOnly && { readAt: null }) },
+      orderBy: { createdAt: 'desc' },
+      take: opts.limit ?? 50,
+    });
+  }
+
+  async unreadCount(userId: string): Promise<number> {
+    return prisma.notification.count({ where: { userId, readAt: null } });
+  }
+
+  async markRead(userId: string, notificationId: string): Promise<void> {
+    // updateMany scoped to (id, userId) so a user can't mark someone else's
+    // notification read by guessing an id.
+    const r = await prisma.notification.updateMany({
+      where: { id: notificationId, userId, readAt: null },
+      data: { readAt: new Date() },
+    });
+    if (r.count === 0) {
+      // Either the id doesn't exist, isn't yours, or it was already read.
+      // We don't distinguish — preserves privacy and is idempotent enough.
+      const exists = await prisma.notification.findFirst({
+        where: { id: notificationId, userId },
+        select: { id: true },
+      });
+      if (!exists) throw Errors.notFound('Notification not found');
+    }
+  }
+
+  async markAllRead(userId: string): Promise<void> {
+    await prisma.notification.updateMany({
+      where: { userId, readAt: null },
+      data: { readAt: new Date() },
+    });
+  }
+}

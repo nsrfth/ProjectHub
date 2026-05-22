@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# uploads (mounted volume)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# test / coverage
+coverage/
+.nyc_output/
+
+# prisma
+backend/prisma/*.db
+
+# Claude Code session metadata (user-local, never relevant to others)
+.claude/

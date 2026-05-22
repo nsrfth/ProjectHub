@@ -1,0 +1,267 @@
+// Prisma schema for TaskHub.
+// See ARCHITECTURE.md for the rationale behind the GlobalRole/TeamRole split,
+// the denormalized Task.teamId, and hashed refresh tokens.
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" covers whichever host runs `prisma migrate dev` (Windows/macOS/glibc Linux).
+  // "linux-musl-openssl-3.0.x" is required for the Alpine runtime image — without it
+  // the engine defaults to the openssl-1.1.x binary, which Alpine 3.18+ doesn't ship.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GlobalRole {
+  ADMIN
+  MEMBER
+}
+
+enum TeamRole {
+  MANAGER
+  MEMBER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+  ON_HOLD
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotifyType {
+  TASK_ASSIGNED
+  TASK_COMMENT
+  TASK_DUE
+  MENTION
+  TASK_STATUS
+}
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  passwordHash    String
+  name            String
+  globalRole      GlobalRole @default(MEMBER)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  memberships    TeamMembership[]
+  ownedProjects  Project[]        @relation("ProjectOwner")
+  assignedTasks  Task[]           @relation("TaskAssignee")
+  createdTasks   Task[]           @relation("TaskCreator")
+  comments       Comment[]
+  activities     Activity[]
+  notifications  Notification[]
+  refreshTokens  RefreshToken[]
+  passwordResets PasswordReset[]
+  uploads        Attachment[]
+
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  // Store SHA-256 of the raw token; a DB leak should not yield usable sessions.
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Team {
+  id            String           @id @default(cuid())
+  name          String
+  slug          String           @unique
+  createdAt     DateTime         @default(now())
+  memberships   TeamMembership[]
+  projects      Project[]
+  labels        Label[]
+  notifications Notification[]
+}
+
+model TeamMembership {
+  id       String   @id @default(cuid())
+  userId   String
+  teamId   String
+  role     TeamRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@index([teamId])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  teamId      String
+  ownerId     String
+  name        String
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  team        Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  owner       User          @relation("ProjectOwner", fields: [ownerId], references: [id])
+  tasks       Task[]
+
+  @@index([teamId, status])
+  @@index([ownerId])
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  projectId   String
+  // Denormalized for tenant scoping; every query filters by teamId.
+  teamId      String
+  creatorId   String
+  assigneeId  String?
+  title       String
+  description String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  // When the task was actually completed. Auto-filled on first transition to
+  // status=DONE if not explicitly set; the member can also set it manually
+  // (e.g., back-dating after the fact) regardless of status.
+  doneAt      DateTime?
+  position    Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator     User         @relation("TaskCreator", fields: [creatorId], references: [id])
+  assignee    User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  subtasks    Subtask[]
+  labels      TaskLabel[]
+  attachments Attachment[]
+  comments    Comment[]
+  activities  Activity[]
+
+  @@index([teamId, status])
+  @@index([teamId, assigneeId])
+  @@index([teamId, dueDate])
+  @@index([projectId, status, position])
+}
+
+model Subtask {
+  id       String  @id @default(cuid())
+  taskId   String
+  title    String
+  done     Boolean @default(false)
+  position Int     @default(0)
+  task     Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model Label {
+  id     String      @id @default(cuid())
+  teamId String
+  name   String
+  color  String
+  team   Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  tasks  TaskLabel[]
+
+  @@unique([teamId, name])
+}
+
+model TaskLabel {
+  taskId  String
+  labelId String
+  task    Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label   Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, labelId])
+  @@index([labelId])
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  taskId     String
+  uploaderId String
+  // Display name shown in UI; never used to construct filesystem paths.
+  filename   String
+  // Opaque storage path on disk, generated by the server.
+  storageKey String
+  mimeType   String
+  sizeBytes  Int
+  createdAt  DateTime @default(now())
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploader   User     @relation(fields: [uploaderId], references: [id])
+
+  @@index([taskId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  taskId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@index([taskId, createdAt])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  taskId    String
+  actorId   String
+  action    String
+  meta      Json
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor     User     @relation(fields: [actorId], references: [id])
+
+  @@index([taskId, createdAt])
+}
+
+model Notification {
+  id        String     @id @default(cuid())
+  userId    String
+  teamId    String
+  type      NotifyType
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime   @default(now())
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
