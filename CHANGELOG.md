@@ -4,6 +4,66 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] — 2026-05-22
+
+Date-handling correctness pass. Fixes a real timezone bug, separates calendar
+dates from timestamps in the helper API, switches recent activity to relative
+time, and broadens the TASK_DUE scheduler to include overdue tasks.
+
+### Calendar-date vs timestamp split (bug fix)
+
+- The previous `formatShamsi*` helpers read **local-time** components from
+  Date objects stored as **UTC midnight**. For a calendar date the user
+  picked as "May 22", a viewer in PST (UTC−8) saw "May 21". Real bug;
+  invisible during single-TZ testing.
+- [shamsi.ts](frontend/src/lib/shamsi.ts) rewritten with two clear families:
+  - `formatShamsiCalendarDate` / `formatShamsiCalendarLong` — read UTC
+    components. Use for `dueDate`, `doneAt`. Same date everywhere.
+  - `formatShamsiTimestamp` / `formatShamsiTimestampDate` — read local
+    components. Use for `createdAt`, `joinedAt`, `updatedAt`. Localizes
+    correctly to the viewer's TZ.
+- Back-compat aliases (`formatShamsiDate` → calendar, `formatShamsiDateTime`
+  → timestamp) preserved so legacy call sites stayed correct without per-line
+  rewrites; the few timestamp-field call sites that used `formatShamsiDate`
+  were explicitly switched to `formatShamsiTimestampDate`.
+
+### Relative time for activity feeds
+
+- New `formatRelativeTime(iso)` using `Intl.RelativeTimeFormat('fa-IR')`.
+  Falls back to `formatShamsiTimestamp` for anything older than 30 days
+  (relative wording stops being useful past that).
+- Applied on: task-detail comment timestamps, task-detail activity feed,
+  attachment "uploaded" timestamps, notification-bell entries. Each one
+  carries the precise Shamsi timestamp in the `title` tooltip so hovering
+  reveals the exact time.
+
+### TASK_DUE scheduler now includes overdue tasks
+
+- Previous window was `(now, now+leadHours]`. A task whose `dueDate` was
+  already in the past at the moment it became known (backfill, schema fix,
+  imported data) never fired a reminder.
+- New window: `[now−30d, now+leadHours]` AND `status` is OPEN. The 30-day
+  floor protects against spamming reminders for ancient overdue tasks.
+- Two new scheduler tests cover the overdue case and the 30-day floor.
+
+### Library consolidation
+
+- `jalaali-js` dependency removed (was redundant with `react-date-object`,
+  which `react-multi-date-picker` already pulls in). The `types/jalaali-js.d.ts`
+  ambient declaration deleted too.
+- Frontend bundle module count: 179 → 178.
+
+### Stale code purged
+
+- `dateInputToISO` / `isoToDateInput` helpers (dead since the
+  `<input type="date">` → `ShamsiDatePicker` swap in v1.1.1) are gone.
+
+### Tests
+
+- 12 files, **112 tests passing** (was 110 — 2 new scheduler tests).
+
+[1.1.3]: https://github.com/USER/REPO/releases/tag/v1.1.3
+
 ## [1.1.2] — 2026-05-22
 
 Reports section expansion. New endpoints, new sections, Dashboard widget,

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
 import * as adminApi from '@/features/admin/api';
-import { formatShamsiDate } from '@/lib/shamsi';
+import { formatShamsiTimestampDate } from '@/lib/shamsi';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -154,7 +154,7 @@ export default function AdminPage(): JSX.Element {
                   </td>
                   <td className="py-2 pr-4 text-slate-500">{u.membershipCount}</td>
                   <td className="py-2 pr-4 text-slate-500 text-xs" dir="rtl">
-                    {formatShamsiDate(u.createdAt)}
+                    {formatShamsiTimestampDate(u.createdAt)}
                   </td>
                   <td className="py-2">
                     <button
@@ -227,7 +227,7 @@ export default function AdminPage(): JSX.Element {
                 <td className="py-2 pr-4 text-slate-500">{t.memberCount}</td>
                 <td className="py-2 pr-4 text-slate-500">{t.projectCount}</td>
                 <td className="py-2 pr-4 text-slate-500 text-xs" dir="rtl">
-                  {formatShamsiDate(t.createdAt)}
+                  {formatShamsiTimestampDate(t.createdAt)}
                 </td>
                 <td className="py-2">
                   <button

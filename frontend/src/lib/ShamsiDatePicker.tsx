@@ -3,13 +3,13 @@ import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
 
 // Persian-calendar date picker. Values are ISO 8601 UTC strings (or null) on
-// both sides of the API — same contract as our existing dateInputToISO /
-// isoToDateInput helpers — so this drops into anywhere we previously had
-// `<input type="date">`.
+// both sides of the API so this drops into anywhere we previously had
+// `<input type="date">`. The picker is for CALENDAR DATES (dueDate, doneAt),
+// so we anchor the emitted instant to UTC midnight — every viewer reads the
+// same calendar date back via formatShamsiCalendarDate regardless of TZ.
 //
 // The underlying library accepts Date / DateObject internally; we convert
-// at the boundary. Tracking values as ISO keeps storage + the network wire
-// unambiguous (always UTC) regardless of the user's locale.
+// at the boundary.
 
 interface ShamsiDatePickerProps {
   value: string | null;
@@ -37,8 +37,8 @@ export function ShamsiDatePicker({
           onChange(null);
           return;
         }
-        // DateObject → JS Date → ISO. Anchor to UTC midnight so the date
-        // round-trips across timezones the same way as dateInputToISO does.
+        // DateObject → JS Date → ISO. Anchor to UTC midnight so every viewer
+        // reads the same calendar date back regardless of their timezone.
         const jsDate = d.toDate();
         const utc = new Date(
           Date.UTC(jsDate.getFullYear(), jsDate.getMonth(), jsDate.getDate()),

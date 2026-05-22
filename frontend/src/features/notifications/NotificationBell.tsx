@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as notifApi from './api';
 import { getAccessToken, onTokenChange } from '@/lib/api';
-import { formatShamsiDateTime } from '@/lib/shamsi';
+import { formatRelativeTime, formatShamsiTimestamp } from '@/lib/shamsi';
 
 // Renders the user-facing notification fragment, including a bell button, an
 // unread badge, and a click-to-open dropdown listing recent notifications.
@@ -203,8 +203,12 @@ export default function NotificationBell(): JSX.Element {
                   className="w-full text-left p-2 hover:bg-slate-50"
                 >
                   <p className="text-sm">{describe(n)}</p>
-                  <p className="text-xs text-slate-400 mt-1" dir="rtl">
-                    {formatShamsiDateTime(n.createdAt)}
+                  <p
+                    className="text-xs text-slate-400 mt-1"
+                    dir="rtl"
+                    title={formatShamsiTimestamp(n.createdAt) ?? ''}
+                  >
+                    {formatRelativeTime(n.createdAt)}
                   </p>
                 </button>
               </li>

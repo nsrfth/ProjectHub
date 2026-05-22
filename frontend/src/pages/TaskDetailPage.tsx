@@ -10,7 +10,11 @@ import * as activityApi from '@/features/activity/api';
 import { LabelPicker } from '@/features/labels/LabelPicker';
 import { SubtaskList } from '@/features/subtasks/SubtaskList';
 import { AttachmentsSection } from '@/features/attachments/AttachmentsSection';
-import { formatShamsiDateTime, formatShamsiLong } from '@/lib/shamsi';
+import {
+  formatRelativeTime,
+  formatShamsiCalendarLong,
+  formatShamsiTimestamp,
+} from '@/lib/shamsi';
 import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -160,11 +164,11 @@ export default function TaskDetailPage(): JSX.Element {
               <span className="uppercase tracking-wide">Priority: {task.priority}</span>
               {task.dueDate && (
                 <span>
-                  Due <span dir="rtl">{formatShamsiLong(task.dueDate)}</span>
+                  Due <span dir="rtl">{formatShamsiCalendarLong(task.dueDate)}</span>
                 </span>
               )}
               <span>
-                Created <span dir="rtl">{formatShamsiDateTime(task.createdAt)}</span>
+                Created <span dir="rtl">{formatShamsiTimestamp(task.createdAt)}</span>
               </span>
             </div>
             {task.description ? (
@@ -220,7 +224,7 @@ export default function TaskDetailPage(): JSX.Element {
                 </div>
                 {doneAtInput && (
                   <span className="block mt-1 text-xs text-slate-500" dir="rtl">
-                    {formatShamsiLong(doneAtInput)}
+                    {formatShamsiCalendarLong(doneAtInput)}
                   </span>
                 )}
               </label>
@@ -263,8 +267,8 @@ export default function TaskDetailPage(): JSX.Element {
                     <div className="flex items-center justify-between text-xs text-slate-500">
                       <span>
                         <span className="font-medium text-slate-700">{c.authorName}</span>
-                        <span className="ml-2" dir="rtl">
-                          {formatShamsiDateTime(c.createdAt)}
+                        <span className="ml-2" dir="rtl" title={formatShamsiTimestamp(c.createdAt) ?? ''}>
+                          {formatRelativeTime(c.createdAt)}
                         </span>
                         {c.updatedAt !== c.createdAt && (
                           <span className="ml-2 italic">(edited)</span>
@@ -318,8 +322,9 @@ export default function TaskDetailPage(): JSX.Element {
                   <span
                     className="text-xs text-slate-400 whitespace-nowrap mt-0.5"
                     dir="rtl"
+                    title={formatShamsiTimestamp(a.createdAt) ?? ''}
                   >
-                    {formatShamsiDateTime(a.createdAt)}
+                    {formatRelativeTime(a.createdAt)}
                   </span>
                   <span>
                     <span className="font-medium text-slate-700">{a.actorName}</span>{' '}

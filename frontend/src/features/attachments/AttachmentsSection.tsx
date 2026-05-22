@@ -4,7 +4,7 @@ import axios from 'axios';
 import * as attApi from './api';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
-import { formatShamsiDateTime } from '@/lib/shamsi';
+import { formatRelativeTime, formatShamsiTimestamp } from '@/lib/shamsi';
 
 // Pretty-print a byte count (e.g. 1024 → "1 KB"). Tight precision is fine for
 // a UI hint; if you need real accuracy go fetch the integer.
@@ -95,7 +95,9 @@ export function AttachmentsSection({
                 <span className="font-medium block truncate">{a.filename}</span>
                 <span className="text-xs text-slate-500">
                   {formatBytes(a.sizeBytes)} · {a.uploaderName} ·{' '}
-                  <span dir="rtl">{formatShamsiDateTime(a.createdAt)}</span>
+                  <span dir="rtl" title={formatShamsiTimestamp(a.createdAt) ?? ''}>
+                    {formatRelativeTime(a.createdAt)}
+                  </span>
                 </span>
               </button>
               {canDelete && (

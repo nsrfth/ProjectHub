@@ -131,6 +131,34 @@ describe('TASK_DUE scheduler', () => {
     expect(await scheduler.runOnce()).toBe(0);
   });
 
+  it('emits for already-overdue tasks (dueDate in the past) as long as they are still open', async () => {
+    // 3 days ago — well past dueDate, still inside the 30-day floor.
+    const s = await setupDueTask(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000));
+    const scheduler = createDueDateScheduler({
+      leadHours: 24,
+      intervalMin: 9999,
+      logger: fakeLogger(),
+    });
+    expect(await scheduler.runOnce()).toBe(1);
+    const inbox = await inject({
+      method: 'GET',
+      url: '/api/notifications',
+      headers: { authorization: `Bearer ${s.token}` },
+    });
+    const items = inbox.json() as Array<{ type: string }>;
+    expect(items.some((n) => n.type === 'TASK_DUE')).toBe(true);
+  });
+
+  it('does NOT emit for ancient overdue tasks beyond the 30-day floor', async () => {
+    await setupDueTask(new Date(Date.now() - 60 * 24 * 60 * 60 * 1000));
+    const scheduler = createDueDateScheduler({
+      leadHours: 24,
+      intervalMin: 9999,
+      logger: fakeLogger(),
+    });
+    expect(await scheduler.runOnce()).toBe(0);
+  });
+
   it('re-emits after dueDate is rescheduled', async () => {
     const s = await setupDueTask(new Date(Date.now() + 6 * 60 * 60 * 1000));
     const scheduler = createDueDateScheduler({

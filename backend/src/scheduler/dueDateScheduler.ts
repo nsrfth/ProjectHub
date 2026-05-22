@@ -33,12 +33,19 @@ export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler 
   async function tick(): Promise<number> {
     const now = new Date();
     const cutoff = new Date(now.getTime() + opts.leadHours * 60 * 60 * 1000);
-    // Tasks due in (now, cutoff] that haven't been notified yet, plus the
-    // project for payload routing on the frontend.
+    // 30-day floor to avoid spamming reminders for ancient overdue tasks that
+    // get unearthed by a backfill or schema fix. Anything older than this
+    // probably needs a human to triage rather than a notification.
+    const floor = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Tasks due any time up to the cutoff (including already-overdue) that
+    // are still OPEN and haven't been notified yet. The old (now, cutoff]
+    // window silently skipped overdue tasks — bug fix.
     const dueTasks = await prisma.task.findMany({
       where: {
         dueNotifiedAt: null,
-        dueDate: { gt: now, lte: cutoff },
+        status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] },
+        dueDate: { gte: floor, lte: cutoff },
       },
       select: { id: true, title: true, dueDate: true, projectId: true, teamId: true },
     });
