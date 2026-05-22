@@ -71,11 +71,14 @@ export default function DashboardPage(): JSX.Element {
         )}
 
         {currentTeam && (
-          <p className="mt-6 text-sm">
+          <div className="mt-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
             <Link to="/projects" className="underline">
               View projects in {currentTeam.name} →
             </Link>
-          </p>
+            <Link to="/reports" className="underline text-slate-600">
+              Reports
+            </Link>
+          </div>
         )}
         <p className="mt-2 text-xs text-slate-500">
           Open a project to see its kanban board and tasks.

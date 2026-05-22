@@ -4,6 +4,40 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-05-22
+
+Polish patch on top of v1.1.0. No new endpoints behind feature flags, no
+schema migrations — just UX gaps from the Shamsi / doneAt follow-up list.
+
+### Shamsi sweep
+
+- Notification dropdown timestamps switched from `toLocaleString()` to
+  `formatShamsiDateTime` (Persian numerals + Jalali date).
+- Member list on the Teams page now shows each member's join date in Shamsi.
+- Projects list shows each project's creation date in Shamsi.
+- Admin tables gained "Joined" (users) and "Created" (teams) columns,
+  both Shamsi.
+
+### True Shamsi date picker
+
+- New `@/lib/ShamsiDatePicker` wrapping `react-multi-date-picker` with the
+  `persian` calendar + `persian_fa` locale. Public contract is ISO 8601
+  in/out so it slots into anywhere `<input type="date">` was used.
+- Task detail page's "Done date" input is now the Persian-calendar picker.
+  Removed the previous Gregorian-input-with-Shamsi-label fallback.
+
+### Reports
+
+- New `GET /api/teams/:teamId/reports/done?days=N` endpoint (default 7,
+  cap 365). Returns tasks completed in the trailing window with project +
+  assignee details joined in for display.
+- New `/reports` page with a 7/30/90-day toggle, a most-recent-first task
+  list, and a by-assignee tally pivot (computed client-side from the same
+  result set).
+- Link added on the dashboard next to "View projects".
+
+[1.1.1]: https://github.com/USER/REPO/releases/tag/v1.1.1
+
 ## [1.1.0] — 2026-05-22
 
 Closes every feature gap from the v1.0 known-limitations list. Test suite

@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
 import * as projectsApi from '@/features/projects/api';
+import { formatShamsiDate } from '@/lib/shamsi';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -146,7 +147,14 @@ export default function ProjectsPage(): JSX.Element {
                     <p className="text-sm text-slate-600 mt-0.5 truncate">{p.description}</p>
                   )}
                   <p className="text-xs text-slate-400 mt-1">
-                    Owned by {p.ownerId === user?.id ? 'you' : p.ownerId.slice(0, 8) + '…'}
+                    Owned by{' '}
+                    {p.ownerId === user?.id
+                      ? 'you'
+                      : p.ownerId
+                        ? p.ownerId.slice(0, 8) + '…'
+                        : '(deleted user)'}
+                    {' · '}
+                    <span dir="rtl">ایجاد {formatShamsiDate(p.createdAt)}</span>
                   </p>
                 </button>
                 {canEdit && (

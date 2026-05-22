@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import * as teamsApi from '@/features/teams/api';
 import { useTeams } from '@/features/teams/TeamsContext';
+import { formatShamsiDate } from '@/lib/shamsi';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -149,6 +150,9 @@ export default function TeamsPage(): JSX.Element {
                     <span>
                       <span className="font-medium">{m.name}</span>
                       <span className="text-slate-500 ml-2">{m.email}</span>
+                      <span className="text-xs text-slate-400 ml-2" dir="rtl">
+                        پیوست {formatShamsiDate(m.joinedAt)}
+                      </span>
                     </span>
                     <span className="flex items-center gap-2">
                       <span className="text-xs uppercase tracking-wide text-slate-500">

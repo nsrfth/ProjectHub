@@ -10,12 +10,8 @@ import * as activityApi from '@/features/activity/api';
 import { LabelPicker } from '@/features/labels/LabelPicker';
 import { SubtaskList } from '@/features/subtasks/SubtaskList';
 import { AttachmentsSection } from '@/features/attachments/AttachmentsSection';
-import {
-  dateInputToISO,
-  formatShamsiDateTime,
-  formatShamsiLong,
-  isoToDateInput,
-} from '@/lib/shamsi';
+import { formatShamsiDateTime, formatShamsiLong } from '@/lib/shamsi';
+import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -79,11 +75,11 @@ export default function TaskDetailPage(): JSX.Element {
   const [newComment, setNewComment] = useState('');
   const [commentError, setCommentError] = useState<string | null>(null);
 
-  // doneAt input is held as the <input type="date"> string (yyyy-mm-dd).
-  // Initialize from the task once it loads; clear means "no done date".
-  const [doneAtInput, setDoneAtInput] = useState('');
+  // doneAt is tracked as an ISO string (or null). The ShamsiDatePicker takes
+  // ISO + emits ISO so we can compare equality without a conversion dance.
+  const [doneAtInput, setDoneAtInput] = useState<string | null>(null);
   useEffect(() => {
-    setDoneAtInput(isoToDateInput(task?.doneAt));
+    setDoneAtInput(task?.doneAt ?? null);
   }, [task?.doneAt]);
 
   const updateTaskMut = useMutation({
@@ -219,24 +215,19 @@ export default function TaskDetailPage(): JSX.Element {
             <div className="mt-5 pt-4 border-t flex flex-wrap items-end gap-3">
               <label className="block">
                 <span className="text-xs font-medium text-slate-600">Done date</span>
-                <input
-                  type="date"
-                  value={doneAtInput}
-                  onChange={(e) => setDoneAtInput(e.target.value)}
-                  className="block mt-1 rounded border-slate-300 px-2 py-1 border text-sm"
-                />
+                <div className="mt-1">
+                  <ShamsiDatePicker value={doneAtInput} onChange={setDoneAtInput} />
+                </div>
                 {doneAtInput && (
                   <span className="block mt-1 text-xs text-slate-500" dir="rtl">
-                    {formatShamsiLong(dateInputToISO(doneAtInput))}
+                    {formatShamsiLong(doneAtInput)}
                   </span>
                 )}
               </label>
               <button
                 type="button"
-                disabled={
-                  updateTaskMut.isPending || doneAtInput === isoToDateInput(task.doneAt)
-                }
-                onClick={() => updateTaskMut.mutate({ doneAt: dateInputToISO(doneAtInput) })}
+                disabled={updateTaskMut.isPending || doneAtInput === task.doneAt}
+                onClick={() => updateTaskMut.mutate({ doneAt: doneAtInput })}
                 className="bg-slate-900 text-white rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
               >
                 {updateTaskMut.isPending ? 'Saving…' : 'Save done date'}
@@ -252,7 +243,7 @@ export default function TaskDetailPage(): JSX.Element {
                 </button>
               )}
               <p className="basis-full text-xs text-slate-400">
-                Auto-filled when status moves to DONE; you can backdate by picking any date.
+                Auto-filled when status moves to DONE; pick any date to backdate.
               </p>
             </div>
           </section>

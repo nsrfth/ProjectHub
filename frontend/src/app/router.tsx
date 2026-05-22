@@ -7,6 +7,7 @@ import ProjectsPage from '@/pages/ProjectsPage';
 import TasksPage from '@/pages/TasksPage';
 import TaskDetailPage from '@/pages/TaskDetailPage';
 import AdminPage from '@/pages/AdminPage';
+import ReportsPage from '@/pages/ReportsPage';
 import ProtectedRoute from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
       { path: '/projects/:projectId/tasks', element: <TasksPage /> },
       { path: '/projects/:projectId/tasks/:taskId', element: <TaskDetailPage /> },
       { path: '/admin', element: <AdminPage /> },
+      { path: '/reports', element: <ReportsPage /> },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },
