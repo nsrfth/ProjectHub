@@ -126,3 +126,44 @@ export async function createMapping(
 export async function deleteMapping(directoryId: string, mappingId: string): Promise<void> {
   await api.delete(`/settings/directories/${directoryId}/mappings/${mappingId}`);
 }
+
+// SCIM credential ----------------------------------------------------------
+export interface ScimCredential {
+  id: string;
+  directoryId: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface ScimCredentialCreated extends ScimCredential {
+  // Raw bearer token — surfaced exactly once at generation time, never
+  // again. The frontend must hand this to the admin in a modal and forget it.
+  rawToken: string;
+}
+
+export async function getScimCredential(directoryId: string): Promise<ScimCredential | null> {
+  const res = await api.get<ScimCredential | ''>(
+    `/settings/directories/${directoryId}/scim`,
+    { validateStatus: (s) => s === 200 || s === 204 },
+  );
+  if (res.status === 204) return null;
+  return res.data as ScimCredential;
+}
+
+export async function generateScimCredential(
+  directoryId: string,
+  name: string,
+): Promise<ScimCredentialCreated> {
+  return (
+    await api.post<ScimCredentialCreated>(
+      `/settings/directories/${directoryId}/scim`,
+      { name },
+    )
+  ).data;
+}
+
+export async function revokeScimCredential(directoryId: string): Promise<void> {
+  await api.delete(`/settings/directories/${directoryId}/scim`);
+}

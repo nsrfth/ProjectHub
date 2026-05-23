@@ -76,6 +76,11 @@ export class AuthService {
   async login(input: { email: string; password: string }): Promise<IssuedSession> {
     const user = await prisma.user.findUnique({ where: { email: input.email } });
 
+    // Soft-disabled users (SCIM `active: false`) can't log in regardless of
+    // which auth backend they're on. Same error string as bad credentials to
+    // avoid leaking account state.
+    if (user?.disabledAt) throw Errors.unauthorized('Invalid credentials');
+
     // ── Local user (no directoryId): legacy argon2 password check. ─────────
     if (user && !user.directoryId) {
       if (!user.passwordHash) throw Errors.unauthorized('Invalid credentials');
@@ -239,6 +244,10 @@ export class AuthService {
 
     const user = await prisma.user.findUnique({ where: { id: record.userId } });
     if (!user) throw Errors.unauthorized();
+    // SCIM-disabled accounts can't refresh either. Their refresh tokens were
+    // already revoked at disable-time, but this catches the race where the
+    // disable + refresh interleave.
+    if (user.disabledAt) throw Errors.unauthorized('Invalid refresh token');
 
     await prisma.refreshToken.update({
       where: { id: record.id },

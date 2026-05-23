@@ -94,6 +94,25 @@ model Directory {
   users         User[]                  @relation("UserDirectory")
   teams         Team[]                  @relation("TeamDirectory")
   groupMappings DirectoryGroupMapping[]
+  scimCredential ScimCredential?
+}
+
+// Bearer credential an external IdP uses to push SCIM 2.0 provisioning calls
+// at this Directory. One credential per Directory — re-generation overwrites
+// the row. `tokenHash` is sha256(rawToken); the raw token is shown to the
+// admin exactly once at generation time and never persisted.
+model ScimCredential {
+  id          String    @id @default(cuid())
+  directoryId String    @unique
+  tokenHash   String    @unique
+  // Human-readable label shown in the UI (e.g. "Okta production").
+  name        String
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  directory   Directory @relation(fields: [directoryId], references: [id], onDelete: Cascade)
+
+  @@index([directoryId])
 }
 
 // External group DN → TaskHub role. Phase 2A supports global roles + team-
@@ -128,6 +147,10 @@ model User {
   // External stable identifier (LDAP DN, SCIM externalId). Unique together
   // with directoryId so multiple directories can use overlapping IDs.
   externalId      String?
+  // Set when the user is soft-disabled. Login + refresh both reject when
+  // this is non-null. SCIM deprovision (PATCH active=false) sets this and
+  // revokes outstanding refresh tokens; reprovision (active=true) clears it.
+  disabledAt      DateTime?
   emailVerifiedAt DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt

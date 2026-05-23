@@ -4,6 +4,106 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-05-23
+
+Phase 2B — SCIM 2.0 provisioning. Adds a SCIM-compliant `/scim/v2/Users` +
+`/scim/v2/Groups` surface so IdPs (Okta, Azure AD, JumpCloud, …) can push
+user/team state at TaskHub. Reuses the `Directory` + `User.externalId`
+foundation from v1.4.0 — each Directory gets at most one SCIM credential.
+
+### Schema
+
+- New `ScimCredential` model (1:1 per Directory). Stores `tokenHash` (sha256
+  of the raw bearer token) and audit fields (`createdAt`, `lastUsedAt`,
+  `revokedAt`). The raw token is shown to the admin exactly once at
+  generation; never persisted.
+- New `User.disabledAt: DateTime?` column. Set when SCIM PATCH/PUT delivers
+  `active: false`; cleared on reprovision. Login and refresh both reject
+  when this is non-null.
+- Migration `20260523120000_add_scim` — additive only.
+
+### SCIM endpoints
+
+All under `/api/scim/v2`:
+
+- **Discovery (no auth)**: `GET /ServiceProviderConfig`, `GET /ResourceTypes`,
+  `GET /Schemas` — IdPs probe these at setup time.
+- **Users**: `GET /Users` (with `?filter=` + `?startIndex=` + `?count=`),
+  `GET /Users/:id`, `POST /Users`, `PUT /Users/:id`, `PATCH /Users/:id`,
+  `DELETE /Users/:id`.
+- **Groups**: same six methods, mapped to TaskHub `Team` + `TeamMembership`.
+- Responses are `application/scim+json` with the proper SCIM envelopes
+  (`schemas: [...]`, `meta: { resourceType, location, ... }`,
+  `ListResponse` for collections, `Error` for failures).
+- Request bodies accept `application/scim+json` (Fastify parser registered
+  alongside the default `application/json`).
+
+### Filter parser
+
+Phase 2B supports the single shape IdPs actually send during sync:
+
+`<attr> eq "<value>"` for `userName`, `externalId`, `id`, `emails.value`
+(Users) and `displayName`, `id` (Groups). Anything more elaborate
+(compound expressions, other operators) returns `400` with
+`scimType: invalidFilter`.
+
+### Deprovision (`active: false`)
+
+- Sets `User.disabledAt = now()`.
+- Revokes every active refresh token for that user in the same call.
+- Login + refresh reject with the same "Invalid credentials" string used
+  for bad passwords — no account-state leakage.
+- Reprovision (`active: true`) clears `disabledAt`.
+
+### Admin token UI
+
+- New per-directory SCIM panel on
+  [Settings → Directories](frontend/src/pages/settings/DirectoriesPage.tsx).
+- Shows the SCIM base URL (`<origin>/api/scim/v2`), current token state
+  (name / created / last-used / revoked), and Generate / Rotate / Revoke
+  actions.
+- After Generate, the raw token surfaces in a modal **exactly once**. The
+  modal has Copy + "I've saved it" buttons; the value is never stored on
+  the frontend either.
+
+### Auth
+
+- New `requireScimAuth` middleware
+  ([middleware/auth.ts](backend/src/middleware/auth.ts)) — verifies
+  `Authorization: Bearer <token>` against the SCIM credential hash and
+  attaches `request.scimDirectoryId`. Separate from the user JWT path; a
+  leaked SCIM token can only manipulate resources within its own
+  Directory.
+- New admin endpoints: `GET/POST/DELETE
+  /api/settings/directories/:directoryId/scim`.
+
+### Tests
+
+- New [tests/integration/scim.test.ts](backend/tests/integration/scim.test.ts)
+  — 10 cases covering: auth (missing / bad / revoked / valid), Users
+  CRUD + filter, PATCH `active: false` soft-disables + revokes refresh
+  tokens, DELETE removes the row, Groups create + members + PATCH remove
+  member, discovery endpoints. Suite: **132/132** (was 122 → +10 SCIM).
+
+### Verified
+
+- Backend suite green (132).
+- Live smoke against the running stack: generate token → SCIM POST /Users
+  → PATCH active=false → bad-token 401, all round-trip correctly.
+  `bindPasswordEnc` and `tokenHash` never leave the database.
+
+### Known limitations / Phase 2B boundary
+
+- Filter parser intentionally limited to `eq` only. `co`, `sw`, `pr`, and
+  compound expressions return 400. Acceptable for sync workflows; would
+  need extending for a SCIM search UI.
+- SCIM PATCH `members` operations on Groups support `add` (with `value: [{...}]`)
+  and `remove` (with `path: members[value eq "..."]`). Other forms IdPs
+  *could* send (e.g. `replace` on the whole `members` array) fall back to
+  reading the current state.
+- No SCIM webhook back to the IdP — TaskHub is read-only from the SCIM
+  contract's perspective.
+
 ## [1.4.0] — 2026-05-23
 
 Phase 2A — Multi-directory identity. Adds LDAP login on top of the existing

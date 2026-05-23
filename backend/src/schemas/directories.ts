@@ -102,7 +102,29 @@ export const directoryTestResponse = z.object({
   sampleUserCount: z.number().int().optional(),
 });
 
+// SCIM credential surface — the ciphertext token is never exposed; only the
+// `rawToken` field on the create-response surfaces the plaintext, exactly
+// once. The redacted shape (no rawToken) is used by GET.
+export const scimCredentialGenerateBody = z.object({
+  name: z.string().min(1).max(120),
+});
+
+export const scimCredentialRedactedResponse = z.object({
+  id: z.string(),
+  directoryId: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+  revokedAt: z.string().nullable(),
+});
+
+// Used only by POST /scim — includes the one-shot raw token.
+export const scimCredentialCreatedResponse = scimCredentialRedactedResponse.extend({
+  rawToken: z.string(),
+});
+
 export type DirectoryCreateBody = z.infer<typeof directoryCreateBody>;
 export type DirectoryUpdateBody = z.infer<typeof directoryUpdateBody>;
 export type GroupMappingCreateBody = z.infer<typeof groupMappingCreateBody>;
 export type DirectoryTestBody = z.infer<typeof directoryTestBody>;
+export type ScimCredentialGenerateBody = z.infer<typeof scimCredentialGenerateBody>;

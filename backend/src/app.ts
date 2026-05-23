@@ -18,6 +18,7 @@ import { notificationsWsRoutes } from './routes/notificationsWs.js';
 import { reportsRoutes } from './routes/reports.js';
 import { settingsRoutes } from './routes/settings.js';
 import { directoriesRoutes } from './routes/directories.js';
+import { scimRoutes } from './routes/scim.js';
 import { prisma } from './data/prisma.js';
 
 // App factory — separate from server.ts so tests can spin up the app without
@@ -36,6 +37,21 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
   await registerSwagger(app);
   await registerSecurity(app, env);
   registerErrorHandler(app);
+
+  // SCIM clients (Okta, Azure AD) send Content-Type: application/scim+json
+  // per RFC 7644 §3.1. Fastify only accepts application/json by default;
+  // alias the SCIM mime type to the same parser so request bodies decode.
+  app.addContentTypeParser(
+    'application/scim+json',
+    { parseAs: 'string' },
+    (_req, body, done) => {
+      try {
+        done(null, body ? JSON.parse(body as string) : {});
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
 
   app.get('/health', { schema: { tags: ['system'] } }, async () => ({ status: 'ok' }));
 
@@ -81,6 +97,10 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(settingsRoutes, { prefix: '/settings' });
 
     await api.register(directoriesRoutes, { prefix: '/settings/directories' });
+
+    // SCIM 2.0. Registered as its own encapsulated child so the route-scoped
+    // error handler (SCIM-shaped error envelope) doesn't leak to other paths.
+    await api.register(scimRoutes, { prefix: '/scim/v2' });
   }, { prefix: '/api' });
 
   app.addHook('onClose', async () => {

@@ -10,6 +10,7 @@ import {
   type Directory,
   type DirectoryCreateInput,
 } from '@/features/directories/api';
+import ScimPanel from '@/features/directories/ScimPanel';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -206,6 +207,14 @@ export default function DirectoriesPage(): JSX.Element {
                 {testResult.message}
               </p>
             )}
+
+            <ScimPanel
+              directoryId={d.id}
+              // Caddy fronts the API on the same host as the SPA; SCIM IdPs
+              // will hit the public URL. window.location.origin gives the
+              // hostname the admin is currently using to view this page.
+              scimBaseUrl={`${window.location.origin}/api/scim/v2`}
+            />
           </li>
         ))}
       </ul>

@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { DirectoryService } from '../services/directoryService.js';
 import { LdapService } from '../services/ldapService.js';
+import { ScimCredentialsService } from '../services/scimCredentialsService.js';
 import { DirectoriesController } from '../controllers/directoriesController.js';
 import { requireAuth, requireGlobalAdmin } from '../middleware/auth.js';
 import {
@@ -17,6 +18,9 @@ import {
   groupMappingResponse,
   groupMappingListResponse,
   groupMappingIdParams,
+  scimCredentialGenerateBody,
+  scimCredentialRedactedResponse,
+  scimCredentialCreatedResponse,
 } from '../schemas/directories.js';
 
 // Directory CRUD + group-mapping CRUD. Mounted at /api/settings/directories,
@@ -29,7 +33,8 @@ import {
 export async function directoriesRoutes(app: FastifyInstance): Promise<void> {
   const svc = new DirectoryService();
   const ldap = new LdapService();
-  const ctrl = new DirectoriesController(svc, ldap);
+  const scimCreds = new ScimCredentialsService();
+  const ctrl = new DirectoriesController(svc, ldap, scimCreds);
   const r = app.withTypeProvider<ZodTypeProvider>();
 
   r.addHook('preHandler', requireAuth);
@@ -134,5 +139,40 @@ export async function directoriesRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.deleteMapping,
+  });
+
+  // SCIM credential per directory. 1:1 — POST creates or rotates.
+  r.get('/:directoryId/scim', {
+    schema: {
+      tags: ['directories'],
+      summary: 'Read the SCIM credential metadata for a directory',
+      params: directoryIdParams,
+      response: { 200: scimCredentialRedactedResponse, 204: z.null() },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.getScimCredential,
+  });
+
+  r.post('/:directoryId/scim', {
+    schema: {
+      tags: ['directories'],
+      summary: 'Create or rotate the SCIM credential. Returns raw token ONCE.',
+      params: directoryIdParams,
+      body: scimCredentialGenerateBody,
+      response: { 201: scimCredentialCreatedResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.generateScimCredential,
+  });
+
+  r.delete('/:directoryId/scim', {
+    schema: {
+      tags: ['directories'],
+      summary: 'Revoke the SCIM credential',
+      params: directoryIdParams,
+      response: { 204: z.null() },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.revokeScimCredential,
   });
 }

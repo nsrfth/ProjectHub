@@ -45,6 +45,22 @@ export const requireSelf: preHandlerHookHandler = async (request) => {
   if (request.user.sub !== userId) throw Errors.forbidden('Cannot act on another user');
 };
 
+// SCIM Bearer-token auth — entirely separate from the user JWT path. The
+// `Authorization: Bearer <opaque-token>` header is hashed and looked up
+// against ScimCredential.tokenHash. On success the resolved directoryId is
+// attached to the request so route handlers know which tenant to scope to.
+// On failure we deliberately return a SCIM-shaped 401 (handled centrally).
+import { ScimCredentialsService } from '../services/scimCredentialsService.js';
+const _scimCreds = new ScimCredentialsService();
+export const requireScimAuth: preHandlerHookHandler = async (request) => {
+  const header = request.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) throw Errors.unauthorized('Missing bearer token');
+  const token = header.slice('Bearer '.length).trim();
+  const directoryId = await _scimCreds.verify(token);
+  if (!directoryId) throw Errors.unauthorized('Invalid SCIM credential');
+  (request as { scimDirectoryId?: string }).scimDirectoryId = directoryId;
+};
+
 // Asserts that the authenticated user has at least the given role in the team
 // referenced by `:teamId` (path param). Returns the membership row for reuse.
 export function requireTeamRole(...allowed: TeamRole[]): preHandlerHookHandler {
