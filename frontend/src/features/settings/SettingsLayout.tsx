@@ -47,8 +47,11 @@ const NAV: NavItem[] = [
   {
     to: '/settings/api',
     label: 'API & Webhooks',
-    description: 'Outbound integrations, API keys',
-    roles: ['ADMIN'],
+    // Tokens are per-user (any role); webhooks are team-scoped (MANAGER).
+    // ADMIN of course sees everything. The page itself shows + hides
+    // sub-sections based on what the user can actually manage.
+    description: 'Personal tokens + team webhooks',
+    roles: ['ADMIN', 'MANAGER', 'MEMBER'],
   },
 ];
 

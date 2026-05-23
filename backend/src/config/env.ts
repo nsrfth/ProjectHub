@@ -50,6 +50,17 @@ const envSchema = z.object({
   TASK_DUE_LEAD_HOURS: z.coerce.number().int().positive().default(24),
   // How often to scan the DB for newly-due tasks, in minutes.
   TASK_DUE_CHECK_INTERVAL_MIN: z.coerce.number().int().positive().default(15),
+
+  // Webhook dispatcher (Phase 3B). Same opt-in shape as the TASK_DUE
+  // scheduler — disabled by default so tests + small dev runs don't fire
+  // outbound HTTP unexpectedly. Multi-instance deploys should turn this on
+  // exactly once (or run the dispatcher elsewhere) to avoid double-delivery.
+  WEBHOOK_DISPATCH_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  WEBHOOK_DISPATCH_INTERVAL_SEC: z.coerce.number().int().positive().default(5),
+  WEBHOOK_DISPATCH_BATCH: z.coerce.number().int().positive().default(10),
 });
 
 export type Env = z.infer<typeof envSchema> & { corsOrigins: string[] };

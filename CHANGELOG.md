@@ -4,6 +4,123 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — 2026-05-23
+
+Phase 3B — API tokens + outbound webhooks. Adds a second authentication
+shape (per-user Bearer tokens for server-to-server / scripting use) and a
+team-scoped webhook subscription system with HMAC-signed deliveries +
+retry/backoff.
+
+### Schema
+
+- New `ApiToken` model — per-user, hashed (`sha256`), with `prefix`
+  (first 11 chars for disambiguation), `scopes` (TEXT[]), optional
+  `expiresAt`, `lastUsedAt`, `revokedAt`. Raw value surfaced ONCE at
+  generation.
+- New `Webhook` model — team-scoped, with `secretEnc` (AES-256-GCM via
+  the existing `MASTER_KEY`), `events: String[]`, `active`. Raw signing
+  secret returned once at creation.
+- New `WebhookDelivery` model — doubles as the queue. `status` enum
+  (`PENDING|DELIVERED|FAILED`), `attempt`, `maxAttempts` (default 5),
+  `nextAttemptAt`, `httpStatus`, `errorMessage`. Two indexes:
+  `(status, nextAttemptAt)` for the dispatcher poll,
+  `(webhookId, createdAt)` for the per-webhook delivery log.
+- Migration `20260523180000_api_tokens_webhooks`.
+
+### Backend
+
+- New [ApiTokensService](backend/src/services/apiTokensService.ts). Token
+  format `th_<48 hex>`; the `th_` prefix is the cheap-to-recognise marker
+  the auth middleware uses to branch into the token-verification path.
+- [requireAuth](backend/src/middleware/auth.ts) now accepts both JWTs
+  and API tokens. API-token auth resolves the owning user, populates
+  `request.user` as if they'd logged in, and attaches the token's scopes
+  for future scope-aware gates. `User.disabledAt` is rechecked so
+  SCIM-deprovisioned accounts can't keep their API tokens working.
+- New [WebhookService](backend/src/services/webhookService.ts):
+  - CRUD over `Webhook` rows.
+  - `emit(teamId, eventType, payload)` — inserts one `WebhookDelivery`
+    row per active webhook that matches the event (or `*`). Best-effort:
+    failures don't bubble into the caller.
+  - `drainOnce(limit)` — the dispatcher's work loop. Picks up
+    `status=PENDING AND nextAttemptAt <= now`, POSTs with an
+    `X-TaskHub-Signature: sha256=<hmac>` header, retries on failure
+    with exponential backoff (`30s × 2^(attempt-1)`, capped at 30 min,
+    max 5 attempts).
+  - `testSend(webhookId)` — synchronous fire-and-return for the UI's
+    "Test" button.
+- New [webhookDispatcher](backend/src/scheduler/webhookDispatcher.ts) —
+  opt-in via `WEBHOOK_DISPATCH_ENABLED=true`, mirrors `TASK_DUE_ENABLED`.
+  Default off so tests + small dev runs don't fire outbound HTTP.
+- [tasksService](backend/src/services/tasksService.ts) +
+  [commentsService](backend/src/services/commentsService.ts) now emit
+  `task.created`, `task.updated`, `task.status_changed`, `task.deleted`,
+  and `comment.added` events after their transactions commit. Emit is
+  awaited (not fire-and-forget) so the delivery row is durable before
+  the API response returns.
+
+### Endpoints
+
+- API tokens (per-user):
+  - `GET /api/settings/api-tokens` — list mine (redacted).
+  - `POST /api/settings/api-tokens` — generate; returns raw token ONCE.
+  - `DELETE /api/settings/api-tokens/:id` — revoke.
+- Webhooks (team MANAGER):
+  - `GET /api/teams/:teamId/webhooks` — list.
+  - `POST /api/teams/:teamId/webhooks` — create; returns raw secret ONCE.
+  - `PATCH /api/teams/:teamId/webhooks/:webhookId` — update (toggle
+    `active`, rotate secret, etc.).
+  - `DELETE …` — remove.
+  - `POST …/test` — synchronous test delivery.
+  - `GET …/deliveries?limit=N` — recent attempts.
+
+### Frontend
+
+- [ApiWebhooksPage](frontend/src/pages/settings/ApiWebhooksPage.tsx)
+  replaces the v1.3.0 placeholder. Two sections:
+  - **API tokens** — visible to all signed-in users; manages their own
+    tokens with a one-shot reveal modal on generate.
+  - **Webhooks** — visible to MANAGERs of the current team (admins via
+    the same gate). Create form with checkbox event picker; per-webhook
+    Test / Pause / Resume / Delete; expandable "Show recent deliveries"
+    panel with status colouring.
+- Settings sidebar opens the entry to MEMBER + MANAGER (the page
+  internally renders sub-sections based on what the user can manage).
+
+### Tests
+
+- New [tests/integration/apiTokensAndWebhooks.test.ts](backend/tests/integration/apiTokensAndWebhooks.test.ts)
+  — 6 cases:
+  - API token list/generate/use, raw never surfaces after creation.
+  - Revoke + retry returns 401.
+  - Webhook delivery to a local `http.createServer` stub, HMAC verified
+    against `crypto.createHmac('sha256', rawSecret)`.
+  - 5xx → row stays `PENDING` with bumped `nextAttemptAt`; manual
+    nudge + drain → `DELIVERED` on the next attempt.
+  - `POST .../test` fires synchronously and returns `{ ok, httpStatus }`.
+  - Paused webhook (`active=false`) emits no deliveries.
+- Suite: **152/152** (was 146 → +6).
+
+### Verified
+
+- Live smoke against the running stack: generate API token via the JWT
+  session → `GET /auth/me` with the raw token works → revoke → same
+  call returns 401.
+
+### Phase 3B boundary
+
+- Scopes are advisory in v1.8.0. API tokens grant the owner's full
+  permissions; route handlers don't yet enforce `tasks:read` vs `*`
+  etc. A scope-aware route guard can land later without an API change.
+- Single-instance dispatch only. Multi-instance deploys MUST run
+  `WEBHOOK_DISPATCH_ENABLED=true` on exactly one node to avoid
+  double-delivery — there's no row-level lock yet. Proper fix is
+  `SELECT … FOR UPDATE SKIP LOCKED` in `drainOnce`.
+- HMAC algorithm fixed at `sha256`. No signature versioning header in
+  the request (`X-TaskHub-Signature: sha256=<hex>`) — receivers parse
+  the algorithm prefix today, but if we ever rotate algorithms we'd
+  bump this format.
+
 ## [1.7.0] — 2026-05-23
 
 Phase 3A — Audit-log viewer. Adds a paginated, filterable read surface

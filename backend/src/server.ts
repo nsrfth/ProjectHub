@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { loadEnv } from './config/env.js';
 import { createDueDateScheduler } from './scheduler/dueDateScheduler.js';
+import { createWebhookDispatcher } from './scheduler/webhookDispatcher.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -17,10 +18,22 @@ async function main(): Promise<void> {
     : null;
   dueScheduler?.start();
 
+  // Webhook delivery loop. Same opt-in shape; default off so tests don't
+  // fire outbound HTTP.
+  const webhookDispatcher = env.WEBHOOK_DISPATCH_ENABLED
+    ? createWebhookDispatcher({
+        intervalSec: env.WEBHOOK_DISPATCH_INTERVAL_SEC,
+        batch: env.WEBHOOK_DISPATCH_BATCH,
+        logger: app.log,
+      })
+    : null;
+  webhookDispatcher?.start();
+
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'shutting down');
     try {
       dueScheduler?.stop();
+      webhookDispatcher?.stop();
       await app.close();
       process.exit(0);
     } catch (err) {

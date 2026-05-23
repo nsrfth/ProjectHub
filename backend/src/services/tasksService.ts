@@ -3,6 +3,11 @@ import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
+import { WebhookService } from './webhookService.js';
+
+// Webhook emitter shared across task-mutating paths. emit() is best-effort
+// and runs after the transaction commits — failures don't bubble.
+const _webhooks = new WebhookService();
 
 // Tasks live inside a project, which lives inside a team. teamId is denormalized
 // on Task itself (see schema) so multi-tenancy queries are a single-column
@@ -182,6 +187,14 @@ export class TasksService {
         });
       }
       return toView(task);
+    }).then(async (view) => {
+      // Webhook emit after commit — never inside the transaction (the
+      // dispatcher reads from the same table and we don't want to hold
+      // the connection while we look up subscribers). Awaited so callers
+      // (including the dispatcher right after a synchronous test action)
+      // can rely on the delivery row existing on return.
+      await _webhooks.emit(view.teamId, 'task.created', view);
+      return view;
     });
   }
 
@@ -292,7 +305,7 @@ export class TasksService {
     });
 
     try {
-      return await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async (tx) => {
         const updated = await tx.task.update({
           where: { id: taskId },
           data: {
@@ -359,8 +372,23 @@ export class TasksService {
             taskTitle: updated.title,
           });
         }
-        return toView(updated);
+        return { view: toView(updated), statusChanged, changedNonStatusFields, fromStatus: existing.status };
       });
+      // Post-commit webhook fan-out. status_changed is emitted as a separate
+      // event from updated so subscribers can subscribe to only the signal
+      // they care about. Awaited so the delivery row exists by the time
+      // the response returns to the client (and by the time tests inspect).
+      if (result.statusChanged) {
+        await _webhooks.emit(result.view.teamId, 'task.status_changed', {
+          task: result.view, from: result.fromStatus, to: result.view.status,
+        });
+      }
+      if (result.changedNonStatusFields.length > 0) {
+        await _webhooks.emit(result.view.teamId, 'task.updated', {
+          task: result.view, fields: result.changedNonStatusFields,
+        });
+      }
+      return result.view;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw Errors.notFound('Task not found');
@@ -492,10 +520,16 @@ export class TasksService {
   }
 
   async remove(teamId: string, projectId: string, taskId: string, _actorId: string): Promise<void> {
-    await this.get(teamId, projectId, taskId); // 404 if not in this project/team
+    const existing = await this.get(teamId, projectId, taskId); // 404 if not in this project/team
     // No activity row on delete: Activity FK cascades from Task, so any row we
     // wrote would vanish with the task. A real audit trail belongs in a
     // separate non-cascading table; that's a deliberate later step.
     await prisma.task.delete({ where: { id: taskId } });
+    // Webhook subscribers DO want to know — the delete event fires from the
+    // service layer because it's the only place we have the team scope after
+    // the row is gone. Awaited so the delivery row exists synchronously.
+    await _webhooks.emit(teamId, 'task.deleted', {
+      taskId: existing.id, title: existing.title, projectId, teamId,
+    });
   }
 }

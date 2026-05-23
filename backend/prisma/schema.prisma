@@ -190,6 +190,7 @@ model User {
   emailVerifications EmailVerification[]
   uploads            Attachment[]
   recoveryCodes      RecoveryCode[]
+  apiTokens          ApiToken[]
 
   @@index([email])
 }
@@ -243,6 +244,7 @@ model Team {
   labels        Label[]
   notifications Notification[]
   activities    Activity[]       @relation("TeamActivity")
+  webhooks      Webhook[]
   directory     Directory?       @relation("TeamDirectory", fields: [directoryId], references: [id], onDelete: SetNull)
 
   @@index([directoryId])
@@ -419,6 +421,80 @@ model Activity {
   @@index([teamId, createdAt])
   @@index([actorId, createdAt])
   @@index([action, createdAt])
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// Server-to-server API token. Authenticates as `ownerId`; the token's
+// scopes are advisory in Phase 3B (request.user reflects the owner, so
+// permission falls out of the owner's GlobalRole + TeamMembership). The
+// raw token surfaces ONCE at generate; only sha256(rawToken) persists.
+model ApiToken {
+  id         String    @id @default(cuid())
+  ownerId    String
+  name       String
+  // First 8 chars of the raw token, shown in the UI to disambiguate
+  // multiple tokens (e.g. "th_a1b2c3d4…"). Not security-sensitive.
+  prefix     String
+  tokenHash  String    @unique
+  // Free-form strings — convention is `<resource>:<action>` (e.g.
+  // "tasks:read") or "*" for full access.
+  scopes     String[]
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  owner      User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+// Outbound webhook subscription. teamId-scoped so a directory-managed
+// team's automations don't leak into another tenant. `secretEnc` is the
+// AES-256-GCM ciphertext of the signing secret used for HMAC headers.
+model Webhook {
+  id        String   @id @default(cuid())
+  teamId    String
+  name      String
+  url       String
+  // The HMAC signing secret. Stored encrypted; surfaced once at creation
+  // if the caller didn't supply their own.
+  secretEnc String
+  // Subscribed event types — e.g. ["task.created","comment.added"] or ["*"].
+  events    String[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([teamId])
+}
+
+// One row per outbound delivery attempt cluster. The dispatcher polls
+// (status=PENDING AND nextAttemptAt<=now) and updates status + attempt
+// + nextAttemptAt as it works. Acts as both a delivery log and the queue.
+model WebhookDelivery {
+  id            String                @id @default(cuid())
+  webhookId     String
+  eventType     String
+  payload       Json
+  status        WebhookDeliveryStatus @default(PENDING)
+  attempt       Int                   @default(0)
+  maxAttempts   Int                   @default(5)
+  httpStatus    Int?
+  errorMessage  String?
+  nextAttemptAt DateTime              @default(now())
+  deliveredAt   DateTime?
+  createdAt     DateTime              @default(now())
+  webhook       Webhook               @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([webhookId, createdAt])
 }
 
 // Global instance configuration. Key-value store for toggles that apply to

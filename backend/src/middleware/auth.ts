@@ -2,13 +2,40 @@ import type { FastifyRequest, FastifyReply, preHandlerHookHandler } from 'fastif
 import type { GlobalRole, TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { ApiTokensService } from '../services/apiTokensService.js';
 
-// Verifies the bearer access token and attaches `request.user`.
-// Deny-by-default: any route without `requireAuth` is public, so apply it explicitly.
+const _apiTokens = new ApiTokensService();
+
+// Verifies the bearer access token and attaches `request.user`. Accepts two
+// shapes: a JWT (issued by /auth/login) or an API token (issued by
+// /settings/api-tokens, prefixed `th_`). API-token auth resolves the owning
+// user, populates request.user as if they'd logged in, and attaches the
+// token's scopes for future scope-aware route guards.
+//
+// Deny-by-default: any route without `requireAuth` is public, so apply it
+// explicitly.
 export const requireAuth: preHandlerHookHandler = async (request, _reply) => {
   const header = request.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) throw Errors.unauthorized('Missing bearer token');
   const token = header.slice('Bearer '.length).trim();
+
+  // API-token shape — branch before JWT verification so we don't pay the
+  // verify cost for tokens that obviously aren't JWTs.
+  if (_apiTokens.isApiTokenShape(token)) {
+    const verified = await _apiTokens.verify(token);
+    if (!verified) throw Errors.unauthorized('Invalid or expired token');
+    const user = await prisma.user.findUnique({ where: { id: verified.ownerId } });
+    if (!user || user.disabledAt) throw Errors.unauthorized('Invalid or expired token');
+    request.user = {
+      sub: user.id,
+      email: user.email,
+      globalRole: user.globalRole,
+    } as never;
+    (request as { apiTokenScopes?: string[] }).apiTokenScopes = verified.scopes;
+    return;
+  }
+
+  // JWT path.
   try {
     request.user = request.server.verifyAccess(token);
   } catch {

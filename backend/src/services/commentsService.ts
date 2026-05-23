@@ -3,6 +3,11 @@ import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
+import { WebhookService } from './webhookService.js';
+
+// Webhook emitter — best-effort post-commit fan-out. Same pattern as
+// tasksService: never inside the transaction.
+const _webhooks = new WebhookService();
 
 // Extract every distinct `@handle` from a comment body. The handle is the
 // local-part of a team member's email (e.g. `@alice` matches `alice@x.com`).
@@ -108,14 +113,26 @@ export class CommentsService {
         }
       }
       return {
-        id: c.id,
-        taskId: c.taskId,
-        authorId: c.authorId,
-        authorName: c.author?.name ?? null,
-        body: c.body,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
+        view: {
+          id: c.id,
+          taskId: c.taskId,
+          authorId: c.authorId,
+          authorName: c.author?.name ?? null,
+          body: c.body,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        },
+        teamId: c.task.teamId,
+        taskTitle: c.task.title,
       };
+    }).then(async ({ view, teamId, taskTitle }) => {
+      // Post-commit emit. Subscribers get the comment + its task context so
+      // they don't need to re-resolve the task themselves. Awaited so the
+      // delivery row exists by the time the API response returns.
+      await _webhooks.emit(teamId, 'comment.added', {
+        comment: view, taskId: view.taskId, taskTitle, teamId,
+      });
+      return view;
     });
   }
 
