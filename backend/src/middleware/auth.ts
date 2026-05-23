@@ -23,6 +23,28 @@ export function requireGlobalRole(...allowed: GlobalRole[]): preHandlerHookHandl
   };
 }
 
+// Convenience wrapper around requireGlobalRole — the common gate for
+// instance-level settings and admin tooling. Prefer the named export at call
+// sites so intent reads directly ("admin-only").
+export const requireGlobalAdmin: preHandlerHookHandler = requireGlobalRole('ADMIN');
+
+// Convenience wrapper for team-manager-only routes. Equivalent to
+// requireTeamRole('MANAGER') but named so the intent ("manager-only,
+// team-scoped") is obvious at the call site.
+export const requireTeamManager: preHandlerHookHandler = requireTeamRole('MANAGER');
+
+// Gate for self-only or admin-override routes. The route MUST declare a
+// `:userId` path param. GlobalRole.ADMIN can act on any user; everyone else
+// can only act on themselves. Used for "edit my profile", "delete my account",
+// "change my password" — anything user-scoped that admins also need to manage.
+export const requireSelf: preHandlerHookHandler = async (request) => {
+  if (!request.user) throw Errors.unauthorized();
+  const userId = (request.params as { userId?: string } | undefined)?.userId;
+  if (!userId) throw Errors.badRequest('Missing userId in route');
+  if (request.user.globalRole === 'ADMIN') return;
+  if (request.user.sub !== userId) throw Errors.forbidden('Cannot act on another user');
+};
+
 // Asserts that the authenticated user has at least the given role in the team
 // referenced by `:teamId` (path param). Returns the membership row for reuse.
 export function requireTeamRole(...allowed: TeamRole[]): preHandlerHookHandler {

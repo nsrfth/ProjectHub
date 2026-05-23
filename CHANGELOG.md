@@ -4,6 +4,61 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-05-23
+
+Phase 1 of the Settings surface — shell only. Adds the foundation for
+admin-managed instance configuration without yet shipping any concrete
+toggle. Future phases land actual settings (auth policy, audit retention,
+webhook config) on top of this skeleton.
+
+### Backend
+
+- New Prisma model `InstanceSetting` (key, JSON value, updatedAt, updatedBy).
+  Migration `20260522180000_add_instance_setting`. Value column is JSONB —
+  per-key shape is enforced at the consumer, not the schema, so adding new
+  toggles is a zero-migration change.
+- New reusable authz guards in
+  [middleware/auth.ts](backend/src/middleware/auth.ts):
+  - `requireGlobalAdmin` — convenience over `requireGlobalRole('ADMIN')`.
+  - `requireTeamManager` — convenience over `requireTeamRole('MANAGER')`.
+  - `requireSelf` — gates `:userId`-scoped routes (caller must be the user
+    OR a GlobalRole.ADMIN). Useful for "edit my profile" / "change my
+    password" / "delete my account" surfaces.
+- New CRUD endpoints mounted at `/api/settings/instance` (ADMIN-only):
+  - `GET /instance` — list all keys.
+  - `GET /instance/:key` — read one.
+  - `PUT /instance/:key` — create or overwrite (body: `{ value: <any> }`).
+  - `DELETE /instance/:key`.
+- Zod schemas live in [schemas/settings.ts](backend/src/schemas/settings.ts).
+  `value` is `z.unknown()` so the route accepts any JSON.
+
+### Frontend
+
+- New Settings layout at `/settings` with a role-filtered sidebar
+  ([SettingsLayout.tsx](frontend/src/features/settings/SettingsLayout.tsx)).
+  Sidebar entries declare which roles may see them; users in no matching
+  role are bounced to /dashboard. Bare /settings redirects to the first
+  item the user can actually see.
+- Four placeholder sub-pages, each wiring a real React Query hook against
+  `/settings/instance` so the auth + transport path is exercised end-to-end
+  even though the UI is a "coming in a future phase" card:
+  - Directories
+  - Security
+  - Audit
+  - API & Webhooks
+- All four are ADMIN-only in Phase 1.
+- New "Settings" link in the dashboard header, rendered only when
+  `user.globalRole === 'ADMIN'`.
+
+### Verified
+
+- Backend suite: 117/117 still pass.
+- Frontend build: clean.
+- Live smoke against `/api/settings/instance`: empty-list → PUT → GET-single →
+  list-after-PUT → DELETE → list-after-DELETE round-trips correctly. A
+  freshly-registered MEMBER user gets a 403 (`FORBIDDEN: Insufficient role`)
+  when reading the list, confirming `requireGlobalAdmin` is wired.
+
 ## [1.2.1] — 2026-05-22
 
 Quality pass on v1.2.0 — no user-visible behavior change, just loose ends.

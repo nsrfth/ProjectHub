@@ -285,6 +285,20 @@ model Activity {
   @@index([taskId, createdAt])
 }
 
+// Global instance configuration. Key-value store for toggles that apply to
+// the whole deployment (e.g. "registration.public", "smtp.from"). Reads +
+// writes are restricted to GlobalRole.ADMIN at the route layer. Schema kept
+// deliberately loose (Json value) so future settings don't need a migration
+// each time; the API layer enforces shape per-key via Zod.
+model InstanceSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+  // Audit trail: which admin last touched this key. Nullable so a deleted
+  // admin's row doesn't cascade-delete the setting itself.
+  updatedBy String?
+}
+
 model Notification {
   id        String     @id @default(cuid())
   userId    String

@@ -22,9 +22,14 @@ export default function DashboardPage(): JSX.Element {
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <div className="flex items-center gap-4">
           {user?.globalRole === 'ADMIN' && (
-            <Link to="/admin" className="text-sm underline">
-              Admin
-            </Link>
+            <>
+              <Link to="/admin" className="text-sm underline">
+                Admin
+              </Link>
+              <Link to="/settings" className="text-sm underline">
+                Settings
+              </Link>
+            </>
           )}
           <button onClick={() => signOut()} className="text-sm underline">
             Sign out
