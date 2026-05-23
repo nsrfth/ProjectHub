@@ -43,6 +43,11 @@ export const userResponse = z.object({
   email: z.string().email(),
   name: z.string(),
   globalRole: z.enum(['ADMIN', 'MEMBER']),
+  // Phase 2A: set when the user is owned by an external directory; null for
+  // local-password users. The frontend uses this to disable "change password"
+  // for LDAP-managed accounts.
+  directoryId: z.string().nullable().default(null),
+  externalId: z.string().nullable().default(null),
   createdAt: z.string(),
 });
 

@@ -27,6 +27,16 @@ const envSchema = z.object({
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   AUTH_RATE_LIMIT_WINDOW: z.string().default('1 minute'),
 
+  // Symmetric key for at-rest encryption of sensitive integration secrets:
+  // LDAP bind passwords (Phase 2A), TOTP shared secrets (2C), webhook secrets
+  // (3B). Expected as 64 lowercase hex characters (32 bytes / 256 bits).
+  // Optional at this layer so deployments not using any of those features
+  // don't need to provision it; lib/crypto.ts throws on first use if absent.
+  MASTER_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, 'MASTER_KEY must be 64 hex chars (32 bytes)')
+    .optional(),
+
   // TASK_DUE scheduler — runs in-process via setInterval. Disabled by default
   // so tests + small dev runs don't spawn an unwanted background loop. Production
   // single-instance deploys can opt in with TASK_DUE_ENABLED=true. Multi-instance

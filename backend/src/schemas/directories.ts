@@ -1,0 +1,108 @@
+import { z } from 'zod';
+
+export const directoryKindEnum = z.enum(['LDAP', 'SCIM']);
+
+// Body for creating or updating a Directory. bindPassword is plaintext on the
+// wire (TLS protects it in transit) and gets encrypted server-side before
+// landing in the DB. Optional on update so an admin can change name/host
+// without re-typing the password.
+export const directoryCreateBody = z.object({
+  name: z.string().min(1).max(120),
+  slug: z.string().min(3).max(60).regex(/^[a-z0-9-]+$/, 'lowercase, digits, hyphens'),
+  kind: directoryKindEnum.default('LDAP'),
+  host: z.string().min(1).max(255).optional(),
+  port: z.number().int().positive().max(65535).optional(),
+  useTLS: z.boolean().default(true),
+  bindDN: z.string().min(1).max(500).optional(),
+  bindPassword: z.string().min(1).max(500).optional(),
+  baseDN: z.string().min(1).max(500).optional(),
+  userFilter: z.string().max(500).optional(),
+  groupFilter: z.string().max(500).optional(),
+  userIdAttr: z.string().min(1).max(60).default('uid'),
+  emailAttr: z.string().min(1).max(60).default('mail'),
+  nameAttr: z.string().min(1).max(60).default('cn'),
+  groupMemberAttr: z.string().min(1).max(60).default('member'),
+  allowJIT: z.boolean().default(true),
+  syncRolesFromGroups: z.boolean().default(false),
+});
+
+export const directoryUpdateBody = directoryCreateBody.partial();
+
+// Response shape — bindPasswordEnc DELIBERATELY excluded. fastify-type-provider-zod
+// strips unknown fields at serialisation, so even if a service-layer mistake
+// leaks the ciphertext upward, this shape blocks it from reaching the wire.
+export const directoryResponse = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  kind: directoryKindEnum,
+  host: z.string().nullable(),
+  port: z.number().int().nullable(),
+  useTLS: z.boolean(),
+  bindDN: z.string().nullable(),
+  // A boolean projection of bindPasswordEnc — surfaces whether the password
+  // is set without exposing the value. Lets the UI distinguish "no password"
+  // from "password set but not editable here".
+  hasBindPassword: z.boolean(),
+  baseDN: z.string().nullable(),
+  userFilter: z.string().nullable(),
+  groupFilter: z.string().nullable(),
+  userIdAttr: z.string(),
+  emailAttr: z.string(),
+  nameAttr: z.string(),
+  groupMemberAttr: z.string(),
+  allowJIT: z.boolean(),
+  syncRolesFromGroups: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const directoryListResponse = z.object({
+  items: z.array(directoryResponse),
+});
+
+export const directoryIdParams = z.object({ directoryId: z.string() });
+
+// DirectoryGroupMapping schemas — group DN → role.
+export const groupMappingCreateBody = z.object({
+  externalGroupDn: z.string().min(1).max(500),
+  globalRole: z.enum(['ADMIN', 'MEMBER']).nullable().default(null),
+  teamId: z.string().nullable().default(null),
+  teamRole: z.enum(['MANAGER', 'MEMBER']).nullable().default(null),
+});
+
+export const groupMappingResponse = z.object({
+  id: z.string(),
+  directoryId: z.string(),
+  externalGroupDn: z.string(),
+  globalRole: z.enum(['ADMIN', 'MEMBER']).nullable(),
+  teamId: z.string().nullable(),
+  teamRole: z.enum(['MANAGER', 'MEMBER']).nullable(),
+});
+
+export const groupMappingListResponse = z.object({
+  items: z.array(groupMappingResponse),
+});
+
+export const groupMappingIdParams = z.object({
+  directoryId: z.string(),
+  mappingId: z.string(),
+});
+
+// Test-connection body — admins can validate config before saving.
+export const directoryTestBody = z.object({
+  // Allow overriding password during test so admin can verify a change
+  // without persisting it.
+  bindPassword: z.string().optional(),
+});
+
+export const directoryTestResponse = z.object({
+  ok: z.boolean(),
+  message: z.string(),
+  sampleUserCount: z.number().int().optional(),
+});
+
+export type DirectoryCreateBody = z.infer<typeof directoryCreateBody>;
+export type DirectoryUpdateBody = z.infer<typeof directoryUpdateBody>;
+export type GroupMappingCreateBody = z.infer<typeof groupMappingCreateBody>;
+export type DirectoryTestBody = z.infer<typeof directoryTestBody>;

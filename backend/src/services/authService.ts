@@ -1,9 +1,11 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma, User } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { hashPassword, randomTokenHex, sha256, verifyPassword } from '../lib/hashing.js';
 import { parseDuration } from '../lib/time.js';
 import type { Env } from '../config/env.js';
+import { DirectoryService } from './directoryService.js';
+import { LdapService, type LdapAuthResult } from './ldapService.js';
 
 // All token lifecycle logic lives here. Routes/controllers don't talk to Prisma directly.
 
@@ -16,6 +18,8 @@ export interface IssuedSession {
     email: string;
     name: string;
     globalRole: 'ADMIN' | 'MEMBER';
+    directoryId: string | null;
+    externalId: string | null;
     createdAt: Date;
   };
   // Set on `register` only — the raw email-verification token the controller
@@ -35,6 +39,10 @@ export interface AuthSigner {
 }
 
 export class AuthService {
+  // Lazily constructed — only paid for when LDAP login actually fires.
+  private readonly directories = new DirectoryService();
+  private readonly ldap = new LdapService();
+
   constructor(
     private readonly env: Env,
     private readonly signer: AuthSigner,
@@ -67,12 +75,150 @@ export class AuthService {
 
   async login(input: { email: string; password: string }): Promise<IssuedSession> {
     const user = await prisma.user.findUnique({ where: { email: input.email } });
-    // Same error for "no user" vs "wrong password" to prevent account enumeration.
-    if (!user) throw Errors.unauthorized('Invalid credentials');
-    const ok = await verifyPassword(user.passwordHash, input.password);
-    if (!ok) throw Errors.unauthorized('Invalid credentials');
 
-    return this.issueSession(user);
+    // ── Local user (no directoryId): legacy argon2 password check. ─────────
+    if (user && !user.directoryId) {
+      if (!user.passwordHash) throw Errors.unauthorized('Invalid credentials');
+      const ok = await verifyPassword(user.passwordHash, input.password);
+      if (!ok) throw Errors.unauthorized('Invalid credentials');
+      return this.issueSession(user);
+    }
+
+    // ── Directory-bound user: bind against the specific directory. ─────────
+    if (user?.directoryId) {
+      const dir = await this.directories.getRaw(user.directoryId).catch(() => null);
+      if (!dir) throw Errors.unauthorized('Invalid credentials');
+      const result = await this.ldap.authenticate(dir, input.email, input.password);
+      if (!result) throw Errors.unauthorized('Invalid credentials');
+      await this.syncFromLdap(user, dir.id, result);
+      return this.issueSession(user);
+    }
+
+    // ── No local row yet: try each active LDAP directory in turn (JIT). ────
+    // Keeps "user typed wrong password" indistinguishable from "no such user"
+    // to avoid account enumeration.
+    const directories = await this.directories.listActiveLdap();
+    for (const dir of directories) {
+      if (!dir.allowJIT) continue;
+      const result = await this.ldap.authenticate(dir, input.email, input.password);
+      if (!result) continue;
+      const provisioned = await this.provisionFromLdap(dir.id, result);
+      return this.issueSession(provisioned);
+    }
+
+    throw Errors.unauthorized('Invalid credentials');
+  }
+
+  // JIT-create the local User row for a successfully-bound LDAP user. First
+  // user to ever land becomes ADMIN (matches the register() rule). Then
+  // apply group → role mappings so the new user picks up the mapped roles
+  // immediately on their first login, not only on the second.
+  private async provisionFromLdap(
+    directoryId: string,
+    result: LdapAuthResult,
+  ): Promise<User> {
+    // Race: another concurrent login for the same DN might already have
+    // created the row. Catch the unique-constraint failure and re-read.
+    let user: User;
+    try {
+      user = await prisma.user.create({
+        data: {
+          email: result.email,
+          name: result.displayName || result.email,
+          directoryId,
+          externalId: result.dn,
+          // No local password — argon2 verify can't be run on this row.
+          passwordHash: null,
+          emailVerifiedAt: new Date(),
+          globalRole: (await prisma.user.count()) === 0 ? 'ADMIN' : 'MEMBER',
+        },
+      });
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code !== 'P2002') throw e;
+      const existing = await prisma.user.findFirst({
+        where: { directoryId, externalId: result.dn },
+      });
+      if (!existing) throw e;
+      user = existing;
+    }
+
+    await this.applyGroupMappings(user.id, directoryId, result.groups);
+    // Re-read so the caller sees the post-mapping globalRole.
+    const refreshed = await prisma.user.findUnique({ where: { id: user.id } });
+    return refreshed ?? user;
+  }
+
+  // Pull fresh email/name from LDAP and reapply group mappings on each login.
+  // Cheap because the search already happened in authenticate().
+  private async syncFromLdap(
+    user: User,
+    directoryId: string,
+    result: LdapAuthResult,
+  ): Promise<void> {
+    const dataUpdate: Prisma.UserUpdateInput = {};
+    if (user.email !== result.email) dataUpdate.email = result.email;
+    if (result.displayName && user.name !== result.displayName) dataUpdate.name = result.displayName;
+    if (user.externalId !== result.dn) dataUpdate.externalId = result.dn;
+    if (Object.keys(dataUpdate).length) {
+      await prisma.user.update({ where: { id: user.id }, data: dataUpdate });
+    }
+    await this.applyGroupMappings(user.id, directoryId, result.groups);
+  }
+
+  // Translate LDAP group DNs into TaskHub role assignments. Only fires when
+  // the directory has syncRolesFromGroups=true (which the admin opts into).
+  // Two semantics:
+  //   - mapping.globalRole set    → user.globalRole = mapping.globalRole
+  //   - mapping.teamId + teamRole → upsert TeamMembership(userId, teamId)
+  //     with the mapped role; remove memberships that no longer match any
+  //     mapping for this directory (so removing a group revokes access).
+  private async applyGroupMappings(
+    userId: string,
+    directoryId: string,
+    groupDns: string[],
+  ): Promise<void> {
+    const dir = await prisma.directory.findUnique({ where: { id: directoryId } });
+    if (!dir?.syncRolesFromGroups) return;
+
+    const mappings = await prisma.directoryGroupMapping.findMany({ where: { directoryId } });
+    const matched = mappings.filter((m) => groupDns.includes(m.externalGroupDn));
+
+    // Highest-rank global role wins. ADMIN > MEMBER.
+    const globalRoles = matched.map((m) => m.globalRole).filter(Boolean);
+    const newGlobal = globalRoles.includes('ADMIN') ? 'ADMIN'
+      : globalRoles.includes('MEMBER') ? 'MEMBER'
+      : null;
+    if (newGlobal) {
+      await prisma.user.update({ where: { id: userId }, data: { globalRole: newGlobal } });
+    }
+
+    // Team memberships: upsert what matched; remove directory-managed
+    // memberships that no longer match. We only touch teams owned by this
+    // directory's mappings to avoid stomping manager-driven invites.
+    const desiredTeamIds = new Set(
+      matched.map((m) => m.teamId).filter((id): id is string => !!id),
+    );
+    for (const m of matched) {
+      if (!m.teamId || !m.teamRole) continue;
+      await prisma.teamMembership.upsert({
+        where: { userId_teamId: { userId, teamId: m.teamId } },
+        update: { role: m.teamRole },
+        create: { userId, teamId: m.teamId, role: m.teamRole },
+      });
+    }
+    // Strip memberships in directory-mapped teams that the user no longer
+    // qualifies for. Teams not referenced by any mapping for this directory
+    // are left alone — those are non-directory teams.
+    const mappedTeamIds = new Set(
+      mappings.map((m) => m.teamId).filter((id): id is string => !!id),
+    );
+    const toRemove = [...mappedTeamIds].filter((id) => !desiredTeamIds.has(id));
+    if (toRemove.length) {
+      await prisma.teamMembership.deleteMany({
+        where: { userId, teamId: { in: toRemove } },
+      });
+    }
   }
 
   // Rotates the refresh token: revokes the old, issues a new pair.
@@ -224,6 +370,8 @@ export class AuthService {
         email: user.email,
         name: user.name,
         globalRole: user.globalRole,
+        directoryId: user.directoryId,
+        externalId: user.externalId,
         createdAt: user.createdAt,
       },
     };

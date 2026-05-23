@@ -17,6 +17,7 @@ import { attachmentsRoutes } from './routes/attachments.js';
 import { notificationsWsRoutes } from './routes/notificationsWs.js';
 import { reportsRoutes } from './routes/reports.js';
 import { settingsRoutes } from './routes/settings.js';
+import { directoriesRoutes } from './routes/directories.js';
 import { prisma } from './data/prisma.js';
 
 // App factory — separate from server.ts so tests can spin up the app without
@@ -78,6 +79,8 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(reportsRoutes, { prefix: '/teams/:teamId/reports' });
 
     await api.register(settingsRoutes, { prefix: '/settings' });
+
+    await api.register(directoriesRoutes, { prefix: '/settings/directories' });
   }, { prefix: '/api' });
 
   app.addHook('onClose', async () => {

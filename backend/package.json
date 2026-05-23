@@ -36,13 +36,14 @@
     "argon2": "^0.41.1",
     "fastify": "^4.28.1",
     "fastify-type-provider-zod": "^2.0.0",
+    "ldapts": "^7.4.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
+    "@types/supertest": "^6.0.2",
     "prisma": "^5.18.0",
     "supertest": "^7.0.0",
-    "@types/supertest": "^6.0.2",
     "tsx": "^4.16.2",
     "typescript": "^5.5.3",
     "vitest": "^2.0.4"

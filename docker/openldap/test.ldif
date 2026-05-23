@@ -1,0 +1,47 @@
+# Fixture directory used by the LDAP integration test. Loaded into the
+# openldap container under the test profile.
+
+dn: ou=People,dc=taskhub,dc=local
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Groups,dc=taskhub,dc=local
+objectClass: organizationalUnit
+ou: Groups
+
+# ── Users ─────────────────────────────────────────────────────────────────
+dn: uid=alice,ou=People,dc=taskhub,dc=local
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Ng
+sn: Ng
+mail: alice@taskhub.local
+userPassword: AlicePass1!
+
+dn: uid=bob,ou=People,dc=taskhub,dc=local
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Park
+sn: Park
+mail: bob@taskhub.local
+userPassword: BobPass1!
+
+dn: uid=eve,ou=People,dc=taskhub,dc=local
+objectClass: inetOrgPerson
+uid: eve
+cn: Eve Outsider
+sn: Outsider
+mail: eve@taskhub.local
+userPassword: EvePass1!
+
+# ── Groups ────────────────────────────────────────────────────────────────
+# Alice is an admin; Bob is a member; Eve is in no group.
+dn: cn=taskhub-admins,ou=Groups,dc=taskhub,dc=local
+objectClass: groupOfNames
+cn: taskhub-admins
+member: uid=alice,ou=People,dc=taskhub,dc=local
+
+dn: cn=taskhub-members,ou=Groups,dc=taskhub,dc=local
+objectClass: groupOfNames
+cn: taskhub-members
+member: uid=bob,ou=People,dc=taskhub,dc=local

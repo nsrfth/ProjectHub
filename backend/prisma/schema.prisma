@@ -53,15 +53,88 @@ enum NotifyType {
   TASK_STATUS
 }
 
+enum DirectoryKind {
+  LDAP
+  // SCIM placeholder for Phase 2B — kept in the same enum so a SCIM directory
+  // can reuse the same Directory row + group mappings.
+  SCIM
+}
+
+// External identity provider. Phase 2A handles LDAP; SCIM in 2B reuses this.
+// One Directory binds many Users (via User.directoryId/externalId).
+model Directory {
+  id          String        @id @default(cuid())
+  name        String
+  slug        String        @unique
+  kind        DirectoryKind @default(LDAP)
+  // LDAP connection details — ignored for non-LDAP kinds.
+  host        String?
+  port        Int?
+  useTLS      Boolean       @default(true)
+  bindDN      String?
+  // Bind password ciphertext (AES-256-GCM via lib/crypto). NEVER surface in
+  // any API response — Zod response schemas must not include this field.
+  bindPasswordEnc String?
+  baseDN      String?
+  userFilter  String?  // e.g. "(objectClass=person)"
+  groupFilter String?  // e.g. "(objectClass=groupOfNames)"
+  // Attribute names — different LDAPs use different conventions.
+  userIdAttr        String  @default("uid")   // AD users typically use sAMAccountName.
+  emailAttr         String  @default("mail")
+  nameAttr          String  @default("cn")
+  groupMemberAttr   String  @default("member")
+  // Just-in-time provisioning: when true, a successful LDAP bind creates a
+  // local User row if one doesn't exist yet.
+  allowJIT          Boolean @default(true)
+  // Roll group memberships into TaskHub roles on every login.
+  syncRolesFromGroups Boolean @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  users         User[]                  @relation("UserDirectory")
+  teams         Team[]                  @relation("TeamDirectory")
+  groupMappings DirectoryGroupMapping[]
+}
+
+// External group DN → TaskHub role. Phase 2A supports global roles + team-
+// scoped manager/member assignment. teamId is nullable: when set, the
+// mapping grants membership in that specific team; when null, it grants the
+// listed globalRole instance-wide.
+model DirectoryGroupMapping {
+  id              String     @id @default(cuid())
+  directoryId     String
+  externalGroupDn String
+  globalRole      GlobalRole?
+  teamId          String?
+  teamRole        TeamRole?
+
+  directory       Directory  @relation(fields: [directoryId], references: [id], onDelete: Cascade)
+
+  @@unique([directoryId, externalGroupDn])
+  @@index([directoryId])
+}
+
 model User {
   id              String     @id @default(cuid())
   email           String     @unique
-  passwordHash    String
+  // Nullable as of v1.4 — LDAP-managed users have no local password. Local
+  // users continue to set this at register time. authService gates which
+  // flow to run based on directoryId.
+  passwordHash    String?
   name            String
   globalRole      GlobalRole @default(MEMBER)
+  // Set when the user is owned by an external directory. null = local user.
+  directoryId     String?
+  // External stable identifier (LDAP DN, SCIM externalId). Unique together
+  // with directoryId so multiple directories can use overlapping IDs.
+  externalId      String?
   emailVerifiedAt DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
+  directory       Directory? @relation("UserDirectory", fields: [directoryId], references: [id], onDelete: SetNull)
+
+  @@unique([directoryId, externalId])
+  @@index([directoryId])
 
   memberships    TeamMembership[]
   ownedProjects  Project[]        @relation("ProjectOwner")
@@ -117,11 +190,18 @@ model Team {
   id            String           @id @default(cuid())
   name          String
   slug          String           @unique
+  // When set, the team's membership is synthesized from LDAP/SCIM group
+  // mappings rather than manually managed. Manager-driven invites are
+  // disabled in the UI for directory-managed teams.
+  directoryId   String?
   createdAt     DateTime         @default(now())
   memberships   TeamMembership[]
   projects      Project[]
   labels        Label[]
   notifications Notification[]
+  directory     Directory?       @relation("TeamDirectory", fields: [directoryId], references: [id], onDelete: SetNull)
+
+  @@index([directoryId])
 }
 
 model TeamMembership {

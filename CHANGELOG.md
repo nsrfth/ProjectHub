@@ -4,6 +4,131 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-05-23
+
+Phase 2A — Multi-directory identity. Adds LDAP login on top of the existing
+local-password flow, with admin-managed Directory configs, group-to-role
+mapping, and JIT user provisioning. Login still goes through `POST /auth/login`
+unchanged from the client's perspective; the server branches between
+argon2 + LDAP based on whether the user owns a `directoryId`.
+
+### At-rest encryption foundation
+
+- New [lib/crypto.ts](backend/src/lib/crypto.ts) — AES-256-GCM with a single
+  `MASTER_KEY` env var (64 hex chars / 32 bytes). Same key feeds Phase 2A
+  (LDAP bind passwords), Phase 2C (TOTP secrets), and Phase 3B (webhook
+  secrets) — the operator backs it up alongside the database.
+- Throws on first use if `MASTER_KEY` is missing, with a generation command
+  in the error message. Optional at boot, so deployments not using
+  encryption-touching features need no extra setup.
+
+### Schema
+
+- New `Directory` + `DirectoryGroupMapping` models. Migration
+  `20260523090000_add_directory` — additive/nullable only, no destructive
+  changes to existing data.
+- `User.passwordHash` is now nullable — LDAP users have no local password.
+- `User.directoryId` + `User.externalId` (+ unique on the pair) link an
+  account to its source-of-truth directory.
+- `Team.directoryId` for teams that will be wholly directory-managed (the
+  membership-sync side lands when 2C/group sync work matures).
+
+### Authz helpers reused from v1.3.0
+
+The settings shell already shipped `requireGlobalAdmin` /
+`requireTeamManager` / `requireSelf`. The new directory routes are mounted
+under that same admin gate.
+
+### LDAP integration
+
+- New [LdapService](backend/src/services/ldapService.ts) using `ldapts`.
+  Search-then-bind: connect → admin-bind → search by `emailAttr` for the
+  user → rebind as the found DN with the supplied password → enumerate
+  group DNs the user belongs to. RFC 4515 escaping on all user-controlled
+  filter input (`\`, `*`, `(`, `)`, NUL).
+- New [DirectoryService](backend/src/services/directoryService.ts) for CRUD
+  plus at-rest encryption of `bindPassword`. The cipher-text column
+  `bindPasswordEnc` NEVER appears in any response schema — Zod's response
+  shape excludes it entirely, surfacing `hasBindPassword: boolean` instead.
+
+### Login flow
+
+`authService.login` now branches three ways:
+
+- User exists locally with `directoryId = null` → legacy argon2 check.
+- User exists locally with `directoryId` set → LDAP bind against that
+  directory; on success, the email/name/externalId fields are re-synced
+  from LDAP and group mappings re-applied.
+- No local user → walk every active `kind: LDAP` directory with `allowJIT`
+  set; on the first successful bind, create the local `User` row with
+  `passwordHash = null` and apply group mappings before issuing the
+  session. First-ever user becomes ADMIN (matches `register()`).
+
+Group → role mapping logic, when `Directory.syncRolesFromGroups = true`:
+
+- Map's `globalRole` overrides the user's instance-wide role. ADMIN beats
+  MEMBER if multiple groups match.
+- Map's `(teamId, teamRole)` upserts a `TeamMembership`.
+- A directory's mapped teams that the user no longer qualifies for have
+  their `TeamMembership` removed — so dropping out of an LDAP group revokes
+  team access on the next login.
+
+### CRUD surface
+
+- `POST/GET/PATCH/DELETE /api/settings/directories/...` — directory CRUD.
+- `POST /api/settings/directories/:id/test` — admin-driven bind +
+  small-sample search, returns `{ ok, message, sampleUserCount }`.
+- `GET/POST/DELETE /api/settings/directories/:id/mappings/...` — group →
+  role mapping CRUD.
+
+### Frontend
+
+- Settings → Directories sub-page replaces the v1.3.0 placeholder
+  ([DirectoriesPage.tsx](frontend/src/pages/settings/DirectoriesPage.tsx)).
+  Create, edit, delete, and "Test" buttons; full attribute-mapping form
+  with sensible defaults (uid/mail/cn/member). Edit form leaves the bind
+  password empty and only sends it when the admin retypes it.
+- `AuthUser` interface gains `directoryId` + `externalId` so future
+  features (Phase 2C / Phase 3) can disable local-only actions on
+  directory-owned accounts.
+
+### Test infrastructure
+
+- New `openldap` service in [docker-compose.yml](docker-compose.yml) under
+  the `ldap` profile (`docker compose --profile ldap up -d openldap`).
+- Same image pinned in
+  [.github/workflows/test.yml](.github/workflows/test.yml) as a service
+  container so CI exercises the real LDAP path.
+- New [tests/integration/ldap.test.ts](backend/tests/integration/ldap.test.ts)
+  — 5 cases covering JIT-provision with group-mapping ADMIN, JIT-provision
+  with group-mapping MEMBER, wrong password (401), no-such-user (401), and
+  group-less user keeping default MEMBER. The test seeds the directory
+  via `ldapts` at suite start so it works against either CI's ephemeral
+  service container or a long-lived dev container.
+
+### Verified
+
+- Backend suite: **122/122** (was 117 → +5 LDAP).
+- Frontend build: clean.
+- Live smoke against the running stack: directory create → `/test`
+  (3 sample users found) → `/auth/login` as `alice@taskhub.local`
+  with the LDAP password → JIT-creates the `User` row with
+  `directoryId` set, `externalId = uid=alice,ou=People,dc=taskhub,dc=local`,
+  no local password. `bindPasswordEnc` does not appear in any response
+  body.
+
+### Known limitations / Phase 2A boundary
+
+- When a local user with an email matching an LDAP user already exists,
+  the local-password path takes precedence — by design, but admins
+  migrating onto LDAP need to delete or re-link those rows manually for
+  now. A "convert this user to LDAP" admin action lands in a later phase.
+- SCIM is reserved on the `DirectoryKind` enum but not implemented; Phase
+  2B builds on the same `Directory` table.
+- The `Team.directoryId` column is plumbed end-to-end but no logic yet
+  makes a directory-managed team behave differently. That logic lands
+  alongside Phase 2B's SCIM sync.
+
 ## [1.3.0] — 2026-05-23
 
 Phase 1 of the Settings surface — shell only. Adds the foundation for

@@ -5,6 +5,10 @@ export interface AuthUser {
   email: string;
   name: string;
   globalRole: 'ADMIN' | 'MEMBER';
+  // Phase 2A: non-null when the account is owned by a Directory (LDAP/SCIM).
+  // Frontend uses this to hide "change password" + similar local-only actions.
+  directoryId: string | null;
+  externalId: string | null;
   createdAt: string;
 }
 

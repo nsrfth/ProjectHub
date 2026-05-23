@@ -31,6 +31,20 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # OpenLDAP fixture for the LDAP integration test. The image auto-loads
+      # any .ldif files mounted in /ldifs/* on first boot — we mount the
+      # repo's docker/openldap directory via the `LDAP_CUSTOM_LDIF_DIR` env
+      # AND the actions/checkout step (which runs before this service is
+      # used, but services start in parallel — so we can't mount a workspace
+      # path here; the test seeds via ldapts at runtime as a fallback).
+      openldap:
+        image: osixia/openldap:1.5.0
+        env:
+          LDAP_ORGANISATION: TaskHub
+          LDAP_DOMAIN: taskhub.local
+          LDAP_ADMIN_PASSWORD: adminpass
+        ports:
+          - 1389:389
 
     env:
       DATABASE_URL: postgresql://taskhub:testpass@localhost:5432/taskhub_test?schema=public
@@ -47,6 +61,14 @@ jobs:
       # High limit so the test suite's many register/login calls don't 429.
       AUTH_RATE_LIMIT_MAX: '100000'
       AUTH_RATE_LIMIT_WINDOW: 1 minute
+      # 64-hex-char dummy key for the LDAP integration test (encrypts the
+      # OpenLDAP bind password before storing). NOT a real secret.
+      MASTER_KEY: '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
+      # LDAP fixture target — the test seeds entries via ldapts at startup.
+      LDAP_TEST_URL: ldap://localhost:1389
+      LDAP_TEST_BIND_DN: 'cn=admin,dc=taskhub,dc=local'
+      LDAP_TEST_BIND_PASSWORD: adminpass
+      LDAP_TEST_BASE_DN: 'dc=taskhub,dc=local'
 
     defaults:
       run:

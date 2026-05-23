@@ -52,6 +52,7 @@ services:
       UPLOAD_DIR: ${UPLOAD_DIR}
       AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX}
       AUTH_RATE_LIMIT_WINDOW: ${AUTH_RATE_LIMIT_WINDOW}
+      MASTER_KEY: ${MASTER_KEY}
     volumes:
       - uploads_data:/app/uploads
     expose:
@@ -85,6 +86,24 @@ services:
       - frontend_dist:/srv/www:ro
       - caddy_data:/data
       - caddy_config:/config
+
+  # Local OpenLDAP for development + the LDAP integration test. Gated by the
+  # `ldap` profile so a plain `docker compose up` doesn't start it.
+  # Bring it up explicitly with: docker compose --profile ldap up -d openldap
+  openldap:
+    image: osixia/openldap:1.5.0
+    profiles: ['ldap']
+    environment:
+      LDAP_ORGANISATION: TaskHub
+      # Auto-derives baseDN = dc=taskhub,dc=local.
+      LDAP_DOMAIN: taskhub.local
+      LDAP_ADMIN_PASSWORD: adminpass
+    # No LDIF mount — the integration test seeds entries via ldapts at
+    # suite start, which works for both this dev container and the
+    # ephemeral CI service container. The .ldif file under docker/openldap/
+    # is kept as human-readable documentation of the expected fixture.
+    ports:
+      - "1389:389"
 
 volumes:
   postgres_data:
