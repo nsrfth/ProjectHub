@@ -127,6 +127,12 @@ function RecurrenceSummary({
 }
 
 function describeRule(rec: Recurrence): string {
+  // QUARTERLY uses its own pluralisation because 'quarters' reads better
+  // than 'quarterlys' and 'every 1 quarterly' sounds odd. The QUARTERLY
+  // case also short-circuits the WEEKLY-byWeekday branch below.
+  if (rec.frequency === 'QUARTERLY') {
+    return rec.interval === 1 ? 'Every quarter' : `Every ${rec.interval} quarters`;
+  }
   const unit = ({
     DAILY: 'day', WEEKLY: 'week', MONTHLY: 'month', YEARLY: 'year',
   } as const)[rec.frequency];
@@ -193,6 +199,7 @@ function RecurrenceForm({
             <option value="DAILY">Daily</option>
             <option value="WEEKLY">Weekly</option>
             <option value="MONTHLY">Monthly</option>
+            <option value="QUARTERLY">Quarterly</option>
             <option value="YEARLY">Yearly</option>
           </select>
         </label>

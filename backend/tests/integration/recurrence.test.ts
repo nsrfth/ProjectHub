@@ -260,6 +260,29 @@ describe('spawnDue', () => {
     expect(t.active).toBe(false);
   });
 
+  it('QUARTERLY advances by 3 months per occurrence', async () => {
+    const { token, teamId, projectId } = await setup();
+    const sourceId = await createTask(token, teamId, projectId, 'QBR');
+    await prisma.taskTemplate.create({
+      data: {
+        sourceTaskId: sourceId, frequency: 'QUARTERLY', interval: 1, byWeekday: [],
+        startsOn: utcDate(2026, 1, 1), nextRunAt: utcDate(2026, 1, 1),
+      },
+    });
+    const svc = new TaskTemplatesService();
+    await svc.spawnDue(utcDate(2026, 1, 2));
+    let t = (await prisma.taskTemplate.findFirst())!;
+    expect(t.spawnedCount).toBe(1);
+    // Jan 1 + 3 months → Apr 1.
+    expect(t.nextRunAt.toISOString().slice(0, 10)).toBe('2026-04-01');
+
+    // Tick past Apr 1; second spawn moves to Jul 1.
+    await svc.spawnDue(utcDate(2026, 4, 2));
+    t = (await prisma.taskTemplate.findFirst())!;
+    expect(t.spawnedCount).toBe(2);
+    expect(t.nextRunAt.toISOString().slice(0, 10)).toBe('2026-07-01');
+  });
+
   it('stops at endsOn', async () => {
     const { token, teamId, projectId } = await setup();
     const sourceId = await createTask(token, teamId, projectId, 'until');

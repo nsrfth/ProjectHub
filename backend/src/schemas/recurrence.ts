@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const recurrenceFrequency = z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY']);
+export const recurrenceFrequency = z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY']);
 
 // Day-of-week ints follow JS Date.getUTCDay() — 0=Sun…6=Sat.
 const weekdayInt = z.number().int().min(0).max(6);

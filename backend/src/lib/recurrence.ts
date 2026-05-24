@@ -73,6 +73,10 @@ export function nextOccurrenceAfter(rule: RecurrenceRule, current: Date): Date {
     case 'MONTHLY':
       return addMonths(c, step);
 
+    case 'QUARTERLY':
+      // 3 months per quarter; `interval` lets you do "every 2 quarters" etc.
+      return addMonths(c, step * 3);
+
     case 'YEARLY':
       return addYears(c, step);
   }

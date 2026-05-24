@@ -1,6 +1,6 @@
 import { api } from '@/lib/api';
 
-export type RecurrenceFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+export type RecurrenceFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
 
 export interface Recurrence {
   id: string;

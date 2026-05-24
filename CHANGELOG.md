@@ -4,6 +4,25 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] — 2026-05-24
+
+QUARTERLY recurrence frequency. Mathematically equivalent to MONTHLY
+with `interval=3` but a first-class enum value so the UI shows
+"Quarterly" instead of asking admins to interpret "every 3 months".
+
+- `RecurrenceFrequency` enum gains `QUARTERLY` (ordered between MONTHLY
+  and YEARLY). Migration `20260523220000_recurrence_quarterly` —
+  `ALTER TYPE ... ADD VALUE 'QUARTERLY' BEFORE 'YEARLY'`. Additive,
+  zero-downtime on Postgres 12+.
+- [lib/recurrence.ts](backend/src/lib/recurrence.ts) `nextOccurrenceAfter`
+  handles QUARTERLY as `addMonths(current, step * 3)`, so `interval=2`
+  becomes "every 2 quarters" (6 months) as expected.
+- Zod schema + frontend type + dropdown + summary humaniser all updated.
+- One new integration test: QUARTERLY tick on Jan 1 → next run = Apr 1
+  → next tick → next run = Jul 1. Suite: **161/161** (was 160 → +1).
+- Live smoke verified end-to-end: rule starting Jan 1 2026, anchored to
+  today (May 24), first tick spawned + advanced `nextRunAt` to Aug 24.
+
 ## [1.9.0] — 2026-05-23
 
 Phase 4 — Recurring tasks. A task can now carry a recurrence rule; the

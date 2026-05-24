@@ -287,6 +287,11 @@ enum RecurrenceFrequency {
   DAILY
   WEEKLY
   MONTHLY
+  // 3-month cadence — useful for OKR/QBR rituals. Equivalent to MONTHLY
+  // with interval=3 mathematically, but a first-class enum value lets the
+  // UI show "Quarterly" instead of forcing admins to interpret 'every 3
+  // months'.
+  QUARTERLY
   YEARLY
 }
 
