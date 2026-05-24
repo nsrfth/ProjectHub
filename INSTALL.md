@@ -478,6 +478,10 @@ docker compose --project-name taskhub-test down -v
 
 ## Upgrading
 
+The full upgrade guide — including the data-safety guarantees, rollback
+path, and what every release does to your volumes — lives in
+[UPGRADE.md](UPGRADE.md). Quick version:
+
 1. **Back up first.** `pg_dump` per [BACKUP.md](BACKUP.md), and snapshot the
    `uploads_data` volume.
 2. **Pull the new tag.**

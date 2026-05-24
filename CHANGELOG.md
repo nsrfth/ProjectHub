@@ -57,6 +57,78 @@ Opt-in "update available" check.
 - Cache is in-memory per replica. In a multi-replica deploy each backend
   gets its own GitHub call; harmless at ~4 calls/day/replica.
 
+## [1.17.0] — 2026-05-24
+
+Project Accountable field · dark-theme sweep · upgrade-safety doc.
+
+### Schema
+
+- `Project.accountableId` (nullable, FK → User, ON DELETE SET NULL) +
+  matching index. Migration `20260524130000_project_accountable`,
+  additive — existing rows get `accountableId = NULL`.
+
+### Backend
+
+- `services/projectsService.ts` — accept `accountableId` on create + update;
+  validate the chosen user is a member of the same team (returns 400
+  otherwise). All read shapes (`list`, `get`, `update`) eagerly join
+  `accountable.name` so the wire response carries `accountableName`
+  alongside the id and the UI doesn't need a second round-trip.
+- Zod schemas (`createProjectBody`, `updateProjectBody`, `projectResponse`)
+  extended with the new optional field. PATCH with `accountableId: null`
+  clears the field; omitting it leaves the value as-is.
+- 5 new integration tests covering create-with-accountable, create-with-
+  non-member-400, list joins, PATCH-clears, and backwards-compat create.
+
+### Frontend
+
+- `pages/ProjectsPage.tsx` — Accountable dropdown in the create-project
+  form, and an inline per-project selector in the list (visible to
+  owners + managers, same gate as Delete). Read-only label "Accountable:
+  Tech Name" for everyone else. Re-uses `getTeam(teamId)` for the member
+  list, cached 30 s by React Query.
+- **Dark-mode sweep.** New safety-net stylesheet in `index.css` that maps
+  unthemed `bg-white` / `text-slate-N` / `border-slate-N` / inputs to
+  dark-friendly values inside `.dark`, using `:where(:not([class*="dark:..."]))`
+  selectors so any component that already opted into a different dark
+  colour wins. Caught the entire "deep-page polish" deferral from v1.13:
+  ProjectsPage, TasksPage, TaskDetailPage, TeamsPage, AdminPage,
+  ReportsPage, CalendarPage, RegisterPage now render correctly in dark
+  mode without per-file edits. ProjectsPage and RegisterPage also got
+  explicit per-element dark variants where the safety net wasn't enough
+  (form inputs, action buttons).
+
+### Docs
+
+- New [UPGRADE.md](UPGRADE.md) — formalises the data-safety guarantees
+  the project has always followed: persistent state in named volumes,
+  additive-only migrations, only `docker compose down -v` is destructive.
+  Covers the standard upgrade flow, what survives each compose command,
+  before/after checklists, rollback, multi-release jumps, and the three
+  commands that DO delete data so they don't surprise anyone.
+- README points at UPGRADE.md alongside INSTALL.md. INSTALL.md's
+  "Upgrading" section now references UPGRADE.md for the full version.
+
+### Verified
+
+- Backend typecheck clean · frontend build clean · 15 project tests pass
+  (10 existing + 5 new).
+- Live admin probe: `GET /api/teams/:teamId/projects` returns
+  `accountableId` + `accountableName` fields (null on legacy rows from
+  the seed, as designed).
+- Docker stack redeployed: backend + frontend rebuilt and serving the
+  new code.
+
+### Phase boundary
+
+- Accountable is currently visible only on the Projects page. Showing it
+  on TaskDetailPage / TasksPage as breadcrumb context is the obvious
+  next iteration.
+- Dark-mode safety net is conservative — it only overrides classes when
+  no `dark:` variant exists for that property. A few rare components may
+  still have low-contrast text where a `dark:text-X` was set but to the
+  wrong shade; surface any specific page and I'll do a per-element pass.
+
 ## Unreleased
 
 ### Tooling

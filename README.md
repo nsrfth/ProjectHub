@@ -38,8 +38,9 @@ Visit `http://<host>/` for the SPA and `http://<host>/api/docs` for the
 OpenAPI / Swagger UI.
 
 **For the full install walkthrough** — every env var, optional integrations
-(SMTP / LDAP / SCIM / webhooks), background schedulers, upgrades, and
-troubleshooting — see [INSTALL.md](INSTALL.md).
+(SMTP / LDAP / SCIM / webhooks), background schedulers, and troubleshooting —
+see [INSTALL.md](INSTALL.md). **Upgrading?** See [UPGRADE.md](UPGRADE.md) for
+the data-safety guarantees, rollback path, and step-by-step flow.
 
 ## Quick start (local development)
 

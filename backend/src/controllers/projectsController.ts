@@ -20,6 +20,8 @@ function serialize(p: {
   teamId: string;
   // Nullable because admin can SetNull when deleting the owning user.
   ownerId: string | null;
+  accountableId: string | null;
+  accountableName: string | null;
   name: string;
   description: string | null;
   status: string;

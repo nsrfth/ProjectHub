@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.16.0** (2026-05-24)
+Version **v1.17.0** (2026-05-24)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -92,7 +92,7 @@ The buttons appear on every signed-in route so you can always reach help / conte
 - **Teams** page — click the team-name dropdown on the dashboard or go to `/teams`. Lists every team you belong to and lets you switch the "current team" (drives what the kanban / reports / settings show).
 - **Create a team** — click **New team**, give it a name + slug (URL-safe, dash-delimited, e.g. `growth-eng`).
 - **Invite a member** — open the team detail, type their email, pick role `MEMBER` or `MANAGER`. (Only `MANAGER`s can invite.)
-- **Projects** page — once you're inside a team, click **Projects** to see the team's projects. New project: name + optional description.
+- **Projects** page — once you're inside a team, click **Projects** to see the team's projects. New project: name + optional description + **Accountable** (v1.17 — the team member on the hook for this project's outcomes, in RACI terms; optional). Owners + managers can change Accountable inline on the project list.
 
 > Directory-managed teams (set up via LDAP/SCIM by an admin) have their membership synced from the IdP — manual invites are disabled there.
 

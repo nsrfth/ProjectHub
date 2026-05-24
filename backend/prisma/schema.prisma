@@ -213,6 +213,7 @@ model User {
 
   memberships    TeamMembership[]
   ownedProjects  Project[]        @relation("ProjectOwner")
+  accountableForProjects Project[] @relation("ProjectAccountable")
   assignedTasks  Task[]           @relation("TaskAssignee")
   createdTasks   Task[]           @relation("TaskCreator")
   comments       Comment[]
@@ -300,23 +301,30 @@ model TeamMembership {
 }
 
 model Project {
-  id          String        @id @default(cuid())
-  teamId      String
-  ownerId     String?
-  name        String
-  description String?
-  status      ProjectStatus @default(ACTIVE)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  team        Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  id            String        @id @default(cuid())
+  teamId        String
+  ownerId       String?
+  // v1.17: "Accountable" in RACI terms — the person on the hook for this
+  // project's outcomes. Distinct from the owner (often the manager who
+  // maintains it). Nullable so the field stays optional; SetNull on user
+  // delete so we don't cascade-nuke projects.
+  accountableId String?
+  name          String
+  description   String?
+  status        ProjectStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  team          Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
   // ownerId is nullable + SetNull so admins can delete a user without
   // cascading the deletion to every project they own. The project then shows
   // "owner: (deleted user)" in the UI until a manager reassigns it.
-  owner       User?         @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  tasks       Task[]
+  owner         User?         @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  accountable   User?         @relation("ProjectAccountable", fields: [accountableId], references: [id], onDelete: SetNull)
+  tasks         Task[]
 
   @@index([teamId, status])
   @@index([ownerId])
+  @@index([accountableId])
 }
 
 enum RecurrenceFrequency {

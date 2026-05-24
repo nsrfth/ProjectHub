@@ -62,6 +62,11 @@ services:
       PUBLIC_APP_URL: ${PUBLIC_APP_URL}
       UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED}
       UPDATE_CHECK_CACHE_HOURS: ${UPDATE_CHECK_CACHE_HOURS}
+      # Identifies the running build to the About page + update check.
+      # Set in .env (e.g. TASKHUB_VERSION=v1.16.0) so the deploy reports
+      # the right tag. Empty string is fine — the backend falls back to "dev".
+      TASKHUB_VERSION: ${TASKHUB_VERSION:-}
+      TASKHUB_BUILD_TIME: ${TASKHUB_BUILD_TIME:-}
     volumes:
       - uploads_data:/app/uploads
     expose:

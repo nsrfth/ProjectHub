@@ -1,3 +1,82 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * v1.17: dark-mode safety net.
+ *
+ * Many older components were written before dark mode landed and use
+ * `bg-white` / `text-slate-N` / `border-slate-N` without a `dark:` override.
+ * Rather than touch every component file, this stylesheet remaps those
+ * utility classes inside `.dark` to dark-friendly values.
+ *
+ * The `:where(:not([class*="dark:..."]))` guard means a component that
+ * explicitly opted into a different dark colour (e.g.
+ * `bg-white dark:bg-slate-800`) wins — the safety net only fires when
+ * no dark variant was specified.
+ *
+ * The :where() pseudo-class contributes zero specificity, so the safety
+ * net loses to any explicit utility — including Tailwind's own
+ * `dark:bg-X` rules.
+ */
+.dark .bg-white:where(:not([class*="dark:bg-"])) {
+  background-color: rgb(30 41 59); /* slate-800 */
+}
+.dark .bg-slate-50:where(:not([class*="dark:bg-"])) {
+  background-color: rgb(30 41 59);
+}
+.dark .bg-slate-100:where(:not([class*="dark:bg-"])) {
+  background-color: rgb(51 65 85); /* slate-700 */
+}
+
+.dark .text-slate-900:where(:not([class*="dark:text-"])) {
+  color: rgb(241 245 249); /* slate-100 */
+}
+.dark .text-slate-800:where(:not([class*="dark:text-"])) {
+  color: rgb(241 245 249);
+}
+.dark .text-slate-700:where(:not([class*="dark:text-"])) {
+  color: rgb(226 232 240); /* slate-200 */
+}
+.dark .text-slate-600:where(:not([class*="dark:text-"])) {
+  color: rgb(203 213 225); /* slate-300 */
+}
+.dark .text-slate-500:where(:not([class*="dark:text-"])) {
+  color: rgb(148 163 184); /* slate-400 */
+}
+.dark .text-slate-400:where(:not([class*="dark:text-"])) {
+  color: rgb(100 116 139); /* slate-500 — still subtle but legible */
+}
+
+.dark .border-slate-200:where(:not([class*="dark:border-"])) {
+  border-color: rgb(51 65 85); /* slate-700 */
+}
+.dark .border-slate-300:where(:not([class*="dark:border-"])) {
+  border-color: rgb(71 85 105); /* slate-600 */
+}
+
+/* Inputs / textareas / selects almost always inherit border-slate-300 but
+   are missing the matching dark bg + text. Rather than touch every input
+   in the codebase, target them generically when they sit inside .dark.
+   Components that explicitly themed already win via the :where() guard. */
+.dark input[type="text"]:where(:not([class*="dark:bg-"])):not([readonly]),
+.dark input[type="email"]:where(:not([class*="dark:bg-"])):not([readonly]),
+.dark input[type="password"]:where(:not([class*="dark:bg-"])):not([readonly]),
+.dark input[type="number"]:where(:not([class*="dark:bg-"])):not([readonly]),
+.dark input[type="search"]:where(:not([class*="dark:bg-"])):not([readonly]),
+.dark input[type="url"]:where(:not([class*="dark:bg-"])):not([readonly]),
+.dark input[type="tel"]:where(:not([class*="dark:bg-"])):not([readonly]),
+.dark input[type="date"]:where(:not([class*="dark:bg-"])):not([readonly]),
+.dark input[type="datetime-local"]:where(:not([class*="dark:bg-"])):not([readonly]),
+.dark textarea:where(:not([class*="dark:bg-"])),
+.dark select:where(:not([class*="dark:bg-"])) {
+  background-color: rgb(51 65 85); /* slate-700 */
+  color: rgb(241 245 249);
+}
+
+/* Divide-y dividers default to slate-200 in Tailwind — barely visible on
+   dark backgrounds. Override to slate-700 unless an explicit dark variant
+   exists. */
+.dark .divide-y:where(:not([class*="dark:divide-"])) > :not([hidden]) ~ :not([hidden]) {
+  border-top-color: rgb(51 65 85); /* slate-700 */
+}
