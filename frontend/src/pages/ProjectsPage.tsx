@@ -79,23 +79,13 @@ export default function ProjectsPage(): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen p-8 max-w-4xl mx-auto">
-      <header className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Projects</h1>
-          <p className="text-sm text-slate-500">
-            in <span className="font-medium">{currentTeam.name}</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link to="/reports" className="text-sm underline text-slate-600">
-            Reports
-          </Link>
-          <Link to="/dashboard" className="text-sm underline">
-            Back to dashboard
-          </Link>
-        </div>
-      </header>
+    <div className="p-8 max-w-4xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold">Projects</h1>
+        <p className="text-sm text-slate-500">
+          in <span className="font-medium">{currentTeam.name}</span>
+        </p>
+      </div>
 
       <section className="bg-white rounded shadow p-4 mb-6">
         <h2 className="text-sm font-medium mb-2">New project</h2>

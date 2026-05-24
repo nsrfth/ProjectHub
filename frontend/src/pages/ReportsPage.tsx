@@ -88,18 +88,13 @@ export default function ReportsPage(): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen p-8 max-w-5xl mx-auto">
-      <header className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Reports</h1>
-          <p className="text-sm text-slate-500">
-            in <span className="font-medium">{currentTeam.name}</span>
-          </p>
-        </div>
-        <Link to="/dashboard" className="text-sm underline">
-          Back to dashboard
-        </Link>
-      </header>
+    <div className="p-8 max-w-5xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold">Reports</h1>
+        <p className="text-sm text-slate-500">
+          in <span className="font-medium">{currentTeam.name}</span>
+        </p>
+      </div>
 
       {/* Status snapshot — four small counters above the detailed sections. */}
       {summary && (

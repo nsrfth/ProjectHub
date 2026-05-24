@@ -1,4 +1,4 @@
-import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
 import { useT } from '@/lib/i18n';
@@ -79,13 +79,8 @@ export default function SettingsLayout(): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen p-8 max-w-5xl mx-auto">
-      <header className="mb-6">
-        <Link to="/dashboard" className="text-sm underline">
-          {t('nav.backToDashboard')}
-        </Link>
-        <h1 className="text-2xl font-semibold mt-2">{t('settings.title')}</h1>
-      </header>
+    <div className="p-8 max-w-5xl mx-auto">
+      <h1 className="text-2xl font-semibold mb-6">{t('settings.title')}</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6">
         <nav className="bg-white dark:bg-slate-800 rounded shadow p-2 h-fit">

@@ -153,16 +153,13 @@ export default function CalendarPage(): JSX.Element {
   }).format(cursor);
 
   return (
-    <div className="min-h-screen p-8 max-w-6xl mx-auto">
-      <header className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Calendar</h1>
-          <p className="text-sm text-slate-500">
-            in <span className="font-medium">{currentTeam.name}</span> · tasks across every project
-          </p>
-        </div>
-        <Link to="/dashboard" className="text-sm underline">Back to dashboard</Link>
-      </header>
+    <div className="p-8 max-w-6xl mx-auto">
+      <div className="mb-4">
+        <h1 className="text-2xl font-semibold">Calendar</h1>
+        <p className="text-sm text-slate-500">
+          in <span className="font-medium">{currentTeam.name}</span> · tasks across every project
+        </p>
+      </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <div className="flex border rounded overflow-hidden text-sm">

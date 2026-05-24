@@ -6,7 +6,7 @@ import { fetchSummary } from '@/features/reports/api';
 import { useT } from '@/lib/i18n';
 
 export default function DashboardPage(): JSX.Element {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const { teams, currentTeam, currentTeamId, setCurrentTeamId, loading } = useTeams();
   const t = useT();
 
@@ -19,25 +19,8 @@ export default function DashboardPage(): JSX.Element {
   });
 
   return (
-    <div className="min-h-screen p-8 max-w-3xl mx-auto">
-      <header className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-semibold">{t('dashboard.title')}</h1>
-        <div className="flex items-center gap-4">
-          {user?.globalRole === 'ADMIN' && (
-            <Link to="/admin" className="text-sm underline">
-              {t('nav.admin')}
-            </Link>
-          )}
-          {user && (
-            <Link to="/settings" className="text-sm underline">
-              {t('nav.settings')}
-            </Link>
-          )}
-          <button onClick={() => signOut()} className="text-sm underline">
-            {t('nav.signOut')}
-          </button>
-        </div>
-      </header>
+    <div className="p-8 max-w-3xl mx-auto">
+      <h1 className="text-2xl font-semibold mb-6">{t('dashboard.title')}</h1>
 
       <div className="bg-white dark:bg-slate-800 rounded shadow p-6 mb-6">
         <p className="text-sm text-slate-600 dark:text-slate-400">{t('dashboard.signedInAs')}</p>

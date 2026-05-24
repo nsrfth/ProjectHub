@@ -318,23 +318,21 @@ export default function TasksPage(): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen p-8 max-w-6xl mx-auto">
-      <header className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold">{project?.name ?? 'Tasks'}</h1>
+    <div className="p-8 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-6 gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold truncate">{project?.name ?? 'Tasks'}</h1>
           <p className="text-sm text-slate-500">
             in <span className="font-medium">{currentTeam.name}</span>
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          <Link to="/reports" className="text-sm underline text-slate-600">
-            Reports
-          </Link>
-          <Link to="/projects" className="text-sm underline">
-            ← Projects
-          </Link>
-        </div>
-      </header>
+        {/* Project context: a board belongs to one project — surface a quick
+            jump back to the Projects list since that's the immediate parent
+            in the URL hierarchy. The top nav handles dashboard / reports. */}
+        <Link to="/projects" className="text-sm underline whitespace-nowrap">
+          ← Projects
+        </Link>
+      </div>
 
       <section className="bg-white rounded shadow p-4 mb-6">
         <form onSubmit={onCreate} className="flex flex-wrap items-center gap-2">

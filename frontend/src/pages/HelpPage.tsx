@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getLanguage } from '@/lib/i18n';
@@ -47,11 +46,8 @@ export default function HelpPage(): JSX.Element {
   }, [lang]);
 
   return (
-    <div className="min-h-screen p-8 max-w-3xl mx-auto">
-      <header className="mb-6 flex items-center justify-between">
-        <Link to="/dashboard" className="text-sm underline">
-          ← Back to dashboard
-        </Link>
+    <div className="p-8 max-w-3xl mx-auto">
+      <div className="mb-6 flex items-center justify-end">
         <a
           href={manualUrlFor(lang)}
           target="_blank"
@@ -60,7 +56,7 @@ export default function HelpPage(): JSX.Element {
         >
           Open raw markdown
         </a>
-      </header>
+      </div>
 
       {!markdown && !error && (
         <p className="text-sm text-slate-500">Loading manual…</p>

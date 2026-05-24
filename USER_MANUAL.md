@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.14.0** (2026-05-24)
+Version **v1.15.0** (2026-05-24)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -58,6 +58,20 @@ You can be a global `MEMBER` and a team `MANAGER` at the same time — these are
 4. After signing in, the **Dashboard** shows your name, your global role, your teams, and quick links to **Admin** (admins only) and **Settings** (everyone).
 
 If your account is owned by an LDAP directory, you log in with your LDAP password — the form is identical.
+
+---
+
+## Top navigation (v1.15)
+
+Once you're signed in, a sticky **navigation bar** sits at the top of every page:
+
+- **TaskHub** (brand link, far left) — jumps to the Dashboard.
+- **Dashboard / Projects / Calendar / Reports / Teams** — your primary destinations. The active page is highlighted in dark.
+- **Admin** — visible only for global `ADMIN` accounts.
+- **Settings** (right side) — opens whichever Settings sub-page you last visited (defaults to **Preferences**).
+- **Sign out** (far right) — ends the session.
+
+The corner buttons (ℹ️ About / 📖 Help / 🔔 Notifications) stay in the top-right; the nav bar leaves room for them.
 
 ---
 

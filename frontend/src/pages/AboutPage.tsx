@@ -15,13 +15,8 @@ export default function AboutPage(): JSX.Element {
   });
 
   return (
-    <div className="min-h-screen p-8 max-w-2xl mx-auto">
-      <header className="mb-6">
-        <Link to="/dashboard" className="text-sm underline">
-          ← Back to dashboard
-        </Link>
-        <h1 className="text-2xl font-semibold mt-2">About TaskHub</h1>
-      </header>
+    <div className="p-8 max-w-2xl mx-auto">
+      <h1 className="text-2xl font-semibold mb-6">About TaskHub</h1>
 
       <section className="bg-white shadow rounded p-6 space-y-4">
         {isLoading && <p className="text-sm text-slate-500">Loading…</p>}

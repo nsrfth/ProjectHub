@@ -199,12 +199,15 @@ export default function TaskDetailPage(): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen p-8 max-w-4xl mx-auto">
-      <header className="mb-6">
+    <div className="p-8 max-w-4xl mx-auto">
+      {/* Contextual back-link to the parent board. The global TopNav handles
+          dashboard / projects / etc. — this just hops up one level in the
+          team → project → task hierarchy. */}
+      <div className="mb-6">
         <Link to={`/projects/${projectId}/tasks`} className="text-sm underline">
           ← Back to board
         </Link>
-      </header>
+      </div>
 
       {taskLoading && <p className="text-sm text-slate-500">Loading…</p>}
       {!taskLoading && !task && (

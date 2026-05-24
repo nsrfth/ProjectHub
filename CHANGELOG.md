@@ -4,6 +4,44 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] — 2026-05-24
+
+Persistent top navigation bar.
+
+### Frontend
+
+- New `features/nav/TopNav.tsx` — sticky bar at the top of every signed-in
+  page. Brand link → Dashboard, primary destinations (Dashboard / Projects /
+  Calendar / Reports / Teams), Admin link gated on `globalRole === 'ADMIN'`,
+  Settings + Sign out on the right. `<NavLink>` drives the active-pill state.
+  Right-padding (`pr-32`) keeps clear of the three fixed corner buttons
+  (About / Help / Notifications).
+- `ProtectedRoute` mounts the `TopNav` once so every authenticated route
+  picks it up automatically — no per-page boilerplate.
+- Per-page H1 rows trimmed across Dashboard, Reports, Calendar, Tasks,
+  Projects, Teams, Admin, Help, About, TaskDetail, Settings. Page-specific
+  controls (the new-task form, calendar view tabs, report window filters,
+  CSV export buttons, sub-page sub-nav in Settings) are unchanged — only
+  the redundant title row + "Back to dashboard" link disappear.
+- `Settings` link in the nav resolves to whatever Settings sub-page the
+  user is currently on (preserves deep-link state), or `/settings/preferences`
+  by default.
+
+### Verified
+
+- `npm run build` clean (typecheck + Vite production bundle).
+- `docker compose up --build frontend-build` redeployed the bundle to the
+  served `frontend_dist` volume; Caddy serves the new `index-tDGej8h1.js`
+  on the next request, no reload required.
+
+### Phase boundary
+
+- Nav is fully horizontal — no mobile hamburger collapse. Below ~640 px
+  the links will horizontally scroll inside their flex container; legible
+  but not ideal. A hamburger menu for narrow viewports is the obvious
+  next iteration.
+- No user avatar / account menu yet; Sign out is a bare text button.
+
 ## [1.14.0] — 2026-05-24
 
 SMTP email delivery and CSV exports for reports.

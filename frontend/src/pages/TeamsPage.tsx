@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import * as teamsApi from '@/features/teams/api';
@@ -70,18 +69,8 @@ export default function TeamsPage(): JSX.Element {
   const isManager = detail?.myRole === 'MANAGER';
 
   return (
-    <div className="min-h-screen p-8 max-w-4xl mx-auto">
-      <header className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-semibold">Teams</h1>
-        <div className="flex items-center gap-4">
-          <Link to="/reports" className="text-sm underline text-slate-600">
-            Reports
-          </Link>
-          <Link to="/dashboard" className="text-sm underline">
-            Back to dashboard
-          </Link>
-        </div>
-      </header>
+    <div className="p-8 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-semibold mb-6">Teams</h1>
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <aside className="md:col-span-1 bg-white rounded shadow p-4 space-y-4">
