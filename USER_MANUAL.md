@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.18.0** (2026-05-24)
+Version **v1.19.0** (2026-05-24)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 

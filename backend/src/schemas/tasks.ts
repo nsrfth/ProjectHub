@@ -27,6 +27,8 @@ export const updateTaskBody = z
     status: taskStatusEnum.optional(),
     priority: taskPriorityEnum.optional(),
     assigneeId: z.string().nullable().optional(),
+    // v1.19: gated server-side to team MANAGER / global ADMIN.
+    technicianId: z.string().nullable().optional(),
     dueDate: z.string().datetime().nullable().optional(),
     plannedDate: z.string().datetime().nullable().optional(),
     completedAt: z.string().datetime().nullable().optional(),
@@ -58,6 +60,9 @@ export const taskSubtaskResponse = z.object({
   taskId: z.string(),
   title: z.string(),
   done: z.boolean(),
+  // v1.19: subtask technician joined for the UI.
+  technicianId: z.string().nullable(),
+  technicianName: z.string().nullable(),
   position: z.number().int(),
 });
 
@@ -69,6 +74,10 @@ export const taskResponse = z.object({
   // (FK SetNull preserves task history).
   creatorId: z.string().nullable(),
   assigneeId: z.string().nullable(),
+  // v1.19: assigned Technician — distinct from assignee. Defaults to creator
+  // on create; changes gated to team MANAGER / global ADMIN.
+  technicianId: z.string().nullable(),
+  technicianName: z.string().nullable(),
   title: z.string(),
   description: z.string().nullable(),
   status: taskStatusEnum,

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
+import { getTeam } from '@/features/teams/api';
 import * as tasksApi from '@/features/tasks/api';
 import * as commentsApi from '@/features/comments/api';
 import * as activityApi from '@/features/activity/api';
@@ -116,6 +117,17 @@ export default function TaskDetailPage(): JSX.Element {
     enabled: !!teamId && !!projectId && !!taskId,
   });
 
+  // v1.19: team members feed the Technician dropdown for managers/admins.
+  // Fetched lazily — only when the viewer can actually change Technician.
+  const canChangeTechnician = isManager || user?.globalRole === 'ADMIN';
+  const { data: teamDetail } = useQuery({
+    queryKey: ['teams', 'detail', teamId],
+    queryFn: () => getTeam(teamId!),
+    enabled: !!teamId && canChangeTechnician,
+    staleTime: 30_000,
+  });
+  const teamMembers = teamDetail?.members ?? [];
+
   const { data: comments = [], isLoading: commentsLoading } = useQuery({
     queryKey: ['comments', taskId],
     queryFn: () => commentsApi.listComments(teamId!, projectId!, taskId!),
@@ -221,6 +233,13 @@ export default function TaskDetailPage(): JSX.Element {
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mb-3">
               <span className="uppercase tracking-wide">Status: {task.status}</span>
               <span className="uppercase tracking-wide">Priority: {task.priority}</span>
+              {/* v1.19: Technician — distinct from creator/assignee. Always
+                  visible to everyone for context; only managers/admins can
+                  reassign (the dropdown below). */}
+              <span className="uppercase tracking-wide">
+                Technician:{' '}
+                {task.technicianName ?? <span className="italic">unassigned</span>}
+              </span>
               {task.dueDate && (
                 <span>
                   Due by <span dir="rtl">{formatShamsiCalendarLong(task.dueDate)}</span>
@@ -244,6 +263,32 @@ export default function TaskDetailPage(): JSX.Element {
               <p className="text-sm text-slate-700 whitespace-pre-wrap">{task.description}</p>
             ) : (
               <p className="text-sm text-slate-400 italic">No description.</p>
+            )}
+
+            {/* v1.19: Technician reassignment — managers/admins only. The
+                backend gates this independently; the dropdown is here only
+                as a discoverability affordance. */}
+            {canChangeTechnician && (
+              <div className="mt-5 pt-4 border-t">
+                <h3 className="text-xs font-medium text-slate-600 mb-2">Technician</h3>
+                <select
+                  value={task.technicianId ?? ''}
+                  onChange={(e) =>
+                    updateTaskMut.mutate({
+                      technicianId: e.target.value || null,
+                    } as Partial<tasksApi.Task>)
+                  }
+                  disabled={updateTaskMut.isPending}
+                  className="text-sm rounded border border-slate-300 dark:border-slate-600 px-2 py-1 max-w-sm"
+                >
+                  <option value="">— Unassigned —</option>
+                  {teamMembers.map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {m.name} ({m.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
 
             <div className="mt-5 pt-4 border-t">

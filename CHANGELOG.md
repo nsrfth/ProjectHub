@@ -57,6 +57,63 @@ Opt-in "update available" check.
 - Cache is in-memory per replica. In a multi-replica deploy each backend
   gets its own GitHub call; harmless at ~4 calls/day/replica.
 
+## [1.19.0] — 2026-05-24
+
+Assigned Technician field on Task + Subtask.
+
+### Schema
+
+- `Task.technicianId` + `Subtask.technicianId` (both nullable, FK → User,
+  ON DELETE SET NULL). Matching indexes `Task(teamId, technicianId)` and
+  `Subtask(technicianId)`.
+- Migration `20260524140000_technician`: additive columns + FKs + a
+  backfill that sets `Task.technicianId = creatorId` and `Subtask.
+  technicianId = parentTask.technicianId` for existing rows. Existing
+  data is preserved.
+
+### Backend
+
+- `tasksService.create` / `subtasksService.create` default
+  `technicianId = creatorId` so the person who clicked "New task" is on
+  the hook by default.
+- `tasksService.update` / `subtasksService.update` now take
+  `(actorTeamRole, actorGlobalRole)` and gate technician changes:
+  - Members → 403 with friendly message
+  - Team MANAGERS + global ADMINS → allowed
+  - Target must be a member of the same team (400 otherwise) when not
+    clearing to null
+- Both controllers thread the resolved membership through; same pattern
+  as the v1.18 date-edit gate.
+- Read paths join `User.name` so `technicianName` is on the wire in
+  every list/get response — no second round-trip.
+
+### Frontend
+
+- `Task` + `TaskSubtask` types extended with `technicianId` +
+  `technicianName`.
+- TaskDetailPage: "Technician: \<name\>" badge in the metadata row,
+  always visible. Reassignment dropdown beneath the title — gated to
+  managers/admins (team members feed pre-fetched via `getTeam`).
+- `updateSubtask` API takes optional `technicianId` for future subtask
+  UI surfacing.
+
+### Tests
+
+- 6 new integration tests + 7 existing subtask + 14 existing task =
+  27/27 in the relevant files.
+
+### Verified
+
+- Backend + frontend typecheck clean.
+
+### Phase boundary
+
+- Subtask Technician change UI not surfaced yet — backend supports it,
+  needs a UI in `SubtaskList`. Small follow-up.
+- Reports don't yet pivot by Technician (Kanban-by-Technician lands in
+  v1.20.0 and that's the natural surface; a Reports breakdown can
+  follow if you want one).
+
 ## [1.18.0] — 2026-05-24
 
 Admin-controlled task-date editing restriction.

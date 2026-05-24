@@ -5,6 +5,10 @@ export interface Subtask {
   taskId: string;
   title: string;
   done: boolean;
+  // v1.19: subtask technician (defaults to creator on create; manager/admin
+  // only to change).
+  technicianId: string | null;
+  technicianName: string | null;
   position: number;
 }
 
@@ -27,7 +31,8 @@ export async function updateSubtask(
   projectId: string,
   taskId: string,
   subtaskId: string,
-  input: { title?: string; done?: boolean },
+  // v1.19: technicianId change gated server-side to manager/admin.
+  input: { title?: string; done?: boolean; technicianId?: string | null },
 ): Promise<Subtask> {
   return (
     await api.patch<Subtask>(

@@ -70,6 +70,9 @@ export interface TaskSubtaskView {
   taskId: string;
   title: string;
   done: boolean;
+  // v1.19: Subtask technician — same semantics as Task.technicianId.
+  technicianId: string | null;
+  technicianName: string | null;
   position: number;
 }
 
@@ -81,6 +84,11 @@ export interface TaskView {
   // to preserve the task's history. Frontend renders as "(deleted user)".
   creatorId: string | null;
   assigneeId: string | null;
+  // v1.19: "Assigned Technician" — the person actually doing the work.
+  // Defaults to creator at create-time; only team MANAGERS / global ADMINs
+  // can change it after. technicianName is joined for the UI.
+  technicianId: string | null;
+  technicianName: string | null;
   title: string;
   description: string | null;
   status: TaskStatus;
@@ -100,7 +108,13 @@ export interface TaskView {
 // keeps the includes hardcoded in one place.
 const TASK_INCLUDE = {
   labels: { include: { label: true } },
-  subtasks: { orderBy: { position: 'asc' } },
+  // v1.19: pull subtask technician name in the same query so the UI doesn't
+  // need to look up users separately. Same for the task itself below.
+  subtasks: {
+    orderBy: { position: 'asc' },
+    include: { technician: { select: { name: true } } },
+  },
+  technician: { select: { name: true } },
 } as const;
 
 function toView(row: Prisma.TaskGetPayload<{ include: typeof TASK_INCLUDE }>): TaskView {
@@ -110,6 +124,8 @@ function toView(row: Prisma.TaskGetPayload<{ include: typeof TASK_INCLUDE }>): T
     teamId: row.teamId,
     creatorId: row.creatorId,
     assigneeId: row.assigneeId,
+    technicianId: row.technicianId,
+    technicianName: row.technician?.name ?? null,
     title: row.title,
     description: row.description,
     status: row.status,
@@ -126,6 +142,8 @@ function toView(row: Prisma.TaskGetPayload<{ include: typeof TASK_INCLUDE }>): T
       taskId: s.taskId,
       title: s.title,
       done: s.done,
+      technicianId: s.technicianId,
+      technicianName: s.technician?.name ?? null,
       position: s.position,
     })),
   };
@@ -197,6 +215,9 @@ export class TasksService {
           projectId,
           creatorId,
           assigneeId: input.assigneeId ?? null,
+          // v1.19: creator becomes the default technician. Managers/admins
+          // can reassign post-create via update(); members are gated out.
+          technicianId: creatorId,
           title: input.title,
           description: input.description ?? null,
           status,
@@ -276,6 +297,9 @@ export class TasksService {
       status?: TaskStatus;
       priority?: TaskPriority;
       assigneeId?: string | null;
+      // v1.19: changing technicianId requires team MANAGER or global ADMIN.
+      // Undefined = leave as-is; explicit null = clear (also gated).
+      technicianId?: string | null;
       dueDate?: string | null;
       plannedDate?: string | null;
       completedAt?: string | null;
@@ -288,6 +312,23 @@ export class TasksService {
         where: { userId_teamId: { userId: input.assigneeId, teamId } },
       });
       if (!membership) throw Errors.badRequest('Assignee is not a member of this team');
+    }
+
+    // v1.19: technician change gate. Members can never change the technician
+    // (even to themselves). Managers/admins can — and the target must be a
+    // team member (skip the check when clearing to null).
+    if (input.technicianId !== undefined && input.technicianId !== existing.technicianId) {
+      if (actorTeamRole !== 'MANAGER' && actorGlobalRole !== 'ADMIN') {
+        throw Errors.forbidden(
+          'Only team managers or admins can change the assigned Technician',
+        );
+      }
+      if (input.technicianId !== null) {
+        const membership = await prisma.teamMembership.findUnique({
+          where: { userId_teamId: { userId: input.technicianId, teamId } },
+        });
+        if (!membership) throw Errors.badRequest('Technician is not a member of this team');
+      }
     }
 
     // v1.18: date-edit restriction. Only consulted when the caller is
@@ -396,6 +437,7 @@ export class TasksService {
             ...(input.status !== undefined && { status: input.status, position: nextPosition }),
             ...(input.priority !== undefined && { priority: input.priority }),
             ...(input.assigneeId !== undefined && { assigneeId: input.assigneeId }),
+            ...(input.technicianId !== undefined && { technicianId: input.technicianId }),
             ...(input.dueDate !== undefined && {
               dueDate: input.dueDate === null ? null : new Date(input.dueDate),
               // Reset the TASK_DUE notification flag whenever dueDate changes

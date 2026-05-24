@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type GlobalRole, type TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 
@@ -14,7 +14,25 @@ export interface SubtaskView {
   taskId: string;
   title: string;
   done: boolean;
+  technicianId: string | null;
+  technicianName: string | null;
   position: number;
+}
+
+const SUBTASK_INCLUDE = {
+  technician: { select: { name: true } },
+} as const;
+
+function toView(row: Prisma.SubtaskGetPayload<{ include: typeof SUBTASK_INCLUDE }>): SubtaskView {
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    title: row.title,
+    done: row.done,
+    technicianId: row.technicianId,
+    technicianName: row.technician?.name ?? null,
+    position: row.position,
+  };
 }
 
 export class SubtasksService {
@@ -33,6 +51,7 @@ export class SubtasksService {
     teamId: string,
     projectId: string,
     taskId: string,
+    creatorId: string,
     input: { title: string; done?: boolean },
   ): Promise<SubtaskView> {
     await this.ensureTaskInChain(teamId, projectId, taskId);
@@ -43,14 +62,18 @@ export class SubtasksService {
       select: { position: true },
     });
     const position = (last?.position ?? 0) + POSITION_GAP;
-    return prisma.subtask.create({
+    const created = await prisma.subtask.create({
       data: {
         taskId,
         title: input.title,
         done: input.done ?? false,
+        // v1.19: creator becomes the default technician (same rule as Task).
+        technicianId: creatorId,
         position,
       },
+      include: SUBTASK_INCLUDE,
     });
+    return toView(created);
   }
 
   async update(
@@ -58,19 +81,40 @@ export class SubtasksService {
     projectId: string,
     taskId: string,
     subtaskId: string,
-    input: { title?: string; done?: boolean },
+    actorTeamRole: TeamRole,
+    actorGlobalRole: GlobalRole,
+    input: { title?: string; done?: boolean; technicianId?: string | null },
   ): Promise<SubtaskView> {
     await this.ensureTaskInChain(teamId, projectId, taskId);
     const existing = await prisma.subtask.findUnique({ where: { id: subtaskId } });
     if (!existing || existing.taskId !== taskId) throw Errors.notFound('Subtask not found');
+
+    // v1.19: technician change gate. Same shape as Task — managers/admins only.
+    if (input.technicianId !== undefined && input.technicianId !== existing.technicianId) {
+      if (actorTeamRole !== 'MANAGER' && actorGlobalRole !== 'ADMIN') {
+        throw Errors.forbidden(
+          'Only team managers or admins can change the assigned Technician',
+        );
+      }
+      if (input.technicianId !== null) {
+        const membership = await prisma.teamMembership.findUnique({
+          where: { userId_teamId: { userId: input.technicianId, teamId } },
+        });
+        if (!membership) throw Errors.badRequest('Technician is not a member of this team');
+      }
+    }
+
     try {
-      return await prisma.subtask.update({
+      const updated = await prisma.subtask.update({
         where: { id: subtaskId },
         data: {
           ...(input.title !== undefined && { title: input.title }),
           ...(input.done !== undefined && { done: input.done }),
+          ...(input.technicianId !== undefined && { technicianId: input.technicianId }),
         },
+        include: SUBTASK_INCLUDE,
       });
+      return toView(updated);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw Errors.notFound('Subtask not found');
