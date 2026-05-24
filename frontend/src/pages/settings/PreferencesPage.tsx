@@ -189,26 +189,48 @@ function WorkweekSection(): JSX.Element {
       <p className="text-sm text-slate-600">
         Pick the days the instance treats as off-days. They appear in
         <span className="text-red-600 font-medium"> red </span>
-        on every date picker. Common conventions: Sat + Sun (Western),
-        Thu + Fri (Iranian / Gulf), Fri only (single rest day).
+        on every date picker.
       </p>
 
       {isLoading && <p className="text-xs text-slate-400">Loading…</p>}
 
-      <fieldset className="flex flex-wrap gap-3 text-sm">
-        {WEEKDAY_LABELS.map((label, idx) => (
-          <label key={idx} className="flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={draft.includes(idx)}
-              onChange={() => toggle(idx)}
-            />
-            <span className={draft.includes(idx) ? 'text-red-600 font-medium' : ''}>
-              {label}
-            </span>
-          </label>
-        ))}
-      </fieldset>
+      {/* v1.11.1: two one-click presets for the common conventions.
+          Sorted-array comparison via JSON keeps the active-state badge
+          stable across draft mutations. */}
+      <div className="flex flex-wrap gap-2">
+        <PresetButton
+          label="Saturday + Sunday off (Western)"
+          days={[0, 6]}
+          active={JSON.stringify(draft) === JSON.stringify([0, 6])}
+          onClick={() => setDraft([0, 6])}
+        />
+        <PresetButton
+          label="Thursday + Friday off (Iranian / Gulf)"
+          days={[4, 5]}
+          active={JSON.stringify(draft) === JSON.stringify([4, 5])}
+          onClick={() => setDraft([4, 5])}
+        />
+      </div>
+
+      <details className="text-sm">
+        <summary className="cursor-pointer text-slate-600">
+          Or pick custom days
+        </summary>
+        <fieldset className="flex flex-wrap gap-3 text-sm mt-2 pl-3">
+          {WEEKDAY_LABELS.map((label, idx) => (
+            <label key={idx} className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={draft.includes(idx)}
+                onChange={() => toggle(idx)}
+              />
+              <span className={draft.includes(idx) ? 'text-red-600 font-medium' : ''}>
+                {label}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      </details>
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
@@ -222,5 +244,27 @@ function WorkweekSection(): JSX.Element {
         </button>
       </div>
     </form>
+  );
+}
+
+// One-click workweek preset. `active` is purely visual; the parent owns
+// the draft state and decides what the active preset is by comparing
+// against its own draft.
+function PresetButton({
+  label, active, onClick,
+}: { label: string; days: number[]; active: boolean; onClick: () => void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        'text-sm rounded border px-3 py-1',
+        active
+          ? 'bg-slate-900 text-white border-slate-900'
+          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100',
+      ].join(' ')}
+    >
+      {label}
+    </button>
   );
 }

@@ -4,6 +4,23 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] — 2026-05-24
+
+Workweek presets. The v1.11.0 admin Workweek section is now driven by two
+one-click presets (the two conventions admins actually use); the 7-checkbox
+custom picker stays available as a `<details>` "Or pick custom days"
+disclosure.
+
+- **Saturday + Sunday off** — Western workweek (sets `calendar.weekend =
+  [0, 6]`).
+- **Thursday + Friday off** — Iranian / Gulf workweek (sets `[4, 5]`).
+- Active preset highlights so the current choice is unambiguous.
+- Custom subsets (Fri-only, M/W/F three-day weekends, …) still possible
+  via the disclosed checkboxes.
+
+No schema change, no backend change — pure UI polish on top of the
+v1.11.0 InstanceSetting key/JSON store.
+
 ## [1.11.0] — 2026-05-24
 
 Three small polish items: in-app user manual, About page, and an
