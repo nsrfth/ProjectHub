@@ -60,6 +60,15 @@ enum DirectoryKind {
   SCIM
 }
 
+// v1.10: per-user display calendar. Affects every place the frontend renders
+// a calendar date or timestamp. Default SHAMSI matches the pre-v1.10
+// behaviour (TaskHub is Persian-leaning by default); switching to GREGORIAN
+// is a one-checkbox change on Settings → Preferences.
+enum CalendarPreference {
+  SHAMSI
+  GREGORIAN
+}
+
 // External identity provider. Phase 2A handles LDAP; SCIM in 2B reuses this.
 // One Directory binds many Users (via User.directoryId/externalId).
 model Directory {
@@ -170,6 +179,10 @@ model User {
   // a code during setup. Both clear on disable.
   totpSecretEnc   String?
   totpEnabled     Boolean    @default(false)
+  // v1.10: display calendar preference. Read by the frontend at login,
+  // mirrored into localStorage, and applied to every date/timestamp the
+  // UI renders + the date pickers.
+  calendarPreference CalendarPreference @default(SHAMSI)
   emailVerifiedAt DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt

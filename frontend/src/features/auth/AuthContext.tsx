@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { setAccessToken } from '@/lib/api';
+import { adoptServerCalendar } from '@/lib/calendar';
 import * as authApi from './api';
 
 interface AuthState {
@@ -36,6 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
         if (cancelled) return;
         setAccessToken(res.accessToken);
         setUser(res.user);
+        // v1.10: sync the per-user calendar pref into localStorage so the
+        // formatters / picker pick it up immediately. Subsequent components
+        // mounting will see the right calendar.
+        adoptServerCalendar(res.user.calendarPreference);
       })
       .catch(() => {
         if (!cancelled) setUser(null);
@@ -59,17 +64,20 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
         }
         setAccessToken(res.accessToken);
         setUser(res.user);
+        adoptServerCalendar(res.user.calendarPreference);
         return { kind: 'ok' };
       },
       signInWith2fa: async (pendingToken, code) => {
         const res = await authApi.loginTwoFactor({ pendingToken, code });
         setAccessToken(res.accessToken);
         setUser(res.user);
+        adoptServerCalendar(res.user.calendarPreference);
       },
       signUp: async (email, name, password) => {
         const res = await authApi.register({ email, name, password });
         setAccessToken(res.accessToken);
         setUser(res.user);
+        adoptServerCalendar(res.user.calendarPreference);
       },
       signOut: async () => {
         await authApi.logout().catch(() => {});

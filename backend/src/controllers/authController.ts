@@ -183,4 +183,23 @@ export class AuthController {
       globalRole: req.user.globalRole,
     });
   };
+
+  // v1.10: per-user preferences. PATCH semantics — any omitted field is
+  // left as-is. Returns the updated subset so the frontend can mirror it
+  // into localStorage without a follow-up GET.
+  updatePreferences = async (
+    req: FastifyRequest<{ Body: { calendar?: 'SHAMSI' | 'GREGORIAN' } }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    const { prisma } = await import('../data/prisma.js');
+    const data: Record<string, unknown> = {};
+    if (req.body.calendar) data.calendarPreference = req.body.calendar;
+    const updated = await prisma.user.update({
+      where: { id: req.user.sub },
+      data,
+      select: { calendarPreference: true },
+    });
+    return reply.send({ calendar: updated.calendarPreference });
+  };
 }

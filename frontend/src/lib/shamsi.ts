@@ -1,6 +1,13 @@
 import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
+import { getCalendar } from './calendar';
+
+// v1.10: every formatter below branches on the active calendar. The
+// SHAMSI path is the existing Jalali code; the GREGORIAN path delegates
+// to native Intl + native Date so non-Persian-reading users see familiar
+// "May 22, 2026" / "2026-05-22 15:30" output. Toggling requires a page
+// reload (the Preferences page does it after saving).
 
 // Two date concepts the app must handle differently:
 //
@@ -61,8 +68,28 @@ function jalaaliFromUtc(iso: string): { jy: number; jm: number; jd: number } | n
   return { jy: obj.year, jm: obj.month.number, jd: obj.day };
 }
 
+// Gregorian short calendar date (UTC components → "2026-05-22").
+function formatGregorianCalendarDateUtc(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  const m = pad2(d.getUTCMonth() + 1);
+  const day = pad2(d.getUTCDate());
+  return `${y}-${m}-${day}`;
+}
+
+// Gregorian long calendar date (UTC components → "May 22, 2026").
+function formatGregorianCalendarLongUtc(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
+  }).format(d);
+}
+
 export function formatShamsiCalendarDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
+  if (getCalendar() === 'GREGORIAN') return formatGregorianCalendarDateUtc(iso);
   const j = jalaaliFromUtc(iso);
   if (!j) return null;
   return toPersianDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)}`);
@@ -70,6 +97,7 @@ export function formatShamsiCalendarDate(iso: string | null | undefined): string
 
 export function formatShamsiCalendarLong(iso: string | null | undefined): string | null {
   if (!iso) return null;
+  if (getCalendar() === 'GREGORIAN') return formatGregorianCalendarLongUtc(iso);
   const j = jalaaliFromUtc(iso);
   if (!j) return null;
   return toPersianDigits(`${j.jd} ${FA_MONTHS[j.jm - 1]} ${j.jy}`);
@@ -89,11 +117,28 @@ function jalaaliFromLocal(d: Date): { jy: number; jm: number; jd: number; h: num
   return { jy: obj.year, jm: obj.month.number, jd: obj.day, h: d.getHours(), mi: d.getMinutes() };
 }
 
-// `2026-05-22T15:30:00Z` → "۱۴۰۵/۰۳/۰۱ ۱۹:۰۰" (in Iran). Use for timestamp
-// fields where the time-of-day matters (comments, activity, notifications).
+// Gregorian timestamp (local components → "2026-05-22 15:30").
+function formatGregorianTimestampLocal(d: Date): string | null {
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth() + 1);
+  const day = pad2(d.getDate());
+  return `${y}-${m}-${day} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+// Gregorian date-only timestamp ("2026-05-22").
+function formatGregorianTimestampDateLocal(d: Date): string | null {
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// `2026-05-22T15:30:00Z` → "۱۴۰۵/۰۳/۰۱ ۱۹:۰۰" (in Iran) under SHAMSI,
+// "2026-05-22 19:00" under GREGORIAN. Use for timestamp fields where the
+// time-of-day matters (comments, activity, notifications).
 export function formatShamsiTimestamp(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
+  if (getCalendar() === 'GREGORIAN') return formatGregorianTimestampLocal(d);
   const j = jalaaliFromLocal(d);
   if (!j) return null;
   return toPersianDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)} ${pad2(j.h)}:${pad2(j.mi)}`);
@@ -104,6 +149,7 @@ export function formatShamsiTimestamp(iso: string | null | undefined): string | 
 export function formatShamsiTimestampDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
+  if (getCalendar() === 'GREGORIAN') return formatGregorianTimestampDateLocal(d);
   const j = jalaaliFromLocal(d);
   if (!j) return null;
   return toPersianDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)}`);
@@ -111,12 +157,22 @@ export function formatShamsiTimestampDate(iso: string | null | undefined): strin
 
 // ------- Relative time (local-time, Persian locale) ---------------------
 
-const rtf = new Intl.RelativeTimeFormat('fa-IR', { numeric: 'auto' });
+// Cached on first call per locale so we don't rebuild the Intl object on
+// every format. v1.10: two locales — Persian under SHAMSI, English under
+// GREGORIAN. The cache is keyed by locale string.
+const _rtfCache = new Map<string, Intl.RelativeTimeFormat>();
+function rtfFor(locale: string): Intl.RelativeTimeFormat {
+  let r = _rtfCache.get(locale);
+  if (!r) {
+    r = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+    _rtfCache.set(locale, r);
+  }
+  return r;
+}
 
-// "۵ دقیقه پیش" / "دیروز" / "هفته آینده" etc. Best for comment / activity /
-// notification timestamps where the reader cares about "how recent" more than
-// "exactly when". Falls back to the full Shamsi timestamp once the event is
-// older than ~30 days, where relative wording stops being useful.
+// "۵ دقیقه پیش" / "دیروز" / "هفته آینده" etc. (or "5 minutes ago" / "yesterday"
+// under Gregorian). Falls back to the full timestamp once the event is older
+// than ~30 days, where relative wording stops being useful.
 export function formatRelativeTime(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const then = new Date(iso).getTime();
@@ -125,6 +181,8 @@ export function formatRelativeTime(iso: string | null | undefined): string | nul
   const absDays = Math.abs(diffMs) / (24 * 60 * 60 * 1000);
   if (absDays > 30) return formatShamsiTimestamp(iso);
 
+  const locale = getCalendar() === 'GREGORIAN' ? 'en-US' : 'fa-IR';
+  const rtf = rtfFor(locale);
   const absSec = Math.abs(diffMs) / 1000;
   const sign = diffMs < 0 ? -1 : 1;
   if (absSec < 60) return rtf.format(sign * Math.round(absSec), 'second');

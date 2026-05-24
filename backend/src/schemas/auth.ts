@@ -51,8 +51,20 @@ export const userResponse = z.object({
   // Phase 2C: surfaced so the Settings → Security page can render the
   // correct "enable" vs "disable" affordance without a second round-trip.
   totpEnabled: z.boolean().default(false),
+  // v1.10: display calendar preference. Read on login + mirrored to
+  // localStorage so the date helpers / pickers pick it up on next paint.
+  calendarPreference: z.enum(['SHAMSI', 'GREGORIAN']).default('SHAMSI'),
   createdAt: z.string(),
 });
+
+// v1.10 preference patch — currently only `calendar`. Kept as its own
+// object so future per-user preferences (timezone, density, language)
+// land here without churning the URL.
+export const updatePreferencesBody = z.object({
+  calendar: z.enum(['SHAMSI', 'GREGORIAN']).optional(),
+});
+
+export type UpdatePreferencesBody = z.infer<typeof updatePreferencesBody>;
 
 export const authTokensResponse = z.object({
   accessToken: z.string(),

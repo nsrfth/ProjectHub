@@ -13,6 +13,7 @@ import DirectoriesPage from '@/pages/settings/DirectoriesPage';
 import SecurityPage from '@/pages/settings/SecurityPage';
 import AuditPage from '@/pages/settings/AuditPage';
 import ApiWebhooksPage from '@/pages/settings/ApiWebhooksPage';
+import PreferencesPage from '@/pages/settings/PreferencesPage';
 import ProtectedRoute from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -33,6 +34,7 @@ export const router = createBrowserRouter([
         path: '/settings',
         element: <SettingsLayout />,
         children: [
+          { path: 'preferences', element: <PreferencesPage /> },
           { path: 'directories', element: <DirectoriesPage /> },
           { path: 'security', element: <SecurityPage /> },
           { path: 'audit', element: <AuditPage /> },

@@ -22,6 +22,15 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   {
+    to: '/settings/preferences',
+    label: 'Preferences',
+    // v1.10: personal display settings. Everyone can manage their own —
+    // first item in the sidebar so 'go to settings' has an obvious
+    // landing page for non-admins.
+    description: 'Calendar, display',
+    roles: ['ADMIN', 'MANAGER', 'MEMBER'],
+  },
+  {
     to: '/settings/directories',
     label: 'Directories',
     description: 'Users, teams, invites',

@@ -12,6 +12,10 @@ export interface AuthUser {
   // Phase 2C: surfaced so Settings → Security can show the right state
   // without an extra round-trip on render.
   totpEnabled: boolean;
+  // v1.10: display calendar preference. AuthContext mirrors this into
+  // localStorage on login so date helpers + pickers use the right
+  // calendar from the next render onward.
+  calendarPreference: 'SHAMSI' | 'GREGORIAN';
   createdAt: string;
 }
 
@@ -67,6 +71,13 @@ export async function twoFactorDisable(code: string): Promise<void> {
 
 export async function regenerateRecoveryCodes(): Promise<{ recoveryCodes: string[] }> {
   return (await api.post<{ recoveryCodes: string[] }>('/auth/2fa/recovery-codes')).data;
+}
+
+// v1.10: per-user preferences (currently only `calendar`). Server PATCH
+// returns the resulting value; the Preferences page mirrors it back into
+// localStorage + reloads the window so the formatters pick up the change.
+export async function updatePreferences(input: { calendar?: 'SHAMSI' | 'GREGORIAN' }): Promise<{ calendar: 'SHAMSI' | 'GREGORIAN' }> {
+  return (await api.patch<{ calendar: 'SHAMSI' | 'GREGORIAN' }>('/auth/me/preferences', input)).data;
 }
 
 export async function logout(): Promise<void> {

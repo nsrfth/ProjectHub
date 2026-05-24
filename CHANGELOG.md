@@ -4,6 +4,68 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] — 2026-05-24
+
+Per-user Gregorian / Shamsi calendar preference. TaskHub was Persian-leaning
+by default; v1.10 lets each user pick the calendar that shows up in their
+formatters, kanban cards, reports, audit log, comments, and date pickers.
+
+### Schema
+
+- New `CalendarPreference` enum (`SHAMSI` / `GREGORIAN`).
+- `User.calendarPreference` column with `SHAMSI` default — matches pre-v1.10
+  behaviour for every existing user.
+- Migration `20260524000000_add_calendar_preference` — additive only.
+
+### Backend
+
+- `userResponse` (the shape returned by /auth/login + refresh + register +
+  2FA-login) gains `calendarPreference`.
+- New `PATCH /api/auth/me/preferences` endpoint. Body: `{ calendar?:
+  'SHAMSI' | 'GREGORIAN' }`. PATCH semantics — omitted fields stay
+  unchanged. Response: `{ calendar }`.
+
+### Frontend
+
+- New [lib/calendar.ts](frontend/src/lib/calendar.ts) — module-level active
+  calendar seeded from `localStorage('taskhub.calendar')`. `setCalendar`
+  writes through; `adoptServerCalendar` syncs from the user response after
+  every login / refresh.
+- [lib/shamsi.ts](frontend/src/lib/shamsi.ts) formatters now branch
+  internally — SHAMSI renders Persian digits + Jalali calendar; GREGORIAN
+  delegates to native Intl + Date (`May 22, 2026`, `2026-05-22 19:00`).
+  Relative-time helper flips locale (`fa-IR` ↔ `en-US`) on the same flag.
+- [ShamsiDatePicker](frontend/src/lib/ShamsiDatePicker.tsx) picks the
+  right calendar + locale at render. UTC-midnight emission unchanged so
+  a Persian-preferring user and an English-preferring user picking the
+  same day produce the same underlying ISO string.
+- New [Settings → Preferences](frontend/src/pages/settings/PreferencesPage.tsx)
+  sub-page with the toggle. Save → mirror to localStorage →
+  `window.location.reload()` so every mounted formatter + picker picks
+  up the new calendar cleanly.
+- Sidebar gets "Preferences" as the first item, visible to all roles.
+- `AuthContext` mirrors `user.calendarPreference` into localStorage on
+  refresh / login / register / 2FA-login.
+
+### Tests
+
+- New [preferences.test.ts](backend/tests/integration/preferences.test.ts)
+  — 4 cases (default SHAMSI, PATCH persists across fresh login, unknown
+  enum 400, no-op PATCH non-destructive). Suite: **165/165** (was 161).
+
+### Verified
+
+- Live smoke: PATCH SHAMSI → GREGORIAN → fresh login confirms persistence
+  → PATCH back to SHAMSI.
+
+### Notes for users
+
+- Toggle at **Settings → Preferences**. Saving reloads the page so every
+  date everywhere flips immediately.
+- Storage is unchanged — calendar dates remain UTC midnight ISO strings.
+  Two users viewing the same task see the same DAY, formatted in each
+  one's chosen calendar.
+
 ## [1.9.1] — 2026-05-24
 
 QUARTERLY recurrence frequency. Mathematically equivalent to MONTHLY

@@ -120,6 +120,18 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
     handler: ctrl.me,
   });
 
+  r.patch('/me/preferences', {
+    preHandler: requireAuth,
+    schema: {
+      tags: ['auth'],
+      summary: 'Update per-user preferences (calendar, …)',
+      body: z.object({ calendar: z.enum(['SHAMSI', 'GREGORIAN']).optional() }),
+      response: { 200: z.object({ calendar: z.enum(['SHAMSI', 'GREGORIAN']) }) },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.updatePreferences,
+  });
+
   // ── 2FA endpoints ────────────────────────────────────────────────────
   r.post('/2fa/login', {
     config: RL_TAG,
