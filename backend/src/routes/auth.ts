@@ -124,9 +124,19 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
     preHandler: requireAuth,
     schema: {
       tags: ['auth'],
-      summary: 'Update per-user preferences (calendar, …)',
-      body: z.object({ calendar: z.enum(['SHAMSI', 'GREGORIAN']).optional() }),
-      response: { 200: z.object({ calendar: z.enum(['SHAMSI', 'GREGORIAN']) }) },
+      summary: 'Update per-user preferences (calendar, theme, language)',
+      body: z.object({
+        calendar: z.enum(['SHAMSI', 'GREGORIAN']).optional(),
+        theme: z.enum(['LIGHT', 'DARK']).optional(),
+        language: z.enum(['EN', 'FA']).optional(),
+      }),
+      response: {
+        200: z.object({
+          calendar: z.enum(['SHAMSI', 'GREGORIAN']),
+          theme: z.enum(['LIGHT', 'DARK']),
+          language: z.enum(['EN', 'FA']),
+        }),
+      },
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.updatePreferences,

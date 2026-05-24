@@ -164,7 +164,7 @@ export default function NotificationBell(): JSX.Element {
           if (!open) void refetchList();
         }}
         aria-label="Notifications"
-        className="relative bg-white border border-slate-300 rounded-full w-9 h-9 flex items-center justify-center shadow hover:bg-slate-100"
+        className="relative bg-white border border-slate-300 dark:bg-slate-800 dark:border-slate-600 rounded-full w-9 h-9 flex items-center justify-center shadow hover:bg-slate-100 dark:hover:bg-slate-700"
       >
         <span aria-hidden>🔔</span>
         {count > 0 && (

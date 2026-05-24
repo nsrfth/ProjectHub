@@ -23,6 +23,8 @@ export interface IssuedSession {
     externalId: string | null;
     totpEnabled: boolean;
     calendarPreference: 'SHAMSI' | 'GREGORIAN';
+    themePreference: 'LIGHT' | 'DARK';
+    languagePreference: 'EN' | 'FA';
     createdAt: Date;
   };
   // Set on `register` only — the raw email-verification token the controller
@@ -435,6 +437,8 @@ export class AuthService {
         externalId: user.externalId,
         totpEnabled: user.totpEnabled,
         calendarPreference: user.calendarPreference,
+        themePreference: user.themePreference,
+        languagePreference: user.languagePreference,
         createdAt: user.createdAt,
       },
     };

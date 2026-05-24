@@ -4,6 +4,74 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] — 2026-05-24
+
+Dark theme + Persian UI + RTL. Two new per-user preferences (`theme`,
+`language`) plus updated user manuals.
+
+### Schema
+
+- New enums `ThemePreference` (`LIGHT` / `DARK`) + `LanguagePreference`
+  (`EN` / `FA`).
+- `User.themePreference` + `User.languagePreference` columns, `LIGHT` +
+  `EN` defaults — pre-v1.13 users see no surprise.
+- Migration `20260524120000_user_theme_language`, additive.
+
+### Backend
+
+- `userResponse` Zod carries `themePreference` + `languagePreference`;
+  `IssuedSession.user` + `issueSession` updated to surface both.
+- `PATCH /api/auth/me/preferences` now accepts `{ theme?, language? }`
+  alongside `calendar?`. Response is the full triple so the frontend
+  mirrors everything to localStorage in one call.
+
+### Frontend
+
+- [lib/theme.ts](frontend/src/lib/theme.ts) — module-level active theme
+  from localStorage; `setTheme` toggles `<html class="dark">`.
+- [lib/i18n.ts](frontend/src/lib/i18n.ts) + EN/FA catalogues in
+  `frontend/src/i18n/{en,fa}.json` — `useT()` hook, sets `<html lang dir>`,
+  EN fallback per key so adding a new English string never breaks FA.
+- `tailwind.config.ts` switches to `darkMode: 'class'`. `index.html`
+  pre-React script reads cached theme + language and applies them to
+  `<html>` before first paint — no FOUC on dark or Persian accounts.
+- AuthContext `adoptUserPrefs(user)` syncs calendar + theme + language
+  at every signed-in entry (initial refresh, signIn, signInWith2fa, signUp).
+- **Preferences page rewritten** — calendar + theme + language radios +
+  the admin-only Workweek section from v1.11.
+- `dark:` variants on the highest-traffic surfaces (Dashboard, Settings
+  layout, Login, corner buttons, Preferences). Body's base
+  `dark:bg-slate-900 dark:text-slate-100` covers the rest by default.
+
+### User manuals
+
+- [USER_MANUAL.md](USER_MANUAL.md) updated for v1.11–v1.13 surface
+  (corner buttons, team colours, calendar views, workweek admin
+  setting, unified Display preferences section).
+- New [USER_MANUAL.fa.md](USER_MANUAL.fa.md) — full Persian translation.
+- `scripts/copy-manual.mjs` syncs both files into `frontend/public/` at
+  every build. `docker/frontend.Dockerfile` COPIes both into the build
+  context.
+- `/help` HelpPage fetches the manual matching the active language with
+  EN fallback if the FA file is missing.
+
+### Verified
+
+- Live: PATCH `{ theme: 'DARK', language: 'FA' }` → fresh login persists
+  → reset. Both manuals served (`/USER_MANUAL.md` 23 KB, `/USER_MANUAL.fa.md`
+  33 KB).
+- Frontend + backend build clean.
+
+### Phase boundary
+
+- i18n coverage = high-traffic surfaces only. Kanban / task detail /
+  reports / audit log / directories / webhooks / recurrence / calendar
+  still render in English under FA. Untranslated strings fall back to EN
+  explicitly (not blanks) so the UI stays usable.
+- Dark variants applied to "most-visible" components. Deep-page polish
+  (nested modals, secondary forms) may still show light fragments; each
+  is a per-file follow-up.
+
 ## [1.12.0] — 2026-05-24
 
 Team colours + cross-project Calendar views page. The Calendar page reads

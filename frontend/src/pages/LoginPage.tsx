@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useT } from '@/lib/i18n';
 
 // Login is a two-step form when the user has 2FA enabled:
 //   step 1 — email + password → may return a `pending2fa` token.
@@ -15,6 +16,7 @@ type Step =
 export default function LoginPage(): JSX.Element {
   const { signIn, signInWith2fa } = useAuth();
   const nav = useNavigate();
+  const t = useT();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,7 +37,7 @@ export default function LoginPage(): JSX.Element {
         nav('/dashboard');
       }
     } catch {
-      setError('Invalid email or password');
+      setError(t('login.invalid'));
     } finally {
       setSubmitting(false);
     }
@@ -50,7 +52,7 @@ export default function LoginPage(): JSX.Element {
       await signInWith2fa(step.pendingToken, code);
       nav('/dashboard');
     } catch {
-      setError('Invalid 2FA code');
+      setError(t('login.twoFactorInvalid'));
     } finally {
       setSubmitting(false);
     }
@@ -61,31 +63,31 @@ export default function LoginPage(): JSX.Element {
       {step.kind === 'credentials' ? (
         <form
           onSubmit={submitCredentials}
-          className="w-full max-w-sm bg-white shadow rounded-lg p-6 space-y-4"
+          className="w-full max-w-sm bg-white dark:bg-slate-800 shadow rounded-lg p-6 space-y-4"
         >
-          <h1 className="text-2xl font-semibold">Sign in</h1>
+          <h1 className="text-2xl font-semibold">{t('login.title')}</h1>
 
           <label className="block">
-            <span className="text-sm font-medium">Email</span>
+            <span className="text-sm font-medium">{t('login.email')}</span>
             <input
               type="email"
               required
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded border-slate-300 px-3 py-2 border"
+              className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 dark:bg-slate-700 px-3 py-2 border"
             />
           </label>
 
           <label className="block">
-            <span className="text-sm font-medium">Password</span>
+            <span className="text-sm font-medium">{t('login.password')}</span>
             <input
               type="password"
               required
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded border-slate-300 px-3 py-2 border"
+              className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 dark:bg-slate-700 px-3 py-2 border"
             />
           </label>
 
@@ -94,31 +96,30 @@ export default function LoginPage(): JSX.Element {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-slate-900 text-white rounded py-2 font-medium disabled:opacity-50"
+            className="w-full bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded py-2 font-medium disabled:opacity-50"
           >
-            {submitting ? 'Signing in…' : 'Sign in'}
+            {submitting ? t('login.submitting') : t('login.submit')}
           </button>
 
-          <p className="text-sm text-slate-600">
-            No account?{' '}
-            <Link to="/register" className="text-slate-900 underline">
-              Create one
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            {t('login.noAccount')}{' '}
+            <Link to="/register" className="text-slate-900 dark:text-slate-100 underline">
+              {t('nav.signUp')}
             </Link>
           </p>
         </form>
       ) : (
         <form
           onSubmit={submitTwoFactor}
-          className="w-full max-w-sm bg-white shadow rounded-lg p-6 space-y-4"
+          className="w-full max-w-sm bg-white dark:bg-slate-800 shadow rounded-lg p-6 space-y-4"
         >
-          <h1 className="text-2xl font-semibold">Two-factor code</h1>
-          <p className="text-sm text-slate-600">
-            Enter the 6-digit code from your authenticator app, or one of your
-            single-use recovery codes.
+          <h1 className="text-2xl font-semibold">{t('login.twoFactorTitle')}</h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            {t('login.twoFactorHelp')}
           </p>
 
           <label className="block">
-            <span className="text-sm font-medium">Code</span>
+            <span className="text-sm font-medium">{t('login.twoFactorCode')}</span>
             <input
               type="text"
               required
@@ -127,7 +128,7 @@ export default function LoginPage(): JSX.Element {
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="123456 or xxxx-xxxx"
-              className="mt-1 w-full rounded border-slate-300 px-3 py-2 border font-mono"
+              className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 dark:bg-slate-700 px-3 py-2 border font-mono"
             />
           </label>
 
@@ -136,9 +137,9 @@ export default function LoginPage(): JSX.Element {
           <button
             type="submit"
             disabled={submitting || !code}
-            className="w-full bg-slate-900 text-white rounded py-2 font-medium disabled:opacity-50"
+            className="w-full bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded py-2 font-medium disabled:opacity-50"
           >
-            {submitting ? 'Verifying…' : 'Verify'}
+            {submitting ? t('login.twoFactorVerifying') : t('login.twoFactorVerify')}
           </button>
 
           <button
@@ -148,9 +149,9 @@ export default function LoginPage(): JSX.Element {
               setCode('');
               setError(null);
             }}
-            className="w-full text-sm text-slate-500 underline"
+            className="w-full text-sm text-slate-500 dark:text-slate-400 underline"
           >
-            Back to sign-in
+            {t('login.twoFactorBack')}
           </button>
         </form>
       )}

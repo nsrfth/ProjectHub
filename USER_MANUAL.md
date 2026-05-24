@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.10.0** (2026-05-24)
+Version **v1.13.0** (2026-05-24)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -10,22 +10,26 @@ This manual covers everything a member, manager, or admin needs to do day-to-day
 
 1. [Concepts](#concepts)
 2. [Signing in](#signing-in)
-3. [Teams and projects](#teams-and-projects)
-4. [Tasks — the basics](#tasks--the-basics)
-5. [The three dates: Due by, Planned on, Completed on](#the-three-dates-due-by-planned-on-completed-on)
-6. [Labels, subtasks, attachments, comments](#labels-subtasks-attachments-comments)
-7. [Recurring tasks](#recurring-tasks)
-8. [Reports](#reports)
-9. [Notifications](#notifications)
-10. [Two-factor authentication (2FA)](#two-factor-authentication-2fa)
-11. [Calendar preference (Shamsi / Gregorian)](#calendar-preference-shamsi--gregorian)
-12. [Personal API tokens](#personal-api-tokens)
-13. [Admin / manager — Settings](#admin--manager--settings)
+3. [The corner buttons (About / Help / Notifications)](#the-corner-buttons-about--help--notifications)
+4. [Teams and projects](#teams-and-projects)
+   - [Team colours](#team-colours)
+5. [Tasks — the basics](#tasks--the-basics)
+6. [The three dates: Due by, Planned on, Completed on](#the-three-dates-due-by-planned-on-completed-on)
+7. [Labels, subtasks, attachments, comments](#labels-subtasks-attachments-comments)
+8. [Recurring tasks](#recurring-tasks)
+9. [Calendar views](#calendar-views)
+10. [Reports](#reports)
+11. [Notifications](#notifications)
+12. [Two-factor authentication (2FA)](#two-factor-authentication-2fa)
+13. [Display preferences (calendar / theme / language)](#display-preferences-calendar--theme--language)
+14. [Personal API tokens](#personal-api-tokens)
+15. [Admin / manager — Settings](#admin--manager--settings)
+    - [Workweek (off-days)](#workweek-off-days)
     - [Directories (LDAP)](#directories-ldap)
     - [SCIM provisioning](#scim-provisioning)
     - [Webhooks](#webhooks)
     - [Audit log](#audit-log)
-14. [Troubleshooting](#troubleshooting)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -57,6 +61,18 @@ If your account is owned by an LDAP directory, you log in with your LDAP passwor
 
 ---
 
+## The corner buttons (About / Help / Notifications)
+
+Three small pill buttons live in the top-right corner of every authenticated page:
+
+- **ℹ️ About** — opens `/about` with the running instance's version, build time, environment, off-day set, headline counts, license, and links to the manual + changelog.
+- **📖 Help** — opens `/help`, an in-app render of this manual. The same content GitHub readers see, formatted with proper headings, tables, code blocks. Has an "Open raw markdown" link in the corner for ops scripts.
+- **🔔 Notifications** — the existing notification bell; opens a dropdown of recent items + an unread badge.
+
+The buttons appear on every signed-in route so you can always reach help / context without hunting.
+
+---
+
 ## Teams and projects
 
 - **Teams** page — click the team-name dropdown on the dashboard or go to `/teams`. Lists every team you belong to and lets you switch the "current team" (drives what the kanban / reports / settings show).
@@ -65,6 +81,14 @@ If your account is owned by an LDAP directory, you log in with your LDAP passwor
 - **Projects** page — once you're inside a team, click **Projects** to see the team's projects. New project: name + optional description.
 
 > Directory-managed teams (set up via LDAP/SCIM by an admin) have their membership synced from the IdP — manual invites are disabled there.
+
+### Team colours
+
+Each team can carry an accent colour that shows up on kanban cards (as a left stripe) and on the Calendar views (as the task-pill background).
+
+**To set** — Teams page → pick the team → click any of the 8 preset swatches, or use the native colour picker for a custom hex. **Clear** removes the colour and falls back to slate. Only team `MANAGER`s (or global `ADMIN`s) see the picker.
+
+Colours are purely visual — they don't change permissions or filtering.
 
 ---
 
@@ -150,6 +174,22 @@ When the scheduler ticks past the next-run date, a brand-new task appears in **T
 
 ---
 
+## Calendar views
+
+The `/calendar` route (linked from the Dashboard) shows tasks from every project in the current team laid out on a date grid. Three view modes:
+
+- **Work-week** — 5 cells starting on the first non-off-day. With Sat+Sun off, the first column is Monday; with Thu+Fri off, it's Saturday. The off-day setting drives both *which* 5 days appear and *where* the cursor lands.
+- **Week** — 7 cells, Sunday-leading. Off-days are still tinted red.
+- **Month** — full 6-week grid (42 cells). Days outside the current month are dimmed. Each cell shows up to 3 tasks + "+N more".
+
+Each task appears as a coloured pill — the pill colour is the **team accent** ([Team colours](#team-colours) above). Click the pill to jump to the task.
+
+The **Date field** dropdown on the toolbar lets you bucket by `dueDate` (default — "what's due when") or `plannedDate` ("what we're targeting"). Completed tasks aren't shown — they belong in Reports, not the forward-looking calendar.
+
+Off-days are determined by the [Workweek](#workweek-off-days) admin setting (see below). They render with a red label + a red-50 background tint so they're impossible to miss.
+
+---
+
 ## Reports
 
 Click **Reports** in the dashboard header. All sections are team-scoped (current team in the dropdown).
@@ -208,23 +248,28 @@ LDAP-managed accounts can enable TOTP too — both factors are required at login
 
 ---
 
-## Calendar preference (Shamsi / Gregorian)
+## Display preferences (calendar / theme / language)
 
-Each user picks their own display calendar. Doesn't affect anyone else.
+Three per-user toggles, all on **Settings → Preferences**. Each is independent and travels with you across browsers + devices (stored on the server, mirrored into localStorage at every login). Saving any of them reloads the page so every component picks up the new value cleanly.
 
-**To switch**:
+### Calendar
 
-1. Go to **Settings → Preferences**.
-2. Pick **Shamsi / Jalali** (Persian, RTL, e.g. `۱ خرداد ۱۴۰۵`) or **Gregorian** (Western, `May 22, 2026`).
-3. **Save**. The page reloads so every date everywhere updates.
+- **Shamsi / Jalali** — Persian calendar, Persian digits, RTL date layout (e.g. `۱ خرداد ۱۴۰۵`). Default for new accounts on v1.10+ installs.
+- **Gregorian** — Western calendar, English digits, ISO format (e.g. `2026-05-22`).
 
-What changes:
+Affects every date + timestamp the UI renders — kanban cards, reports, audit log, comments, activity — and the date picker itself. Storage is identical: picking "1 Khordad 1405" or "May 22, 2026" produces the same underlying ISO string. Two users with different preferences viewing the same task see the same DAY, formatted their way.
 
-- Every date and timestamp the UI renders — kanban cards, reports, audit log, comments, activity.
-- The date PICKER itself — Shamsi users get the Persian calendar grid, Gregorian users get the Western one.
-- The underlying storage is identical — picking "1 Khordad 1405" or "May 22, 2026" produces the same ISO string. Two users with different preferences viewing the same task see the same DAY.
+### Theme
 
-Default for new accounts is **Shamsi** (matches pre-v1.10 behaviour). The preference travels with you across browsers / devices — it's stored on the server, synced to localStorage at every login.
+- **Light** — the original look. Default.
+- **Dark** — slate-900 surface, slate-100 text. Powered by Tailwind's `dark:` variant class on `<html>`. Pre-React bootstrap in `index.html` applies the cached theme before first paint, so no light-flash on dark accounts.
+
+### Language
+
+- **English** — the canonical source language. Default.
+- **فارسی (Persian)** — full RTL UI. `<html dir="rtl" lang="fa">` flips automatically; the i18n catalogue covers the highest-traffic surfaces (Dashboard, Login, Settings sidebar, Preferences page, About / Help corner buttons). Strings without a Persian entry fall back to English, so adding a new EN string never breaks the FA UI.
+
+> **Note**: Persian translation is a living catalogue. If you spot an untranslated string (it'll appear in English while the rest is Persian), it's not a bug — it just hasn't been added to `frontend/src/i18n/fa.json` yet.
 
 ---
 
@@ -256,11 +301,22 @@ The token authenticates as you — it sees what you see. Scopes are advisory in 
 
 The **Settings** link in the dashboard header opens the Settings shell. The sidebar items you see depend on your role:
 
-- **Preferences** — everyone (personal calendar).
+- **Preferences** — everyone (personal calendar + theme + language). Admins additionally see the Workweek section.
 - **Security** — everyone (your 2FA).
 - **Directories** — global ADMIN only (LDAP / SCIM config).
 - **Audit** — global ADMIN or team MANAGER.
 - **API & Webhooks** — everyone (tokens) + MANAGER (webhooks for that team).
+
+### Workweek (off-days)
+
+Admin-only section on **Settings → Preferences**. Sets the instance-wide off-day set. Two one-click presets cover the common conventions:
+
+- **Saturday + Sunday off (Western)**.
+- **Thursday + Friday off (Iranian / Gulf)**.
+
+An **Or pick custom days** disclosure lets you select any subset of the 7 weekdays (e.g. Friday-only, or a 3-day weekend). Saving reloads the page; every date picker in the app immediately paints the configured days in **red**, and the Calendar views tint those cells with a red-50 background.
+
+The setting lives in the `InstanceSetting` key/JSON store (`calendar.weekend`), read publicly via `/api/system/info` so the date picker has the right colours before login.
 
 ### Directories (LDAP)
 

@@ -184,22 +184,36 @@ export class AuthController {
     });
   };
 
-  // v1.10: per-user preferences. PATCH semantics — any omitted field is
-  // left as-is. Returns the updated subset so the frontend can mirror it
-  // into localStorage without a follow-up GET.
+  // v1.10/v1.13: per-user preferences. PATCH semantics — any omitted field
+  // stays as-is. Returns the new triple so the frontend can mirror to
+  // localStorage without a follow-up GET.
   updatePreferences = async (
-    req: FastifyRequest<{ Body: { calendar?: 'SHAMSI' | 'GREGORIAN' } }>,
+    req: FastifyRequest<{ Body: {
+      calendar?: 'SHAMSI' | 'GREGORIAN';
+      theme?: 'LIGHT' | 'DARK';
+      language?: 'EN' | 'FA';
+    } }>,
     reply: FastifyReply,
   ) => {
     if (!req.user) throw Errors.unauthorized();
     const { prisma } = await import('../data/prisma.js');
     const data: Record<string, unknown> = {};
     if (req.body.calendar) data.calendarPreference = req.body.calendar;
+    if (req.body.theme) data.themePreference = req.body.theme;
+    if (req.body.language) data.languagePreference = req.body.language;
     const updated = await prisma.user.update({
       where: { id: req.user.sub },
       data,
-      select: { calendarPreference: true },
+      select: {
+        calendarPreference: true,
+        themePreference: true,
+        languagePreference: true,
+      },
     });
-    return reply.send({ calendar: updated.calendarPreference });
+    return reply.send({
+      calendar: updated.calendarPreference,
+      theme: updated.themePreference,
+      language: updated.languagePreference,
+    });
   };
 }

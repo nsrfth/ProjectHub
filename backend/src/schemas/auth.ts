@@ -54,14 +54,20 @@ export const userResponse = z.object({
   // v1.10: display calendar preference. Read on login + mirrored to
   // localStorage so the date helpers / pickers pick it up on next paint.
   calendarPreference: z.enum(['SHAMSI', 'GREGORIAN']).default('SHAMSI'),
+  // v1.13: per-user theme + UI language. Mirrored to localStorage at
+  // every signed-in entry point so a user changing their pref on one
+  // device sees it on another after login.
+  themePreference: z.enum(['LIGHT', 'DARK']).default('LIGHT'),
+  languagePreference: z.enum(['EN', 'FA']).default('EN'),
   createdAt: z.string(),
 });
 
-// v1.10 preference patch — currently only `calendar`. Kept as its own
-// object so future per-user preferences (timezone, density, language)
-// land here without churning the URL.
+// v1.10/v1.13 preference patch. PATCH semantics — any omitted field is
+// left as-is. New per-user toggles add a field here without an URL change.
 export const updatePreferencesBody = z.object({
   calendar: z.enum(['SHAMSI', 'GREGORIAN']).optional(),
+  theme: z.enum(['LIGHT', 'DARK']).optional(),
+  language: z.enum(['EN', 'FA']).optional(),
 });
 
 export type UpdatePreferencesBody = z.infer<typeof updatePreferencesBody>;

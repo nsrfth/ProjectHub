@@ -16,6 +16,9 @@ export interface AuthUser {
   // localStorage on login so date helpers + pickers use the right
   // calendar from the next render onward.
   calendarPreference: 'SHAMSI' | 'GREGORIAN';
+  // v1.13: per-user theme + UI language. Same per-login mirror pattern.
+  themePreference: 'LIGHT' | 'DARK';
+  languagePreference: 'EN' | 'FA';
   createdAt: string;
 }
 
@@ -73,11 +76,20 @@ export async function regenerateRecoveryCodes(): Promise<{ recoveryCodes: string
   return (await api.post<{ recoveryCodes: string[] }>('/auth/2fa/recovery-codes')).data;
 }
 
-// v1.10: per-user preferences (currently only `calendar`). Server PATCH
-// returns the resulting value; the Preferences page mirrors it back into
-// localStorage + reloads the window so the formatters pick up the change.
-export async function updatePreferences(input: { calendar?: 'SHAMSI' | 'GREGORIAN' }): Promise<{ calendar: 'SHAMSI' | 'GREGORIAN' }> {
-  return (await api.patch<{ calendar: 'SHAMSI' | 'GREGORIAN' }>('/auth/me/preferences', input)).data;
+// v1.10/v1.13: per-user preferences. Server PATCH returns the full triple
+// so the Preferences page can mirror everything back into localStorage
+// + reload the window in one step.
+export interface PreferencesResponse {
+  calendar: 'SHAMSI' | 'GREGORIAN';
+  theme: 'LIGHT' | 'DARK';
+  language: 'EN' | 'FA';
+}
+export async function updatePreferences(input: {
+  calendar?: 'SHAMSI' | 'GREGORIAN';
+  theme?: 'LIGHT' | 'DARK';
+  language?: 'EN' | 'FA';
+}): Promise<PreferencesResponse> {
+  return (await api.patch<PreferencesResponse>('/auth/me/preferences', input)).data;
 }
 
 export async function logout(): Promise<void> {

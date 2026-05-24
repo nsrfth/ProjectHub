@@ -1,6 +1,7 @@
 import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
+import { useT } from '@/lib/i18n';
 
 // Role-gated sidebar shell shared by every Settings sub-page. Each entry
 // declares the GlobalRole that may see it; entries the current user lacks are
@@ -15,51 +16,40 @@ type SettingsRole = 'ADMIN' | 'MANAGER' | 'MEMBER';
 
 interface NavItem {
   to: string;
-  label: string;
-  description: string;
+  labelKey: string;
+  descriptionKey: string;
   roles: SettingsRole[];
 }
 
 const NAV: NavItem[] = [
   {
     to: '/settings/preferences',
-    label: 'Preferences',
-    // v1.10: personal display settings. Everyone can manage their own —
-    // first item in the sidebar so 'go to settings' has an obvious
-    // landing page for non-admins.
-    description: 'Calendar, display',
+    labelKey: 'settings.nav.preferences',
+    descriptionKey: 'settings.nav.preferencesDesc',
     roles: ['ADMIN', 'MANAGER', 'MEMBER'],
   },
   {
     to: '/settings/directories',
-    label: 'Directories',
-    description: 'Users, teams, invites',
+    labelKey: 'settings.nav.directories',
+    descriptionKey: 'settings.nav.directoriesDesc',
     roles: ['ADMIN'],
   },
   {
     to: '/settings/security',
-    label: 'Security',
-    // 2FA enrolment is user-scoped, so everyone (not just admins) gets
-    // this entry. Future instance-wide auth policy lands behind an extra
-    // 'Policy' sub-section that stays ADMIN-only.
-    description: '2FA + sessions',
+    labelKey: 'settings.nav.security',
+    descriptionKey: 'settings.nav.securityDesc',
     roles: ['ADMIN', 'MEMBER'],
   },
   {
     to: '/settings/audit',
-    label: 'Audit',
-    // ADMIN sees instance-wide; MANAGER sees their team(s) only (the server
-    // enforces the scope). MEMBERs don't see the link.
-    description: 'Activity + sign-in log',
+    labelKey: 'settings.nav.audit',
+    descriptionKey: 'settings.nav.auditDesc',
     roles: ['ADMIN', 'MANAGER'],
   },
   {
     to: '/settings/api',
-    label: 'API & Webhooks',
-    // Tokens are per-user (any role); webhooks are team-scoped (MANAGER).
-    // ADMIN of course sees everything. The page itself shows + hides
-    // sub-sections based on what the user can actually manage.
-    description: 'Personal tokens + team webhooks',
+    labelKey: 'settings.nav.api',
+    descriptionKey: 'settings.nav.apiDesc',
     roles: ['ADMIN', 'MANAGER', 'MEMBER'],
   },
 ];
@@ -68,8 +58,9 @@ export default function SettingsLayout(): JSX.Element {
   const { user, loading } = useAuth();
   const { teams } = useTeams();
   const location = useLocation();
+  const t = useT();
 
-  if (loading) return <div className="p-8 text-sm text-slate-500">Loading…</div>;
+  if (loading) return <div className="p-8 text-sm text-slate-500 dark:text-slate-400">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
 
   // Effective roles for sidebar gating. globalRole is always present;
@@ -91,13 +82,13 @@ export default function SettingsLayout(): JSX.Element {
     <div className="min-h-screen p-8 max-w-5xl mx-auto">
       <header className="mb-6">
         <Link to="/dashboard" className="text-sm underline">
-          ← Back to dashboard
+          {t('nav.backToDashboard')}
         </Link>
-        <h1 className="text-2xl font-semibold mt-2">Settings</h1>
+        <h1 className="text-2xl font-semibold mt-2">{t('settings.title')}</h1>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6">
-        <nav className="bg-white rounded shadow p-2 h-fit">
+        <nav className="bg-white dark:bg-slate-800 rounded shadow p-2 h-fit">
           <ul className="space-y-1">
             {visible.map((item) => (
               <li key={item.to}>
@@ -107,20 +98,20 @@ export default function SettingsLayout(): JSX.Element {
                     [
                       'block rounded px-3 py-2 text-sm',
                       isActive
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-700 hover:bg-slate-100',
+                        ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                        : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700',
                     ].join(' ')
                   }
                 >
-                  <span className="font-medium">{item.label}</span>
-                  <span className="block text-[11px] opacity-70">{item.description}</span>
+                  <span className="font-medium">{t(item.labelKey)}</span>
+                  <span className="block text-[11px] opacity-70">{t(item.descriptionKey)}</span>
                 </NavLink>
               </li>
             ))}
           </ul>
         </nav>
 
-        <main className="bg-white rounded shadow p-6">
+        <main className="bg-white dark:bg-slate-800 rounded shadow p-6">
           <Outlet />
         </main>
       </div>

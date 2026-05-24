@@ -69,6 +69,21 @@ enum CalendarPreference {
   GREGORIAN
 }
 
+// v1.13: per-user theme. LIGHT default — pre-v1.13 the SPA shipped
+// light-only, so existing users see no surprise.
+enum ThemePreference {
+  LIGHT
+  DARK
+}
+
+// v1.13: per-user UI language. EN is the canonical key source; FA covers
+// the most-visible surfaces in this release. Strings without an FA entry
+// fall back to EN.
+enum LanguagePreference {
+  EN
+  FA
+}
+
 // External identity provider. Phase 2A handles LDAP; SCIM in 2B reuses this.
 // One Directory binds many Users (via User.directoryId/externalId).
 model Directory {
@@ -183,6 +198,11 @@ model User {
   // mirrored into localStorage, and applied to every date/timestamp the
   // UI renders + the date pickers.
   calendarPreference CalendarPreference @default(SHAMSI)
+  // v1.13: per-user theme (LIGHT default) + UI language (EN default).
+  // Mirrored to localStorage on login; the SPA applies them via
+  // <html class="dark"> and <html dir="rtl" lang="fa"> respectively.
+  themePreference    ThemePreference    @default(LIGHT)
+  languagePreference LanguagePreference @default(EN)
   emailVerifiedAt DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt

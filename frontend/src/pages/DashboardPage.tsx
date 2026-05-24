@@ -3,10 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
 import { fetchSummary } from '@/features/reports/api';
+import { useT } from '@/lib/i18n';
 
 export default function DashboardPage(): JSX.Element {
   const { user, signOut } = useAuth();
   const { teams, currentTeam, currentTeamId, setCurrentTeamId, loading } = useTeams();
+  const t = useT();
 
   // Cheap summary endpoint feeds the dashboard widget. Disabled until a team
   // is selected so the first render after sign-in doesn't fire a 404.
@@ -19,40 +21,40 @@ export default function DashboardPage(): JSX.Element {
   return (
     <div className="min-h-screen p-8 max-w-3xl mx-auto">
       <header className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <h1 className="text-2xl font-semibold">{t('dashboard.title')}</h1>
         <div className="flex items-center gap-4">
           {user?.globalRole === 'ADMIN' && (
             <Link to="/admin" className="text-sm underline">
-              Admin
+              {t('nav.admin')}
             </Link>
           )}
           {user && (
             <Link to="/settings" className="text-sm underline">
-              Settings
+              {t('nav.settings')}
             </Link>
           )}
           <button onClick={() => signOut()} className="text-sm underline">
-            Sign out
+            {t('nav.signOut')}
           </button>
         </div>
       </header>
 
-      <div className="bg-white rounded shadow p-6 mb-6">
-        <p className="text-sm text-slate-600">Signed in as</p>
+      <div className="bg-white dark:bg-slate-800 rounded shadow p-6 mb-6">
+        <p className="text-sm text-slate-600 dark:text-slate-400">{t('dashboard.signedInAs')}</p>
         <p className="font-medium">{user?.name}</p>
-        <p className="text-sm text-slate-500">{user?.email}</p>
-        <p className="text-xs text-slate-400 mt-2">Role: {user?.globalRole}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">{user?.email}</p>
+        <p className="text-xs text-slate-400 mt-2">{t('dashboard.role')}: {user?.globalRole}</p>
       </div>
 
-      <div className="bg-white rounded shadow p-6">
+      <div className="bg-white dark:bg-slate-800 rounded shadow p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-medium">Current team</h2>
+          <h2 className="font-medium">{t('dashboard.currentTeam')}</h2>
           <Link to="/teams" className="text-sm underline">
-            Manage teams
+            {t('dashboard.manageTeams')}
           </Link>
         </div>
 
-        {loading && <p className="text-sm text-slate-500">Loading teams…</p>}
+        {loading && <p className="text-sm text-slate-500 dark:text-slate-400">{t('dashboard.loadingTeams')}</p>}
 
         {!loading && teams.length === 0 && (
           <p className="text-sm text-slate-500">
@@ -88,13 +90,13 @@ export default function DashboardPage(): JSX.Element {
         {currentTeam && (
           <div className="mt-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
             <Link to="/projects" className="underline">
-              View projects in {currentTeam.name} →
+              {t('dashboard.viewProjects').replace('{team}', currentTeam.name)}
             </Link>
-            <Link to="/reports" className="underline text-slate-600">
-              Reports
+            <Link to="/reports" className="underline text-slate-600 dark:text-slate-300">
+              {t('nav.reports')}
             </Link>
-            <Link to="/calendar" className="underline text-slate-600">
-              Calendar
+            <Link to="/calendar" className="underline text-slate-600 dark:text-slate-300">
+              {t('nav.calendar')}
             </Link>
           </div>
         )}
@@ -105,7 +107,7 @@ export default function DashboardPage(): JSX.Element {
 
       {/* Summary widget — three headline numbers when a team is active. */}
       {currentTeam && summary && (
-        <div className="bg-white rounded shadow p-6 mt-6">
+        <div className="bg-white dark:bg-slate-800 rounded shadow p-6 mt-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-medium">At a glance</h2>
             <Link to="/reports" className="text-sm underline">

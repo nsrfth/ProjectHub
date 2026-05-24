@@ -1,7 +1,18 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { setAccessToken } from '@/lib/api';
 import { adoptServerCalendar } from '@/lib/calendar';
+import { adoptServerTheme } from '@/lib/theme';
+import { adoptServerLanguage } from '@/lib/i18n';
 import * as authApi from './api';
+
+// v1.13: shared one-liner — adopt every per-user UI preference the
+// /auth response carries. Called from refresh / signIn / signInWith2fa
+// / signUp so the user's prefs travel across devices.
+function adoptUserPrefs(u: authApi.AuthUser): void {
+  adoptServerCalendar(u.calendarPreference);
+  adoptServerTheme(u.themePreference);
+  adoptServerLanguage(u.languagePreference);
+}
 
 interface AuthState {
   user: authApi.AuthUser | null;
@@ -40,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
         // v1.10: sync the per-user calendar pref into localStorage so the
         // formatters / picker pick it up immediately. Subsequent components
         // mounting will see the right calendar.
-        adoptServerCalendar(res.user.calendarPreference);
+        adoptUserPrefs(res.user);
       })
       .catch(() => {
         if (!cancelled) setUser(null);
@@ -64,20 +75,20 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
         }
         setAccessToken(res.accessToken);
         setUser(res.user);
-        adoptServerCalendar(res.user.calendarPreference);
+        adoptUserPrefs(res.user);
         return { kind: 'ok' };
       },
       signInWith2fa: async (pendingToken, code) => {
         const res = await authApi.loginTwoFactor({ pendingToken, code });
         setAccessToken(res.accessToken);
         setUser(res.user);
-        adoptServerCalendar(res.user.calendarPreference);
+        adoptUserPrefs(res.user);
       },
       signUp: async (email, name, password) => {
         const res = await authApi.register({ email, name, password });
         setAccessToken(res.accessToken);
         setUser(res.user);
-        adoptServerCalendar(res.user.calendarPreference);
+        adoptUserPrefs(res.user);
       },
       signOut: async () => {
         await authApi.logout().catch(() => {});

@@ -1,11 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TaskHub</title>
+    <!-- v1.13: pre-React bootstrap. Read the cached theme + language from
+         localStorage and apply them to <html> BEFORE the SPA paints, so
+         users with dark theme or fa locale don't see a light-mode /
+         English flash. Wrapped in a try/catch for private-mode Safari. -->
+    <script>
+      try {
+        var theme = localStorage.getItem('taskhub.theme');
+        if (theme === 'DARK') document.documentElement.classList.add('dark');
+        var lang = localStorage.getItem('taskhub.language');
+        if (lang === 'FA') {
+          document.documentElement.lang = 'fa';
+          document.documentElement.dir = 'rtl';
+        }
+      } catch (_) { /* private-mode storage block — fall through */ }
+    </script>
   </head>
-  <body class="bg-slate-50 text-slate-900">
+  <body class="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

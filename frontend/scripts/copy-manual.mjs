@@ -14,13 +14,29 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = resolve(__dirname, '..', '..', 'USER_MANUAL.md');
-const dest = resolve(__dirname, '..', 'public', 'USER_MANUAL.md');
+const repoRoot = resolve(__dirname, '..', '..');
+const publicDir = resolve(__dirname, '..', 'public');
 
-if (!existsSync(src)) {
-  console.error(`copy-manual: source missing at ${src}`);
-  process.exit(1);
+// v1.13: copy both manuals so HelpPage can fetch by active language.
+// The repo-root files remain canonical; these are runtime mirrors. The
+// Persian (.fa.md) file is optional — warn but don't fail if missing.
+const SOURCES = [
+  { name: 'USER_MANUAL.md', required: true },
+  { name: 'USER_MANUAL.fa.md', required: false },
+];
+
+mkdirSync(publicDir, { recursive: true });
+for (const { name, required } of SOURCES) {
+  const from = resolve(repoRoot, name);
+  if (!existsSync(from)) {
+    if (required) {
+      console.error(`copy-manual: required source missing at ${from}`);
+      process.exit(1);
+    }
+    console.warn(`copy-manual: optional source missing at ${from} — skipping`);
+    continue;
+  }
+  const to = resolve(publicDir, name);
+  copyFileSync(from, to);
+  console.log(`copy-manual: ${from} -> ${to}`);
 }
-mkdirSync(dirname(dest), { recursive: true });
-copyFileSync(src, dest);
-console.log(`copy-manual: ${src} -> ${dest}`);

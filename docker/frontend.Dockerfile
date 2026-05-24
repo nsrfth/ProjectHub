@@ -17,8 +17,11 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 
-# The manual sits one level up so copy-manual.mjs resolves it via '..'.
+# v1.13: both manuals (EN canonical + FA translation) sit one level up so
+# copy-manual.mjs resolves them via '..'. FA is optional — the script
+# tolerates it being absent.
 COPY USER_MANUAL.md /USER_MANUAL.md
+COPY USER_MANUAL.fa.md /USER_MANUAL.fa.md
 
 # Everything else from the frontend dir.
 COPY frontend/ .

@@ -2,43 +2,49 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { getLanguage } from '@/lib/i18n';
 
-// v1.10.1: in-app renderer for the canonical USER_MANUAL.md. The .md file
-// lives at the repo root and is copied into /public on every build
-// (scripts/copy-manual.mjs). At runtime we fetch it from the static path
-// and render with ReactMarkdown + GFM (so tables + checklists + autolinks
-// in the manual look right).
+// v1.10.1: in-app renderer for the canonical USER_MANUAL.md (and its
+// Persian sibling, v1.13). The .md files live at the repo root and are
+// copied into /public on every build (scripts/copy-manual.mjs). At
+// runtime we fetch the one that matches the active language and render
+// with ReactMarkdown + GFM (so tables + checklists + autolinks look right).
 //
-// Anchors: the manual's table-of-contents uses `[label](#section-id)`
-// links. ReactMarkdown emits `<h1 id="…">` etc. via remark-gfm + its
-// default heading id behaviour, so the anchor jumps work without us
-// rendering custom heading components.
+// Fallback: if the language-specific manual 404s (e.g. Persian build
+// without the FA file), retry with the English copy so the page is
+// never empty.
+
+function manualUrlFor(lang: ReturnType<typeof getLanguage>): string {
+  return lang === 'FA' ? '/USER_MANUAL.fa.md' : '/USER_MANUAL.md';
+}
 
 export default function HelpPage(): JSX.Element {
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const lang = getLanguage();
 
   useEffect(() => {
     let cancelled = false;
+    const primary = manualUrlFor(lang);
+    const fallback = '/USER_MANUAL.md';
     // Cache-bust on each load so a redeployed manual is picked up
     // immediately. The file is tiny so the bandwidth cost is negligible.
-    fetch(`/USER_MANUAL.md?v=${Date.now()}`, { cache: 'no-store' })
+    fetch(`${primary}?v=${Date.now()}`, { cache: 'no-store' })
       .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      })
-      .then((text) => {
-        if (!cancelled) setMarkdown(text);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError((err as Error).message);
+        if (res.ok) return res.text();
+        // Try the EN fallback if the localised file isn't there.
+        if (primary !== fallback) {
+          return fetch(`${fallback}?v=${Date.now()}`, { cache: 'no-store' }).then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.text();
+          });
         }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+        throw new Error(`HTTP ${res.status}`);
+      })
+      .then((text) => { if (!cancelled) setMarkdown(text); })
+      .catch((err: unknown) => { if (!cancelled) setError((err as Error).message); });
+    return () => { cancelled = true; };
+  }, [lang]);
 
   return (
     <div className="min-h-screen p-8 max-w-3xl mx-auto">
@@ -47,7 +53,7 @@ export default function HelpPage(): JSX.Element {
           ← Back to dashboard
         </Link>
         <a
-          href="/USER_MANUAL.md"
+          href={manualUrlFor(lang)}
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs text-slate-500 underline"
