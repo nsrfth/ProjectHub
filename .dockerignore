@@ -1,0 +1,34 @@
+# v1.10.1: applied to the docker build context (= repo root for the
+# frontend-build service). Without these excludes, Docker would try to
+# copy host node_modules / .git / build artefacts into the image — slow,
+# wasteful, and (in node_modules' case) breaks because Docker can't follow
+# the symlinks under .bin.
+
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.tsbuildinfo
+
+.git
+.github
+.vscode
+.idea
+.claude
+
+# Local secrets — never bake into an image.
+.env
+.env.*
+!.env.example
+
+# OS noise.
+.DS_Store
+Thumbs.db
+
+# Editor swap files.
+*.swp
+
+# Backend payloads (the frontend build doesn't need them and they're not
+# stable across hosts).
+backend/uploads/*
+!backend/uploads/.gitkeep

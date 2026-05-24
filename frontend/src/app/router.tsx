@@ -14,6 +14,7 @@ import SecurityPage from '@/pages/settings/SecurityPage';
 import AuditPage from '@/pages/settings/AuditPage';
 import ApiWebhooksPage from '@/pages/settings/ApiWebhooksPage';
 import PreferencesPage from '@/pages/settings/PreferencesPage';
+import HelpPage from '@/pages/HelpPage';
 import ProtectedRoute from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -30,6 +31,7 @@ export const router = createBrowserRouter([
       { path: '/projects/:projectId/tasks/:taskId', element: <TaskDetailPage /> },
       { path: '/admin', element: <AdminPage /> },
       { path: '/reports', element: <ReportsPage /> },
+      { path: '/help', element: <HelpPage /> },
       {
         path: '/settings',
         element: <SettingsLayout />,

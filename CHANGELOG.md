@@ -4,6 +4,67 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] — 2026-05-24
+
+Three small polish items: in-app user manual, About page, and an
+admin-configurable workweek that paints off-days red in every date
+picker.
+
+### User manual + Help button
+
+- Existing repo-root [USER_MANUAL.md](USER_MANUAL.md) now ships inside
+  the SPA. The frontend build syncs it via
+  [scripts/copy-manual.mjs](frontend/scripts/copy-manual.mjs) before
+  `vite build` / `vite dev` so a single edit at the repo root reaches
+  both GitHub readers and the in-app `/help` route.
+- New 📖 button in the top-right (next to the notification bell). Click
+  → `/help`. The page fetches the markdown and renders it via
+  `react-markdown` + `remark-gfm` (tables, autolinks, checklists).
+- The Docker frontend-build context moved from `./frontend` to the repo
+  root (with a new `.dockerignore`) so the prebuild script can see the
+  manual.
+
+### About button + page
+
+- New ℹ️ button next to the help button. Click → `/about`.
+- New public-ish `GET /api/system/info` endpoint returning app name +
+  version + build time + env + the off-day set + headline counts. Used
+  by the About page; cached via React Query so the corner buttons cost
+  one request per session.
+- Version comes from `TASKHUB_VERSION` env (defaults to `dev`), build
+  time from `TASKHUB_BUILD_TIME` — set these in the deploy pipeline.
+
+### Admin-configurable off-days (workweek)
+
+- New "Workweek (admin · instance-wide)" section on Settings →
+  Preferences, visible only to GlobalRole=ADMIN.
+- Seven weekday checkboxes (Sun..Sat). Save → PUT to the existing
+  `/api/settings/instance/calendar.weekend` endpoint (Phase 1 key/JSON
+  store) with `value: number[]` (JS `getUTCDay` convention, 0=Sun..6=Sat).
+- Default `[0, 6]` (Sat + Sun) when unset.
+- `/system/info` sanitises on read — non-integers and out-of-range values
+  drop out, the result is de-duped and sorted for stable wire output.
+- Frontend `lib/calendar.ts` caches the active set in localStorage,
+  `adoptServerWeekend` syncs from `/system/info` at app boot, and
+  `isWeekend(date)` is the single source of truth used by the picker.
+- [ShamsiDatePicker](frontend/src/lib/ShamsiDatePicker.tsx) uses the
+  library's `mapDays` callback to paint every configured off-day red.
+  Works under both Shamsi and Gregorian.
+
+### Verified
+
+- Frontend + backend build clean.
+- Live: `GET /system/info` → default `[0, 6]` → admin PUT `[4, 5]` →
+  `GET /system/info` reflects → reset to `[0, 6]`. End-to-end.
+- Help button loads the manual; About button shows version + counts +
+  off-day names.
+
+### Notes for ops
+
+- Set `TASKHUB_VERSION` + `TASKHUB_BUILD_TIME` in your `.env` (or
+  CI/CD) to surface real values on the About page. Without them the
+  page shows `dev` + `—`.
+
 ## [1.10.0] — 2026-05-24
 
 Per-user Gregorian / Shamsi calendar preference. TaskHub was Persian-leaning

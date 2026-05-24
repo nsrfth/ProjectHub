@@ -5,7 +5,17 @@ import { RouterProvider } from 'react-router-dom';
 import { AuthProvider } from '@/features/auth/AuthContext';
 import { TeamsProvider } from '@/features/teams/TeamsContext';
 import { router } from '@/app/router';
+import { adoptServerWeekend } from '@/lib/calendar';
+import { fetchSystemInfo } from '@/features/system/api';
 import './index.css';
+
+// v1.11: pull the instance-wide weekend convention (Sat/Sun vs Thu/Fri)
+// at boot and adopt it into lib/calendar.ts so the date picker's mapDays
+// callback colours the right cells red. Best-effort — a 5xx leaves the
+// default (SAT_SUN) in place and the app still works.
+void fetchSystemInfo()
+  .then((info) => adoptServerWeekend(info.calendarWeekend))
+  .catch(() => undefined);
 
 const queryClient = new QueryClient({
   defaultOptions: {

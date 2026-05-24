@@ -3,7 +3,7 @@ import persian from 'react-date-object/calendars/persian';
 import gregorian from 'react-date-object/calendars/gregorian';
 import persian_fa from 'react-date-object/locales/persian_fa';
 import gregorian_en from 'react-date-object/locales/gregorian_en';
-import { getCalendar } from './calendar';
+import { getCalendar, isWeekend } from './calendar';
 
 // Calendar date picker. Values are ISO 8601 UTC strings (or null) on both
 // sides of the API so this drops into anywhere we previously had
@@ -58,6 +58,17 @@ export function ShamsiDatePicker({
       placeholder={placeholder ?? (isShamsi ? 'انتخاب تاریخ' : 'Pick a date')}
       disabled={disabled}
       inputClass="rounded border-slate-300 px-2 py-1 border text-sm"
+      // v1.11: paint admin-configured off-days red. `date.toDate()` gives
+      // a local-time Date but `isWeekend` only reads getUTCDay; since the
+      // calendar grid renders one date object per cell at local midnight,
+      // local-day and UTC-day match here and the red flag lands on the
+      // right column. Inline style avoids a Tailwind purge dependency.
+      mapDays={({ date }) => {
+        if (isWeekend(date.toDate())) {
+          return { style: { color: '#dc2626' } };
+        }
+        return {};
+      }}
       // Hide the library's default editing modes that don't apply to a single date.
       multiple={false}
       range={false}
