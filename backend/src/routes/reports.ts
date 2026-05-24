@@ -82,4 +82,50 @@ export async function reportsRoutes(app: FastifyInstance): Promise<void> {
     },
     handler: ctrl.timeliness,
   });
+
+  // ── CSV exports ───────────────────────────────────────────────────────
+  // Same data as the JSON endpoints above, served as text/csv with a
+  // Content-Disposition that triggers a browser download. No response schema
+  // declared on these — the type provider would otherwise reject the string.
+  r.get('/done.csv', {
+    schema: {
+      tags: ['reports'],
+      summary: 'CSV: tasks completed in the last N days',
+      params: z.object({ teamId: z.string() }),
+      querystring: doneTasksQuery,
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.doneTasksCsv,
+  });
+
+  r.get('/workload.csv', {
+    schema: {
+      tags: ['reports'],
+      summary: 'CSV: open tasks per assignee with per-status breakdown',
+      params: z.object({ teamId: z.string() }),
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.workloadCsv,
+  });
+
+  r.get('/overdue.csv', {
+    schema: {
+      tags: ['reports'],
+      summary: 'CSV: open tasks past their dueDate',
+      params: z.object({ teamId: z.string() }),
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.overdueCsv,
+  });
+
+  r.get('/timeliness.csv', {
+    schema: {
+      tags: ['reports'],
+      summary: 'CSV: timeliness metrics as a single-row export',
+      params: z.object({ teamId: z.string() }),
+      querystring: timelinessQuery,
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.timelinessCsv,
+  });
 }

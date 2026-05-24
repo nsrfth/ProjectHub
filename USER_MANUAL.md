@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.13.0** (2026-05-24)
+Version **v1.14.0** (2026-05-24)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -205,6 +205,10 @@ Click **Reports** in the dashboard header. All sections are team-scoped (current
 
 All timestamps in reports render in your chosen calendar.
 
+### Exporting to CSV (v1.14)
+
+Each report section (Tasks completed / Timeliness / Workload / Overdue) has an **Export CSV** button. Clicking it downloads a UTF-8 CSV with the section's data, named e.g. `tasks-done-7d-2026-05-24.csv`. The file opens cleanly in Excel, Numbers, and Google Sheets. The Summary widget is not exported on its own — its three numbers already live inside Workload / Tasks completed / Overdue.
+
 ---
 
 ## Notifications
@@ -222,6 +226,16 @@ The bell icon (top-right after sign-in) lights up when you have unread notificat
 The bell stays in sync over a WebSocket — new notifications appear without refreshing.
 
 Click a notification to jump to the task; that marks it read.
+
+### Email delivery (v1.14)
+
+If the operator configured SMTP, TaskHub also sends emails for:
+
+- **Verification** — when you register, you get a link that confirms your email (valid 24 h).
+- **Password reset** — when you request a reset, you get a link to choose a new password (valid 1 h).
+- **TASK_DUE** — when the scheduler fires the in-app bell, it also emails the task's assignee and creator.
+
+If your instance has SMTP disabled, you'll see the verification / reset tokens returned in the API response (dev mode only) — operators usually enable SMTP for production. Either way, the in-app bell still works.
 
 ---
 

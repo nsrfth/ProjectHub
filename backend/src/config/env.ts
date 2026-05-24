@@ -70,6 +70,30 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
   RECURRENCE_CHECK_INTERVAL_MIN: z.coerce.number().int().positive().default(60),
+
+  // v1.14: outbound SMTP for verification + password reset + TASK_DUE emails.
+  // Mailer is enabled iff SMTP_HOST is set; with no host, every sendMail()
+  // call is a no-op (and the controllers still surface devReset/Verify tokens
+  // in non-prod). Keeps tests + first-run dev hassle-free.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  // STARTTLS vs implicit TLS. true = SMTPS (port 465); false = plain or
+  // upgrade via STARTTLS (port 587). Matches nodemailer's `secure` flag.
+  SMTP_SECURE: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  // From-address on every outbound. Required when SMTP_HOST is set; enforced
+  // by the mailer at first use, not here, so unrelated tests don't break.
+  SMTP_FROM: z.string().optional(),
+  // Public origin (no trailing slash). Used to build links in emails:
+  //   ${PUBLIC_APP_URL}/reset-password?token=...
+  //   ${PUBLIC_APP_URL}/verify-email?token=...
+  //   ${PUBLIC_APP_URL}/projects/:id/tasks/:id (TASK_DUE)
+  // Falls back to the first CORS_ORIGINS entry when unset.
+  PUBLIC_APP_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema> & { corsOrigins: string[] };

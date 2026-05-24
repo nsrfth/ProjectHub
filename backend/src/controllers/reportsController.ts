@@ -1,8 +1,22 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ReportsService } from '../services/reportsService.js';
 import type { DoneTasksQuery, TimelinessQuery } from '../schemas/reports.js';
+import { toCsv } from '../lib/csv.js';
 
 type TeamParams = { teamId: string };
+
+// Common headers for every CSV download. Content-Disposition: attachment
+// makes the browser save instead of rendering; the filename hint includes
+// today's UTC date so re-downloads don't overwrite older exports.
+function sendCsv(reply: FastifyReply, filename: string, body: string): FastifyReply {
+  const stamp = new Date().toISOString().slice(0, 10);
+  reply.header('Content-Type', 'text/csv; charset=utf-8');
+  reply.header('Content-Disposition', `attachment; filename="${filename}-${stamp}.csv"`);
+  // Reports change with every task edit — never let an intermediate cache
+  // serve a stale snapshot to the user who hit "Export".
+  reply.header('Cache-Control', 'no-store');
+  return reply.send(body);
+}
 
 export class ReportsController {
   constructor(private readonly svc: ReportsService) {}
@@ -41,5 +55,73 @@ export class ReportsController {
   ) => {
     const r = await this.svc.timeliness(req.params.teamId, req.query.days);
     return reply.send(r);
+  };
+
+  // ── CSV exports ─────────────────────────────────────────────────────────
+  // One handler per report shape. Each mirrors its JSON sibling but returns
+  // text/csv. Columns are deliberately flat (no nested objects) so the file
+  // opens cleanly in Excel / Sheets / Numbers.
+
+  doneTasksCsv = async (
+    req: FastifyRequest<{ Params: TeamParams; Querystring: DoneTasksQuery }>,
+    reply: FastifyReply,
+  ) => {
+    const rows = await this.svc.listDoneTasks(req.params.teamId, req.query.days);
+    const csv = toCsv(rows, [
+      { header: 'task_id', value: (r) => r.taskId },
+      { header: 'task_title', value: (r) => r.taskTitle },
+      { header: 'project_id', value: (r) => r.projectId },
+      { header: 'project_name', value: (r) => r.projectName },
+      { header: 'assignee_id', value: (r) => r.assigneeId },
+      { header: 'assignee_name', value: (r) => r.assigneeName },
+      { header: 'completed_at', value: (r) => r.completedAt },
+    ]);
+    return sendCsv(reply, `tasks-done-${req.query.days}d`, csv);
+  };
+
+  workloadCsv = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
+    const rows = await this.svc.listWorkload(req.params.teamId);
+    const csv = toCsv(rows, [
+      { header: 'assignee_id', value: (r) => r.assigneeId },
+      { header: 'assignee_name', value: (r) => r.assigneeName ?? '(unassigned)' },
+      { header: 'todo', value: (r) => r.byStatus.TODO },
+      { header: 'in_progress', value: (r) => r.byStatus.IN_PROGRESS },
+      { header: 'review', value: (r) => r.byStatus.REVIEW },
+      { header: 'total', value: (r) => r.total },
+    ]);
+    return sendCsv(reply, 'workload', csv);
+  };
+
+  overdueCsv = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
+    const rows = await this.svc.listOverdue(req.params.teamId);
+    const csv = toCsv(rows, [
+      { header: 'task_id', value: (r) => r.taskId },
+      { header: 'task_title', value: (r) => r.taskTitle },
+      { header: 'project_id', value: (r) => r.projectId },
+      { header: 'project_name', value: (r) => r.projectName },
+      { header: 'status', value: (r) => r.status },
+      { header: 'assignee_id', value: (r) => r.assigneeId },
+      { header: 'assignee_name', value: (r) => r.assigneeName },
+      { header: 'due_date', value: (r) => r.dueDate },
+      { header: 'days_overdue', value: (r) => r.daysOverdue },
+    ]);
+    return sendCsv(reply, 'overdue', csv);
+  };
+
+  timelinessCsv = async (
+    req: FastifyRequest<{ Params: TeamParams; Querystring: TimelinessQuery }>,
+    reply: FastifyReply,
+  ) => {
+    // Timeliness is a single record — emit one-row CSV with the same metrics
+    // the JSON endpoint returns, rounded for human readability.
+    const r = await this.svc.timeliness(req.params.teamId, req.query.days);
+    const csv = toCsv([r], [
+      { header: 'window_days', value: (x) => x.windowDays },
+      { header: 'evaluated_count', value: (x) => x.evaluatedCount },
+      { header: 'on_time_rate', value: (x) => Math.round(x.onTimeRate * 1000) / 1000 },
+      { header: 'avg_variance_days', value: (x) => Math.round(x.avgVarianceDays * 100) / 100 },
+      { header: 'behind_plan_count', value: (x) => x.behindPlanCount },
+    ]);
+    return sendCsv(reply, `timeliness-${req.query.days}d`, csv);
   };
 }

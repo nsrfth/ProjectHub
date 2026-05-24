@@ -7,6 +7,7 @@ import type { Env } from '../config/env.js';
 import { DirectoryService } from './directoryService.js';
 import { LdapService, type LdapAuthResult } from './ldapService.js';
 import { TwoFactorService } from './twoFactorService.js';
+import { emailService } from './emailService.js';
 
 // All token lifecycle logic lives here. Routes/controllers don't talk to Prisma directly.
 
@@ -321,13 +322,12 @@ export class AuthService {
     });
   }
 
-  // Returns the raw reset token. In production this would be emailed to the
-  // user. Email is intentionally not wired up per project decision; the caller
-  // (controller) returns the token in the response body only in non-production.
+  // Returns the raw reset token. When SMTP is configured the token is also
+  // emailed; the controller still surfaces it in the response body in non-prod
+  // so dev/test flows don't need a real SMTP server. Always returns the same
+  // shape regardless of whether the user exists, to prevent account enumeration.
   async requestPasswordReset(email: string): Promise<{ resetToken: string | null }> {
     const user = await prisma.user.findUnique({ where: { email } });
-    // Return a token only if the user exists, but the response shape is identical
-    // either way so callers can't enumerate accounts via this endpoint.
     if (!user) return { resetToken: null };
 
     const raw = randomTokenHex(32);
@@ -335,17 +335,28 @@ export class AuthService {
     await prisma.passwordReset.create({
       data: { userId: user.id, tokenHash: sha256(raw), expiresAt },
     });
+    // Fire-and-forget — never block the response on outbound mail. The
+    // emailService no-ops when SMTP isn't configured.
+    void emailService.sendPasswordReset({ to: user.email, name: user.name, token: raw });
     return { resetToken: raw };
   }
 
   // Internal — issue + persist a single-use email-verification token for a
-  // user. Returns the raw token; only the SHA-256 hash is stored.
+  // user. Returns the raw token; only the SHA-256 hash is stored. Also
+  // dispatches the verification email best-effort (no-op when SMTP unset).
   private async createVerificationToken(userId: string): Promise<string> {
     const raw = randomTokenHex(32);
     const expiresAt = new Date(Date.now() + parseDuration('24h'));
     await prisma.emailVerification.create({
       data: { userId, tokenHash: sha256(raw), expiresAt },
     });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true },
+    });
+    if (user) {
+      void emailService.sendVerification({ to: user.email, name: user.name, token: raw });
+    }
     return raw;
   }
 

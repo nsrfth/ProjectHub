@@ -54,7 +54,10 @@ describe('PATCH /api/auth/me/preferences', () => {
       payload: { calendar: 'GREGORIAN' },
     });
     expect(patch.statusCode).toBe(200);
-    expect(patch.json()).toEqual({ calendar: 'GREGORIAN' });
+    // v1.13: PATCH returns the full preference triple so the frontend can
+    // mirror it to localStorage in one round-trip. We only care that the
+    // patched field landed; the other two retain their defaults.
+    expect(patch.json()).toMatchObject({ calendar: 'GREGORIAN' });
 
     // Fresh login sees the persisted value.
     const login = await app.inject({

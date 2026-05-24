@@ -77,3 +77,32 @@ export async function fetchTimeliness(
     })
   ).data;
 }
+
+// CSV download. We can't just use a plain anchor href because the API needs a
+// Bearer header — fetch via axios with responseType=blob, then trigger a
+// download via a temporary object URL. Filename comes from the
+// Content-Disposition header when present (falls back to the supplied default).
+export async function downloadReportCsv(
+  teamId: string,
+  report: 'done' | 'workload' | 'overdue' | 'timeliness',
+  fallbackName: string,
+  params?: Record<string, string | number>,
+): Promise<void> {
+  const res = await api.get<Blob>(`/teams/${teamId}/reports/${report}.csv`, {
+    params,
+    responseType: 'blob',
+  });
+  // Parse Content-Disposition for a filename. Format from the server:
+  //   attachment; filename="tasks-done-7d-2026-05-24.csv"
+  const cd = (res.headers['content-disposition'] ?? '') as string;
+  const match = /filename="?([^"]+)"?/i.exec(cd);
+  const filename = match?.[1] ?? `${fallbackName}.csv`;
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

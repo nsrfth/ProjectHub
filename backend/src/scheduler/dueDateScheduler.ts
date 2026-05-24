@@ -1,5 +1,7 @@
 import { prisma } from '../data/prisma.js';
 import { notifications } from '../services/notificationsService.js';
+import { emailService } from '../services/emailService.js';
+import { mailer } from '../lib/mailer.js';
 import type { FastifyBaseLogger } from 'fastify';
 
 // Scheduler for TASK_DUE notifications. Runs in-process via setInterval —
@@ -70,6 +72,33 @@ export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler 
             data: { dueNotifiedAt: now },
           });
         });
+        // Email fan-out is best-effort and runs after the in-app notification
+        // commits, so a transient SMTP failure doesn't suppress the bell.
+        if (mailer.isEnabled()) {
+          const recipients = await prisma.task
+            .findUnique({
+              where: { id: t.id },
+              select: {
+                assignee: { select: { email: true } },
+                creator: { select: { email: true } },
+              },
+            })
+            .then((row) => {
+              const emails = [row?.assignee?.email, row?.creator?.email].filter(
+                (e): e is string => !!e,
+              );
+              return [...new Set(emails)];
+            });
+          for (const to of recipients) {
+            void emailService.sendTaskDue({
+              to,
+              taskTitle: t.title,
+              projectId: t.projectId,
+              taskId: t.id,
+              dueDate: t.dueDate!,
+            });
+          }
+        }
         emitted += 1;
       } catch (err) {
         opts.logger.error({ err, taskId: t.id }, 'TASK_DUE emit failed');

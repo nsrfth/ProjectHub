@@ -4,6 +4,79 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] — 2026-05-24
+
+SMTP email delivery and CSV exports for reports.
+
+### Backend
+
+- New `lib/mailer.ts` — singleton `nodemailer` transport, lazy + dependency-injected
+  from `env.SMTP_*`. `isEnabled()` is false when `SMTP_HOST` is unset; every
+  `sendMail` is then a no-op. The mailer never throws into the request path —
+  failures surface via `{ accepted: false }`.
+- New `services/emailService.ts` composes verification, password-reset and
+  TASK_DUE messages. Plain-text + HTML bodies, links built from `PUBLIC_APP_URL`
+  with a CORS-origin fallback. HTML output escapes user-supplied fields.
+- `authService.requestPasswordReset` + `createVerificationToken` now call the
+  mailer best-effort. Non-prod responses still surface `devResetToken` /
+  `devVerifyToken` so dev/test flows don't need a real SMTP server.
+- `scheduler/dueDateScheduler` fans out a `sendTaskDue` email to the assignee +
+  creator after the in-app notification commits. Email failure cannot suppress
+  the bell.
+- New `lib/csv.ts` — RFC 4180 serializer with BOM prefix, CRLF rows, and a
+  CSV-injection neutraliser that prefixes `=+-@` with `'` so Excel/Sheets
+  treat them as literal text. Dates auto-format to ISO-8601.
+- Four new endpoints — `GET /api/teams/:teamId/reports/{done,workload,overdue,timeliness}.csv`.
+  Reuse the existing service methods, return `text/csv; charset=utf-8` with
+  `Content-Disposition: attachment; filename="<name>-<YYYY-MM-DD>.csv"` and
+  `Cache-Control: no-store`.
+
+### Frontend
+
+- `features/reports/api.ts` adds `downloadReportCsv(...)` — fetches the CSV
+  as a blob (because Bearer auth is required), parses the filename out of
+  `Content-Disposition`, and triggers a download via a temporary object URL.
+- `pages/ReportsPage.tsx` adds an "Export CSV" pill button in each section
+  (Tasks completed, Timeliness, Workload, Overdue).
+
+### Env / ops
+
+- New env vars: `SMTP_HOST`, `SMTP_PORT` (default 587), `SMTP_SECURE`
+  (default false → STARTTLS), `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`,
+  `PUBLIC_APP_URL`. Documented in both `.env.example` files and wired into
+  `docker-compose.yml`. Leaving `SMTP_HOST` blank disables outbound mail
+  entirely — same shape every release has had.
+
+### Tests
+
+- 13 new tests added (165 → 178 total). 5× CSV serializer corner cases
+  (BOM, CRLF, quoting, dates, CSV-injection prefix). 3× mailer no-op
+  behaviour + `publicAppUrl()` fallback. 5× CSV-endpoint integration:
+  headers, column order, `(unassigned)` rendering, days-overdue, auth.
+- Fixed a pre-existing stale assertion in `preferences.test.ts` (expected
+  `{ calendar }`, the v1.13 PATCH returns the full triple).
+
+### Verified
+
+- Suite: 173/178 passing + 5 skipped (the lone failing file is the LDAP
+  integration test, which connects to `localhost:1389` and is environment-
+  specific to host networking, unchanged by this work).
+- Backend typecheck clean. Frontend build clean.
+
+### Phase boundary
+
+- Verification + password-reset links assume the frontend exposes
+  `/verify-email?token=` and `/reset-password?token=` routes. The link
+  builder is in `services/emailService.ts` — if those routes ever rename,
+  update there.
+- Templates are not localised yet — emails always render in English
+  regardless of `user.languagePreference`. The composer is the obvious
+  branching point when this comes up.
+- No retry / dead-letter queue for failed sends. A best-effort dispatch
+  fits the current single-instance footprint; a multi-instance deploy
+  should swap nodemailer for a queue-backed sender or move outbound mail
+  to a side process.
+
 ## [1.13.0] — 2026-05-24
 
 Dark theme + Persian UI + RTL. Two new per-user preferences (`theme`,

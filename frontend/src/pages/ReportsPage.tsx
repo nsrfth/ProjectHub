@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTeams } from '@/features/teams/TeamsContext';
 import {
+  downloadReportCsv,
   fetchDoneReport,
   fetchOverdue,
   fetchSummary,
@@ -149,6 +150,14 @@ export default function ReportsPage(): JSX.Element {
               {data.items.length} task{data.items.length === 1 ? '' : 's'}
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => downloadReportCsv(currentTeam.id, 'done', `tasks-done-${days}d`, { days })}
+            className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+            title="Download as CSV"
+          >
+            Export CSV
+          </button>
         </div>
 
         {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
@@ -212,6 +221,16 @@ export default function ReportsPage(): JSX.Element {
           <span className="text-xs text-slate-500">
             (same window as "Tasks completed")
           </span>
+          <button
+            type="button"
+            onClick={() =>
+              downloadReportCsv(currentTeam.id, 'timeliness', `timeliness-${days}d`, { days })
+            }
+            className="ml-auto text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+            title="Download as CSV"
+          >
+            Export CSV
+          </button>
         </div>
         {!timeliness && <p className="text-sm text-slate-500">Loading…</p>}
         {timeliness && timeliness.evaluatedCount === 0 && (
@@ -284,7 +303,17 @@ export default function ReportsPage(): JSX.Element {
 
       {/* Workload — open tasks per assignee with per-status breakdown. */}
       <section className="bg-white rounded shadow p-4 mb-6">
-        <h2 className="font-medium mb-3">Workload</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-medium">Workload</h2>
+          <button
+            type="button"
+            onClick={() => downloadReportCsv(currentTeam.id, 'workload', 'workload')}
+            className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+            title="Download as CSV"
+          >
+            Export CSV
+          </button>
+        </div>
         {!workload && <p className="text-sm text-slate-500">Loading…</p>}
         {workload && workload.items.length === 0 && (
           <p className="text-sm text-slate-500 italic">Nothing open right now.</p>
@@ -327,11 +356,21 @@ export default function ReportsPage(): JSX.Element {
       <section className="bg-white rounded shadow p-4 mb-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-medium">Overdue</h2>
-          {overdue && (
-            <span className="text-sm text-slate-500">
-              {overdue.items.length} task{overdue.items.length === 1 ? '' : 's'}
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {overdue && (
+              <span className="text-sm text-slate-500">
+                {overdue.items.length} task{overdue.items.length === 1 ? '' : 's'}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => downloadReportCsv(currentTeam.id, 'overdue', 'overdue')}
+              className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+              title="Download as CSV"
+            >
+              Export CSV
+            </button>
+          </div>
         </div>
         {!overdue && <p className="text-sm text-slate-500">Loading…</p>}
         {overdue && overdue.items.length === 0 && (
