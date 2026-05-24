@@ -57,6 +57,39 @@ Opt-in "update available" check.
 - Cache is in-memory per replica. In a multi-replica deploy each backend
   gets its own GitHub call; harmless at ~4 calls/day/replica.
 
+## [1.20.0] — 2026-05-24
+
+Kanban view-mode toggle: "by Status" / "by Technician".
+
+### Frontend
+
+- `pages/TasksPage.tsx` gains a small pill-toggle in the header:
+  - **by Status** — the existing kanban (TODO / IN_PROGRESS / REVIEW / DONE
+    columns, drag-and-drop, status changes).
+  - **by Technician** — read-only swimlanes, one column per Technician
+    (alphabetical, "(unassigned)" pinned last), each card showing
+    title + status + priority. Click a card to open the task detail page.
+- Choice persists in `localStorage` (`kanban.viewMode`).
+- Drag-and-drop is intentionally **disabled** in the Technician view —
+  dropping a card onto another swimlane would be a Technician reassignment,
+  which is role-gated (v1.19) and would silently fail for members. The
+  UX is "switch view → open task → reassign there".
+
+### Verified
+
+- Frontend build clean (730 KB bundle, 226 KB gzipped — +3 KB from v1.19
+  for the new view + toggle).
+
+### Phase boundary
+
+- No drag-to-reassign-technician in the new view (by design — see above).
+  A manager-only DnD swimlane reorder is the obvious upgrade if you want
+  to drag cards between technicians.
+- Columns aren't team-scoped — they're project-scoped (the same scope as
+  the existing kanban). A team-wide "everyone's tasks across every project,
+  grouped by Technician" view would live on the Calendar / Reports surface,
+  not here.
+
 ## [1.19.0] — 2026-05-24
 
 Assigned Technician field on Task + Subtask.

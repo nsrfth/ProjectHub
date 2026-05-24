@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
@@ -270,6 +270,42 @@ export default function TasksPage(): JSX.Element {
     return g;
   }, [tasks]);
 
+  // v1.20: alternative view mode — swimlanes by Technician instead of by
+  // Status. Persisted in localStorage so the user's preference survives
+  // page reloads. Drag-and-drop stays in status view only; reassigning a
+  // technician via drag would silently fail for members (it's role-gated),
+  // so the UX is "switch view, click into task detail to reassign".
+  const [viewMode, setViewMode] = useState<'status' | 'technician'>(() => {
+    if (typeof window === 'undefined') return 'status';
+    return window.localStorage.getItem('kanban.viewMode') === 'technician' ? 'technician' : 'status';
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('kanban.viewMode', viewMode);
+    }
+  }, [viewMode]);
+
+  // Group tasks by Technician — columns are deterministic by name (alphabetical),
+  // with "Unassigned" pinned last when present.
+  const groupedByTech = useMemo(() => {
+    const buckets = new Map<string, { id: string | null; name: string; tasks: tasksApi.Task[] }>();
+    for (const t of tasks) {
+      const key = t.technicianId ?? '__unassigned__';
+      const name = t.technicianName ?? '(unassigned)';
+      let entry = buckets.get(key);
+      if (!entry) {
+        entry = { id: t.technicianId, name, tasks: [] };
+        buckets.set(key, entry);
+      }
+      entry.tasks.push(t);
+    }
+    return [...buckets.values()].sort((a, b) => {
+      if (a.id === null) return 1;
+      if (b.id === null) return -1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [tasks]);
+
   if (!currentTeam) {
     return (
       <div className="min-h-screen p-8 max-w-3xl mx-auto">
@@ -361,43 +397,123 @@ export default function TasksPage(): JSX.Element {
           >
             {createMut.isPending ? 'Adding…' : 'Add task'}
           </button>
+
+          {/* v1.20: view-mode toggle. "by Status" is the classic kanban
+              (drag-and-drop). "by Technician" pivots the same data into
+              per-person swimlanes — read-only (drag would attempt a
+              role-gated reassignment that members can't do). */}
+          <div className="ml-auto inline-flex rounded border border-slate-300 dark:border-slate-600 overflow-hidden text-xs">
+            <button
+              type="button"
+              onClick={() => setViewMode('status')}
+              className={`px-3 py-1 ${viewMode === 'status' ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}
+              title="Show one column per status (with drag-and-drop)"
+            >
+              by Status
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('technician')}
+              className={`px-3 py-1 ${viewMode === 'technician' ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}
+              title="Show one column per Technician (read-only swimlanes)"
+            >
+              by Technician
+            </button>
+          </div>
         </form>
         {createError && <p className="text-xs text-red-600 mt-2">{createError}</p>}
       </section>
 
       {isLoading && <p className="text-sm text-slate-500">Loading tasks…</p>}
 
-      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {STATUS_ORDER.map((status) => (
-            <Column key={status} status={status} tasks={grouped[status]}>
-              <SortableContext
-                items={grouped[status].map((t) => t.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {grouped[status].map((t) => (
-                  <SortableCard
-                    key={t.id}
-                    task={t}
-                    onOpen={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
-                    onDelete={(task) => {
-                      if (window.confirm(`Delete task "${task.title}"?`)) deleteMut.mutate(task.id);
-                    }}
-                    onStatusChange={(task, s) =>
-                      updateMut.mutate({ taskId: task.id, patch: { status: s } })
-                    }
-                  />
-                ))}
-                {grouped[status].length === 0 && (
-                  <li className="text-xs text-slate-400 italic py-2">
-                    {reorderMut.isPending ? 'Saving…' : 'empty'}
-                  </li>
-                )}
-              </SortableContext>
-            </Column>
+      {viewMode === 'status' && (
+        <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+          <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {STATUS_ORDER.map((status) => (
+              <Column key={status} status={status} tasks={grouped[status]}>
+                <SortableContext
+                  items={grouped[status].map((t) => t.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {grouped[status].map((t) => (
+                    <SortableCard
+                      key={t.id}
+                      task={t}
+                      onOpen={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
+                      onDelete={(task) => {
+                        if (window.confirm(`Delete task "${task.title}"?`)) deleteMut.mutate(task.id);
+                      }}
+                      onStatusChange={(task, s) =>
+                        updateMut.mutate({ taskId: task.id, patch: { status: s } })
+                      }
+                    />
+                  ))}
+                  {grouped[status].length === 0 && (
+                    <li className="text-xs text-slate-400 italic py-2">
+                      {reorderMut.isPending ? 'Saving…' : 'empty'}
+                    </li>
+                  )}
+                </SortableContext>
+              </Column>
+            ))}
+          </section>
+        </DndContext>
+      )}
+
+      {viewMode === 'technician' && (
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {groupedByTech.length === 0 && (
+            <p className="text-sm text-slate-500">No tasks yet.</p>
+          )}
+          {groupedByTech.map((g) => (
+            <TechnicianColumn
+              key={g.id ?? '__unassigned__'}
+              name={g.name}
+              tasks={g.tasks}
+              onOpen={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
+            />
           ))}
         </section>
-      </DndContext>
+      )}
+    </div>
+  );
+}
+
+// v1.20: read-only per-Technician swimlane. Mirrors the Column above visually
+// but with no DnD machinery — reassigning a Technician is role-gated and
+// happens from the task detail page.
+function TechnicianColumn({
+  name,
+  tasks,
+  onOpen,
+}: {
+  name: string;
+  tasks: tasksApi.Task[];
+  onOpen: (taskId: string) => void;
+}): JSX.Element {
+  return (
+    <div className="bg-white rounded shadow p-3">
+      <h2 className="text-sm font-medium mb-2 flex items-center justify-between">
+        <span>{name}</span>
+        <span className="text-xs text-slate-500">{tasks.length}</span>
+      </h2>
+      <ul className="space-y-2 min-h-[40px]">
+        {tasks.map((t) => (
+          <li
+            key={t.id}
+            onClick={() => onOpen(t.id)}
+            className="bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer rounded p-2 text-sm"
+          >
+            <p className="font-medium truncate">{t.title}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {t.status} · {t.priority}
+            </p>
+          </li>
+        ))}
+        {tasks.length === 0 && (
+          <li className="text-xs text-slate-400 italic py-2">empty</li>
+        )}
+      </ul>
     </div>
   );
 }
