@@ -4,10 +4,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as notifApi from './api';
 import { getAccessToken, onTokenChange } from '@/lib/api';
 import { formatRelativeTime, formatShamsiTimestamp } from '@/lib/shamsi';
+import { IconBell } from '@/features/nav/icons';
 
-// Renders the user-facing notification fragment, including a bell button, an
-// unread badge, and a click-to-open dropdown listing recent notifications.
-// Fixed top-right so it appears on every authenticated route via ProtectedRoute.
+// v1.24: bell now lives INSIDE the TopNav flex container (no longer
+// fixed-position). Renders as a regular icon button next to the user menu.
+// Same dropdown behaviour; same WS feed.
 export default function NotificationBell(): JSX.Element {
   const qc = useQueryClient();
   const nav = useNavigate();
@@ -156,7 +157,7 @@ export default function NotificationBell(): JSX.Element {
   }
 
   return (
-    <div ref={wrapRef} className="fixed top-3 right-3 z-50">
+    <div ref={wrapRef} className="relative">
       <button
         type="button"
         onClick={() => {
@@ -164,19 +165,19 @@ export default function NotificationBell(): JSX.Element {
           if (!open) void refetchList();
         }}
         aria-label="Notifications"
-        className="relative bg-white border border-slate-300 dark:bg-slate-800 dark:border-slate-600 rounded-full w-9 h-9 flex items-center justify-center shadow hover:bg-slate-100 dark:hover:bg-slate-700"
+        className="relative p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
       >
-        <span aria-hidden>🔔</span>
+        <IconBell size={20} />
         {count > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] rounded-full min-w-4 h-4 px-1 flex items-center justify-center">
+          <span className="absolute top-0.5 right-0.5 bg-red-600 text-white text-[10px] rounded-full min-w-4 h-4 px-1 flex items-center justify-center">
             {count > 99 ? '99+' : count}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-auto bg-white border border-slate-200 rounded shadow-lg">
-          <div className="flex items-center justify-between p-2 border-b">
+        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-lg z-50">
+          <div className="flex items-center justify-between p-2 border-b border-slate-200 dark:border-slate-700">
             <span className="text-sm font-medium">Notifications</span>
             <button
               onClick={() => markAllMut.mutate()}
@@ -195,12 +196,12 @@ export default function NotificationBell(): JSX.Element {
             {items.map((n) => (
               <li
                 key={n.id}
-                className={`border-b last:border-0 ${n.readAt ? 'bg-white' : 'bg-blue-50'}`}
+                className={`border-b border-slate-200 dark:border-slate-700 last:border-0 ${n.readAt ? '' : 'bg-blue-50 dark:bg-blue-900/20'}`}
               >
                 <button
                   type="button"
                   onClick={() => openNotification(n)}
-                  className="w-full text-left p-2 hover:bg-slate-50"
+                  className="w-full text-left p-2 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
                   <p className="text-sm">{describe(n)}</p>
                   <p

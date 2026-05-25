@@ -57,6 +57,52 @@ Opt-in "update available" check.
 - Cache is in-memory per replica. In a multi-replica deploy each backend
   gets its own GitHub call; harmless at ~4 calls/day/replica.
 
+## [1.24.0] — 2026-05-25
+
+Nav redesign: left sidebar + slim top bar + user-menu dropdown.
+
+### Frontend
+
+- New **left sidebar** (`features/nav/LeftSidebar.tsx`): primary nav
+  (Dashboard / Projects / Calendar / Reports / Teams / Trash / Admin)
+  in a 16rem fixed rail on md+; collapses to a slide-in drawer on
+  narrow viewports, toggled by a hamburger in the top bar.
+- New **user menu** (`features/nav/UserMenu.tsx`): avatar circle with
+  initials + dropdown containing About / Help / Settings / Sign out.
+  Replaces the loose grid of fixed-position corner buttons.
+- **TopNav slimmed** to: hamburger (mobile) · flex spacer ·
+  notifications bell · user menu. ~60 lines, down from 110.
+- **NotificationBell unfix**: was `position: fixed` overlay since
+  v1.0; now sits in the TopNav flex row with the same dropdown
+  behavior and WS feed. Uses the new IconBell SVG.
+- **Inline SVG icon set** (`features/nav/icons.tsx`): Lucide-style
+  strokes, 14 icons (~150 lines), no new dependency.
+- **Active-state refinement**: replaced the full bg-invert pill with
+  a subtle tinted bg + accented icon. Much quieter visually.
+- Page layout: `<main className="md:pl-64">` in `ProtectedRoute`
+  offsets content right of the sidebar. Existing pages keep their
+  own `max-w-Xxl mx-auto` centering inside the available space.
+
+### Deleted
+
+- `features/system/AboutButton.tsx` — folded into UserMenu.
+- `features/help/HelpButton.tsx` — folded into UserMenu.
+
+### Verified
+
+- Frontend build clean (typecheck + Vite bundle).
+- Frontend bundle redeployed to the `frontend_dist` volume.
+
+### Phase boundary
+
+- No avatar image upload — only initials. Can add a `User.avatarUrl`
+  column later if you want.
+- Sidebar width is fixed at 16rem; no "collapse to icon-only" toggle.
+  Drawer behaviour below md handles the cramped-space case.
+- The user-menu dropdown closes on outside-click + Escape but anchors
+  to `right: 0` in both LTR and RTL. Acceptable since the menu sits
+  at the top-right corner in both directions.
+
 ## [1.23.0] — 2026-05-25
 
 Per-team custom roles + permission system (RBAC).
