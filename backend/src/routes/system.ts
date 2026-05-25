@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { prisma } from '../data/prisma.js';
+import { PERMISSIONS, PERMISSION_GROUPS } from '../lib/permissions.js';
 
 // Public read-only system metadata. Used by:
 //   - The frontend's About button (version + build + license + counts).
@@ -96,5 +97,28 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
         counts: { users, teams, tasks },
       });
     },
+  });
+
+  // v1.23: catalog of permission constants + UI grouping. Auth-less by
+  // design (matches the rest of /system) — it's pure code-bound metadata,
+  // not per-tenant data. Powers the permission matrix on the roles page.
+  r.get('/permissions', {
+    schema: {
+      tags: ['system'],
+      summary: 'List of permission constants the app honours, with UI grouping',
+      response: {
+        200: z.object({
+          permissions: z.array(z.string()),
+          groups: z.record(z.string(), z.array(z.string())),
+        }),
+      },
+    },
+    handler: async (_req, reply) =>
+      reply.send({
+        permissions: [...PERMISSIONS],
+        groups: Object.fromEntries(
+          Object.entries(PERMISSION_GROUPS).map(([k, v]) => [k, [...v]]),
+        ),
+      }),
   });
 }

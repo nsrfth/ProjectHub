@@ -72,7 +72,7 @@ export class TeamsController {
     const member = await this.svc.updateMemberRole(
       req.params.teamId,
       req.params.userId,
-      req.body.role,
+      req.body,
     );
     return reply.send({ ...member, joinedAt: member.joinedAt.toISOString() });
   };

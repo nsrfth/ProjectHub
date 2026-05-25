@@ -61,9 +61,18 @@ export class CommentsController {
   };
 
   remove = async (req: FastifyRequest<{ Params: CommentParams }>, reply: FastifyReply) => {
-    const m = callerMembership(req);
+    if (!req.user) throw Errors.unauthorized();
+    // v1.23: still require team membership (stashes on request); the
+    // service-layer permission check uses the actor's globalRole + teamId.
+    callerMembership(req);
     await this.tasks.get(req.params.teamId, req.params.projectId, req.params.taskId);
-    await this.svc.remove(req.params.taskId, req.params.commentId, m.userId, m.role);
+    await this.svc.remove(
+      req.params.taskId,
+      req.params.commentId,
+      req.user.sub,
+      req.user.globalRole,
+      req.params.teamId,
+    );
     return reply.status(204).send();
   };
 }

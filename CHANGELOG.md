@@ -57,6 +57,121 @@ Opt-in "update available" check.
 - Cache is in-memory per replica. In a multi-replica deploy each backend
   gets its own GitHub call; harmless at ~4 calls/day/replica.
 
+## [1.23.0] — 2026-05-25
+
+Per-team custom roles + permission system (RBAC).
+
+### Schema
+
+- New `Role` (id, teamId, name, description, isSystem). Unique on
+  `(teamId, name)`. Indexed on `teamId`.
+- New `RolePermission` (roleId, permission). Junction table. PK on the
+  pair.
+- `TeamMembership.roleId` (FK → Role, SET NULL). Coexists with the legacy
+  `role` enum for one release as a fallback; v1.24 will drop the enum.
+- Migration `20260525000000_rbac`: additive. Backfills two system roles
+  (`Manager`, `Member`) per team with the documented default permission
+  sets, then sets `TeamMembership.roleId` to whichever system role matches
+  each member's legacy enum value. Zero behavioural drift post-upgrade.
+
+### Backend
+
+- New `lib/permissions.ts` — **14 hardcoded permission constants** grouped
+  into 5 buckets (Tasks, Comments, Projects, Team, Integrations, Trash).
+  Permissions are bound to code paths; the service rejects writes of any
+  string outside the constant list.
+- New `middleware/requirePermission.ts`. `requirePermission('X')` for
+  route gating; `userHasPermission(userId, teamId, globalRole, X)` for
+  service-layer gates. Global `ADMIN` always bypasses — lockout-proof
+  escape hatch.
+- New `services/rolesService.ts` + `routes/roles.ts` mounted at
+  `/api/teams/:teamId/roles`:
+  - `GET /` — list roles in this team (open to any member; powers the
+    role-assignment dropdown).
+  - `GET /:roleId` — single role + its permissions.
+  - `POST /` — create custom role *(requires `team.manage_roles`)*.
+  - `PATCH /:roleId` — update name/description *(same gate)*. System
+    role names cannot be changed.
+  - `PUT /:roleId/permissions` — replace the permission set (idempotent).
+  - `DELETE /:roleId` — delete a custom role. Rejects `isSystem`; rejects
+    roles still assigned to memberships (409 with friendly message).
+- New `GET /api/system/permissions` — code-bound catalog + UI grouping.
+  Auth-less by design (matches the rest of `/system`); powers the matrix.
+- **Refactored ~7 service-layer gates** from `if (role === 'MANAGER')`
+  to `if (!await userHasPermission(...))`:
+  - `tasks.update` technician change → `task.change_technician`
+  - `subtasks.update` technician change → `task.change_technician`
+  - `projects.update` non-owner edit → `project.edit`
+  - `projects.update` set accountable → `project.set_accountable`
+  - `projects.remove` non-owner delete → `project.delete`
+  - `comments.remove` non-author → `comment.delete_others`
+  - `trash.purge` (still gated by the v1.21 InstanceSetting on top) → `trash.purge`
+- **3 route-level gates** refactored: invite, remove, change role on
+  `/api/teams/:teamId/members/*`. Webhooks routes too.
+- `PATCH /api/teams/:teamId/members/:userId` now accepts EITHER the
+  legacy `{ role: 'MANAGER' | 'MEMBER' }` body OR the new
+  `{ roleId: <Role.id> }`. Both routes update the same membership;
+  legacy enum kept for one release for backwards-compat callers.
+- Member responses now carry `roleId` + `roleName` joined for the UI.
+
+### Frontend
+
+- New `/settings/roles` page (`pages/settings/RolesPage.tsx`): lists every
+  role in the current team, expand-to-edit, permission matrix grouped by
+  resource (5 sections, 14 checkboxes total). System roles render with a
+  "System" pill and a disabled-name input. Create / save / delete.
+- New entry in the Settings sidebar: "Roles & permissions" (visible to
+  all team members; mutations gated server-side).
+- Team detail page: every member row now has an **inline role dropdown**
+  that PATCHes the membership with the chosen `roleId`. Read-only label
+  for non-managers.
+- i18n: `settings.nav.roles` + `settings.nav.rolesDesc` in EN + FA.
+
+### InstanceSetting interactions (the second-layer policy)
+
+- `tasks.dateEditRestriction` (v1.18) and `trash.emptyAllowedRoles` (v1.21)
+  still apply ON TOP of the per-role permission check. A user with
+  `task.modify_dates` is **still** gated when the InstanceSetting is set
+  to `manager-only` AND their TeamMembership.role enum is `MEMBER`. The
+  intent: instance-wide operator policy is a separate (and stronger)
+  layer than per-role permissions. Documented in code + the plan doc.
+
+### Tests
+
+- 10 new integration tests in `tests/integration/roles.test.ts`:
+  - list / create / unknown-permission rejected / member-403 / system-role
+    cannot be deleted / role-with-members cannot be deleted / role-id PATCH /
+    legacy+roleId mutex / end-to-end permission gate flip / catalog response.
+- Updated `technician.test.ts` to match the new permission-style error
+  message.
+- Suite: 219/225 passing + 5 skipped (the lone failing file is the
+  pre-existing LDAP env-specific test).
+
+### Migration risks + their mitigations
+
+1. **Mis-mapped role**: legacy `role` enum stays as a fallback; service
+   reads `roleId` first. Manual recovery: clear `roleId` in DB.
+2. **Admin revokes everything from every role**: global `ADMIN` always
+   bypasses every permission check. Cannot lock out.
+3. **Typo permission in DB**: service-layer write validates against the
+   constant list; reads filter out unknowns.
+
+### Phase boundary
+
+- **`labels.manage` was planned but dropped** from the 14 permissions —
+  labels are currently open to any team member in the codebase, not
+  manager-only as the plan assumed. Adding it as a gated permission
+  would be a breaking change in default behaviour. Labels stay open;
+  recurrence stays open. If you want to lock them down, that's a small
+  follow-up (add the constants + flip the route's preHandler).
+- **Team rename / slug / colour edits** stay on the legacy
+  `requireTeamRole('MANAGER')` check. They're a small surface (3 fields)
+  and didn't warrant a permission constant. They'll move to a permission
+  if/when the matrix needs more granular team-meta control.
+- **Per-input UI disabled state** based on permissions isn't wired —
+  buttons + dropdowns still show; the server returns 403 with a friendly
+  message that the existing mutation-error handlers surface inline.
+
 ## [1.22.0] — 2026-05-24
 
 In-app self-upgrade (opt-in, privileged sidecar).

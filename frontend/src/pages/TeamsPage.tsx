@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import * as teamsApi from '@/features/teams/api';
+import * as rolesApi from '@/features/roles/api';
 import { useTeams } from '@/features/teams/TeamsContext';
 import { formatShamsiTimestampDate } from '@/lib/shamsi';
 
@@ -57,6 +58,23 @@ export default function TeamsPage(): JSX.Element {
       await qc.invalidateQueries({ queryKey: ['teams', 'detail', currentTeamId] });
     },
     onError: (err) => setInviteError(errorMessage(err, 'Could not add member')),
+  });
+
+  // v1.23: role catalogue for the role-change dropdown.
+  const { data: rolesResp } = useQuery({
+    queryKey: ['roles', currentTeamId],
+    queryFn: () => rolesApi.listRoles(currentTeamId!),
+    enabled: !!currentTeamId,
+    staleTime: 30_000,
+  });
+  const teamRoles = rolesResp?.items ?? [];
+
+  const updateRoleMut = useMutation({
+    mutationFn: (args: { userId: string; roleId: string }) =>
+      teamsApi.updateMemberRole(currentTeamId!, args.userId, { roleId: args.roleId }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['teams', 'detail', currentTeamId] });
+    },
   });
 
   const removeMut = useMutation({
@@ -161,9 +179,35 @@ export default function TeamsPage(): JSX.Element {
                       </span>
                     </span>
                     <span className="flex items-center gap-2">
-                      <span className="text-xs uppercase tracking-wide text-slate-500">
-                        {m.role}
-                      </span>
+                      {/* v1.23: role-change dropdown for managers. Shows
+                          every role defined for this team; selecting one
+                          PATCHes the membership with that roleId. */}
+                      {isManager && teamRoles.length > 0 ? (
+                        <select
+                          value={m.roleId ?? ''}
+                          onChange={(e) =>
+                            updateRoleMut.mutate({
+                              userId: m.userId,
+                              roleId: e.target.value,
+                            })
+                          }
+                          disabled={updateRoleMut.isPending}
+                          className="text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-1 py-0.5"
+                          title="Change role"
+                        >
+                          {!m.roleId && <option value="">— ({m.role})</option>}
+                          {teamRoles.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}
+                              {r.isSystem ? ' (system)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-xs uppercase tracking-wide text-slate-500">
+                          {m.roleName ?? m.role}
+                        </span>
+                      )}
                       {isManager && (
                         <button
                           onClick={() => removeMut.mutate(m.userId)}

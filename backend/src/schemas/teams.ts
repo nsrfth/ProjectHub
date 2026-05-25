@@ -32,9 +32,19 @@ export const addMemberBody = z.object({
   role: z.enum(['MANAGER', 'MEMBER']).default('MEMBER'),
 });
 
-export const updateMemberRoleBody = z.object({
-  role: z.enum(['MANAGER', 'MEMBER']),
-});
+// v1.23: PATCH /:teamId/members/:userId accepts either the legacy `role`
+// enum (kept for one release for backwards-compat API callers) OR the new
+// `roleId` pointing at a custom Role row. Service rejects both supplied,
+// or neither.
+export const updateMemberRoleBody = z
+  .object({
+    role: z.enum(['MANAGER', 'MEMBER']).optional(),
+    roleId: z.string().min(1).optional(),
+  })
+  .refine(
+    (v) => (v.role !== undefined) !== (v.roleId !== undefined),
+    'Provide exactly one of `role` or `roleId`',
+  );
 
 export const teamIdParams = z.object({ teamId: z.string().min(1) });
 export const teamMemberParams = z.object({ teamId: z.string().min(1), userId: z.string().min(1) });
@@ -53,6 +63,11 @@ export const teamMemberResponse = z.object({
   email: z.string().email(),
   name: z.string(),
   role: z.enum(['MANAGER', 'MEMBER']),
+  // v1.23: roleId + roleName surfaced so the UI can render the custom-role
+  // dropdown without a second round-trip. Nullable for rows that still rely
+  // on the legacy `role` enum fallback (rare; only during migration).
+  roleId: z.string().nullable().default(null),
+  roleName: z.string().nullable().default(null),
   joinedAt: z.string(),
 });
 

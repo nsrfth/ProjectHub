@@ -1,6 +1,7 @@
-import { Prisma, type ProjectStatus, type TeamRole } from '@prisma/client';
+import { Prisma, type GlobalRole, type ProjectStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { userHasPermission } from '../middleware/requirePermission.js';
 
 // Projects are always scoped to a team. The route layer establishes team
 // membership via requireTeamRole before any service call, so we can trust
@@ -106,7 +107,7 @@ export class ProjectsService {
     teamId: string,
     projectId: string,
     callerId: string,
-    callerRole: TeamRole,
+    callerGlobalRole: GlobalRole,
     input: {
       name?: string;
       description?: string | null;
@@ -115,11 +116,26 @@ export class ProjectsService {
     },
   ): Promise<ProjectView> {
     const existing = await this.get(teamId, projectId);
-    // Owner can always edit; otherwise the caller must be a team MANAGER.
-    if (existing.ownerId !== callerId && callerRole !== 'MANAGER') {
-      throw Errors.forbidden('Only the project owner or a team MANAGER can edit this project');
+    // v1.23: owner can always edit their own project. Otherwise the caller
+    // needs the `project.edit` permission. Setting accountableId narrows
+    // further — it needs `project.set_accountable` even on top of edit.
+    if (existing.ownerId !== callerId) {
+      if (!(await userHasPermission(callerId, teamId, callerGlobalRole, 'project.edit'))) {
+        throw Errors.forbidden('Missing permission: project.edit');
+      }
     }
     if (input.accountableId !== undefined) {
+      if (
+        existing.ownerId !== callerId &&
+        !(await userHasPermission(
+          callerId,
+          teamId,
+          callerGlobalRole,
+          'project.set_accountable',
+        ))
+      ) {
+        throw Errors.forbidden('Missing permission: project.set_accountable');
+      }
       await assertAccountableInTeam(teamId, input.accountableId);
     }
     try {
@@ -146,11 +162,13 @@ export class ProjectsService {
     teamId: string,
     projectId: string,
     callerId: string,
-    callerRole: TeamRole,
+    callerGlobalRole: GlobalRole,
   ): Promise<void> {
     const existing = await this.get(teamId, projectId);
-    if (existing.ownerId !== callerId && callerRole !== 'MANAGER') {
-      throw Errors.forbidden('Only the project owner or a team MANAGER can delete this project');
+    if (existing.ownerId !== callerId) {
+      if (!(await userHasPermission(callerId, teamId, callerGlobalRole, 'project.delete'))) {
+        throw Errors.forbidden('Missing permission: project.delete');
+      }
     }
     await prisma.project.delete({ where: { id: projectId } });
   }

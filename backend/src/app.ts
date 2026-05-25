@@ -26,6 +26,7 @@ import { recurrenceRoutes } from './routes/recurrence.js';
 import { systemRoutes } from './routes/system.js';
 import { calendarRoutes } from './routes/calendar.js';
 import { trashRoutes } from './routes/trash.js';
+import { rolesRoutes } from './routes/roles.js';
 import { prisma } from './data/prisma.js';
 
 // App factory — separate from server.ts so tests can spin up the app without
@@ -127,6 +128,10 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     // v1.21: soft-delete trash. List + restore for any team member; purge +
     // empty gated by the per-instance trash.emptyAllowedRoles setting.
     await api.register(trashRoutes, { prefix: '/teams/:teamId/trash' });
+
+    // v1.23: per-team custom roles + permission matrix. Listing is open
+    // to any team member; mutations gated by team.manage_roles.
+    await api.register(rolesRoutes, { prefix: '/teams/:teamId/roles' });
   }, { prefix: '/api' });
 
   app.addHook('onClose', async () => {

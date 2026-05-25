@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { TeamsService } from '../services/teamsService.js';
 import { TeamsController } from '../controllers/teamsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/requirePermission.js';
 import {
   addMemberBody,
   createTeamBody,
@@ -68,11 +69,14 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
     handler: ctrl.update,
   });
 
+  // v1.23: membership-management endpoints now check the permission system.
+  // requireTeamRole runs first (any member) so the membership is stashed on
+  // the request; requirePermission then gates the specific capability.
   r.post('/:teamId/members', {
-    preHandler: requireTeamRole('MANAGER'),
+    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.invite_member')],
     schema: {
       tags: ['teams'],
-      summary: 'Add an existing user as a team member (MANAGER only)',
+      summary: 'Add an existing user as a team member (requires team.invite_member)',
       params: z.object({ teamId: z.string() }),
       body: addMemberBody,
       response: { 201: teamMemberResponse },
@@ -82,10 +86,10 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:teamId/members/:userId', {
-    preHandler: requireTeamRole('MANAGER'),
+    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.change_role')],
     schema: {
       tags: ['teams'],
-      summary: 'Change a member role (MANAGER only)',
+      summary: 'Change a member role (requires team.change_role)',
       params: z.object({ teamId: z.string(), userId: z.string() }),
       body: updateMemberRoleBody,
       response: { 200: teamMemberResponse },
@@ -95,10 +99,11 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:teamId/members/:userId', {
-    preHandler: requireTeamRole('MANAGER'),
+    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.remove_member')],
     schema: {
       tags: ['teams'],
-      summary: 'Remove a member (MANAGER only — last MANAGER cannot be removed)',
+      summary:
+        'Remove a member (requires team.remove_member — last MANAGER cannot be removed)',
       params: z.object({ teamId: z.string(), userId: z.string() }),
       security: [{ bearerAuth: [] }],
     },

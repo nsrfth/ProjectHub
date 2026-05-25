@@ -1,9 +1,10 @@
-import { Prisma, type TeamRole } from '@prisma/client';
+import { Prisma, type GlobalRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
 import { WebhookService } from './webhookService.js';
+import { userHasPermission } from '../middleware/requirePermission.js';
 
 // Webhook emitter — best-effort post-commit fan-out. Same pattern as
 // tasksService: never inside the transaction.
@@ -194,18 +195,26 @@ export class CommentsService {
 
   // v1.21: Delete is now a SOFT delete. The row survives, hidden from list().
   // Restore / purge are exposed via the Trash service.
+  // v1.23: "delete someone else's comment" is now gated by the
+  // `comment.delete_others` permission (default = Manager only).
   async remove(
     taskId: string,
     commentId: string,
     callerId: string,
-    callerRole: TeamRole,
+    callerGlobalRole: GlobalRole,
+    teamId: string,
   ): Promise<void> {
     const existing = await prisma.comment.findUnique({ where: { id: commentId } });
     if (!existing || existing.taskId !== taskId || existing.deletedAt !== null) {
       throw Errors.notFound('Comment not found');
     }
-    if (existing.authorId !== callerId && callerRole !== 'MANAGER') {
-      throw Errors.forbidden('Only the author or a team MANAGER can delete this comment');
+    if (existing.authorId !== callerId) {
+      // Not the author — must hold the `comment.delete_others` permission.
+      if (
+        !(await userHasPermission(callerId, teamId, callerGlobalRole, 'comment.delete_others'))
+      ) {
+        throw Errors.forbidden('Missing permission: comment.delete_others');
+      }
     }
 
     await prisma.$transaction(async (tx) => {

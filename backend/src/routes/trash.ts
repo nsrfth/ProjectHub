@@ -112,7 +112,13 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
     ) => {
       if (!req.user) throw Errors.unauthorized();
       const m = callerMembership(req);
-      await svc.purgeTask(req.params.teamId, req.params.taskId, m.role, req.user.globalRole);
+      await svc.purgeTask(
+        req.params.teamId,
+        req.params.taskId,
+        req.user.sub,
+        m.role,
+        req.user.globalRole,
+      );
       return reply.status(204).send();
     },
   });
@@ -131,7 +137,13 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
     ) => {
       if (!req.user) throw Errors.unauthorized();
       const m = callerMembership(req);
-      await svc.purgeComment(req.params.teamId, req.params.commentId, m.role, req.user.globalRole);
+      await svc.purgeComment(
+        req.params.teamId,
+        req.params.commentId,
+        req.user.sub,
+        m.role,
+        req.user.globalRole,
+      );
       return reply.status(204).send();
     },
   });
@@ -154,7 +166,12 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
     handler: async (req: FastifyRequest<{ Params: { teamId: string } }>, reply: FastifyReply) => {
       if (!req.user) throw Errors.unauthorized();
       const m = callerMembership(req);
-      const counts = await svc.empty(req.params.teamId, m.role, req.user.globalRole);
+      const counts = await svc.empty(
+        req.params.teamId,
+        req.user.sub,
+        m.role,
+        req.user.globalRole,
+      );
       return reply.send(counts);
     },
   });

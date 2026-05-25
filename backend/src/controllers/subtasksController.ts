@@ -37,13 +37,16 @@ export class SubtasksController {
     reply: FastifyReply,
   ) => {
     if (!req.user) throw Errors.unauthorized();
-    const m = callerMembership(req);
+    // v1.23: service now resolves permissions via the actorId + globalRole.
+    // Membership context is still required upstream (requireTeamRole) so the
+    // caller is a team member at all.
+    callerMembership(req);
     const s = await this.svc.update(
       req.params.teamId,
       req.params.projectId,
       req.params.taskId,
       req.params.subtaskId,
-      m.role,
+      req.user.sub,
       req.user.globalRole,
       req.body,
     );

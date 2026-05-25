@@ -1,6 +1,7 @@
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import type { GlobalRole, TeamRole } from '@prisma/client';
+import { userHasPermission } from '../middleware/requirePermission.js';
 
 // v1.21: per-team trash for soft-deleted Tasks + Comments.
 //
@@ -33,18 +34,36 @@ async function readEmptyAllowedRoles(): Promise<EmptyAllowedRoles> {
   return 'admin';
 }
 
-function assertCanPurge(
+// v1.21 + v1.23: trash.purge is gated by BOTH layers:
+//  (1) the instance-wide `trash.emptyAllowedRoles` policy ("admin" by default
+//      — only global admins; "admin-and-manager" — also team managers)
+//  (2) the per-role `trash.purge` permission (default Manager only)
+// Both must pass. Global ADMIN bypasses both.
+async function assertCanPurge(
   setting: EmptyAllowedRoles,
+  callerId: string,
+  teamId: string,
   callerTeamRole: TeamRole,
   callerGlobalRole: GlobalRole,
-): void {
+): Promise<void> {
   if (callerGlobalRole === 'ADMIN') return;
-  if (setting === 'admin-and-manager' && callerTeamRole === 'MANAGER') return;
-  throw Errors.forbidden(
-    setting === 'admin'
-      ? 'Only global ADMINs can permanently delete items from trash on this instance'
-      : 'Only team MANAGERS or global ADMINs can permanently delete items from trash on this instance',
-  );
+  // Layer 1: the instance setting. When "admin", anyone non-admin is blocked
+  // outright — the permission system can't widen this gate (by design;
+  // operators rely on the instance-wide policy as the harder lock).
+  if (setting === 'admin') {
+    throw Errors.forbidden(
+      'Only global ADMINs can permanently delete items from trash on this instance',
+    );
+  }
+  // setting === 'admin-and-manager'. Layer 2: the per-role permission. Default
+  // Manager role grants trash.purge; default Member does not. Custom roles
+  // can opt in.
+  if (
+    callerTeamRole !== 'MANAGER' &&
+    !(await userHasPermission(callerId, teamId, callerGlobalRole, 'trash.purge'))
+  ) {
+    throw Errors.forbidden('Missing permission: trash.purge');
+  }
 }
 
 export interface TrashedTask {
@@ -146,11 +165,12 @@ export class TrashService {
   async purgeTask(
     teamId: string,
     taskId: string,
+    callerId: string,
     callerTeamRole: TeamRole,
     callerGlobalRole: GlobalRole,
   ): Promise<void> {
     const setting = await readEmptyAllowedRoles();
-    assertCanPurge(setting, callerTeamRole, callerGlobalRole);
+    await assertCanPurge(setting, callerId, teamId, callerTeamRole, callerGlobalRole);
     const t = await prisma.task.findUnique({ where: { id: taskId }, select: { teamId: true, deletedAt: true } });
     if (!t || t.teamId !== teamId || t.deletedAt === null) {
       throw Errors.notFound('Task not in trash');
@@ -161,11 +181,12 @@ export class TrashService {
   async purgeComment(
     teamId: string,
     commentId: string,
+    callerId: string,
     callerTeamRole: TeamRole,
     callerGlobalRole: GlobalRole,
   ): Promise<void> {
     const setting = await readEmptyAllowedRoles();
-    assertCanPurge(setting, callerTeamRole, callerGlobalRole);
+    await assertCanPurge(setting, callerId, teamId, callerTeamRole, callerGlobalRole);
     const c = await prisma.comment.findUnique({
       where: { id: commentId },
       select: { deletedAt: true, task: { select: { teamId: true } } },
@@ -181,11 +202,12 @@ export class TrashService {
   // permanently deleted" confirmation.
   async empty(
     teamId: string,
+    callerId: string,
     callerTeamRole: TeamRole,
     callerGlobalRole: GlobalRole,
   ): Promise<{ tasksPurged: number; commentsPurged: number }> {
     const setting = await readEmptyAllowedRoles();
-    assertCanPurge(setting, callerTeamRole, callerGlobalRole);
+    await assertCanPurge(setting, callerId, teamId, callerTeamRole, callerGlobalRole);
 
     // Wrap in a transaction so a mid-flight failure doesn't leave the trash
     // half-emptied. The deleteMany filters are the same as the list query.

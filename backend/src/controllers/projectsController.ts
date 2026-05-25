@@ -61,14 +61,27 @@ export class ProjectsController {
     req: FastifyRequest<{ Params: ProjectParams; Body: UpdateProjectBody }>,
     reply: FastifyReply,
   ) => {
-    const m = callerMembership(req);
-    const p = await this.svc.update(req.params.teamId, req.params.projectId, m.userId, m.role, req.body);
+    if (!req.user) throw Errors.unauthorized();
+    callerMembership(req); // ensure team-member context
+    const p = await this.svc.update(
+      req.params.teamId,
+      req.params.projectId,
+      req.user.sub,
+      req.user.globalRole,
+      req.body,
+    );
     return reply.send(serialize(p));
   };
 
   remove = async (req: FastifyRequest<{ Params: ProjectParams }>, reply: FastifyReply) => {
-    const m = callerMembership(req);
-    await this.svc.remove(req.params.teamId, req.params.projectId, m.userId, m.role);
+    if (!req.user) throw Errors.unauthorized();
+    callerMembership(req);
+    await this.svc.remove(
+      req.params.teamId,
+      req.params.projectId,
+      req.user.sub,
+      req.user.globalRole,
+    );
     return reply.status(204).send();
   };
 }

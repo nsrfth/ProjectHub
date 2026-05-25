@@ -18,6 +18,11 @@ export interface TeamMember {
   email: string;
   name: string;
   role: TeamRole;
+  // v1.23: custom role pointer + joined name. Null when the membership
+  // still relies on the legacy `role` enum fallback (rare; only during
+  // migration).
+  roleId: string | null;
+  roleName: string | null;
   joinedAt: string;
 }
 
@@ -52,12 +57,14 @@ export async function addMember(
   return (await api.post<TeamMember>(`/teams/${teamId}/members`, input)).data;
 }
 
+// v1.23: accepts EITHER the legacy role enum OR a custom roleId. Both
+// trigger the same PATCH but the server expects exactly one.
 export async function updateMemberRole(
   teamId: string,
   userId: string,
-  role: TeamRole,
+  patch: { role: TeamRole } | { roleId: string },
 ): Promise<TeamMember> {
-  return (await api.patch<TeamMember>(`/teams/${teamId}/members/${userId}`, { role })).data;
+  return (await api.patch<TeamMember>(`/teams/${teamId}/members/${userId}`, patch)).data;
 }
 
 export async function removeMember(teamId: string, userId: string): Promise<void> {

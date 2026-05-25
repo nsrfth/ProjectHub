@@ -28,6 +28,14 @@ const NAV: NavItem[] = [
     descriptionKey: 'settings.nav.preferencesDesc',
     roles: ['ADMIN', 'MANAGER', 'MEMBER'],
   },
+  // v1.23: per-team roles + permission matrix. Listing is open to any
+  // team member; mutations gated by team.manage_roles on the server.
+  {
+    to: '/settings/roles',
+    labelKey: 'settings.nav.roles',
+    descriptionKey: 'settings.nav.rolesDesc',
+    roles: ['ADMIN', 'MANAGER', 'MEMBER'],
+  },
   {
     to: '/settings/directories',
     labelKey: 'settings.nav.directories',

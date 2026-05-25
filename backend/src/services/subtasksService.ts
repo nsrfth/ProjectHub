@@ -1,6 +1,7 @@
-import { Prisma, type GlobalRole, type TeamRole } from '@prisma/client';
+import { Prisma, type GlobalRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { userHasPermission } from '../middleware/requirePermission.js';
 
 // Subtasks are checklist items inside a task. The route layer already verifies
 // team membership; this service additionally enforces that the subtask belongs
@@ -81,7 +82,7 @@ export class SubtasksService {
     projectId: string,
     taskId: string,
     subtaskId: string,
-    actorTeamRole: TeamRole,
+    actorId: string,
     actorGlobalRole: GlobalRole,
     input: { title?: string; done?: boolean; technicianId?: string | null },
   ): Promise<SubtaskView> {
@@ -89,12 +90,12 @@ export class SubtasksService {
     const existing = await prisma.subtask.findUnique({ where: { id: subtaskId } });
     if (!existing || existing.taskId !== taskId) throw Errors.notFound('Subtask not found');
 
-    // v1.19: technician change gate. Same shape as Task — managers/admins only.
+    // v1.19 → v1.23: technician change gate. Now permission-driven.
     if (input.technicianId !== undefined && input.technicianId !== existing.technicianId) {
-      if (actorTeamRole !== 'MANAGER' && actorGlobalRole !== 'ADMIN') {
-        throw Errors.forbidden(
-          'Only team managers or admins can change the assigned Technician',
-        );
+      if (
+        !(await userHasPermission(actorId, teamId, actorGlobalRole, 'task.change_technician'))
+      ) {
+        throw Errors.forbidden('Missing permission: task.change_technician');
       }
       if (input.technicianId !== null) {
         const membership = await prisma.teamMembership.findUnique({

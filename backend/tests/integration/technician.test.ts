@@ -129,7 +129,10 @@ describe('Task.technicianId', () => {
       payload: { technicianId: mgrId },
     });
     expect(res.statusCode).toBe(403);
-    expect(res.json().error.message).toMatch(/Technician/);
+    // v1.23: error message is now "Missing permission: task.change_technician"
+    // (was "Only team managers or admins can change the assigned Technician"
+    // pre-v1.23). The status code + the gist of the gate are unchanged.
+    expect(res.json().error.message).toMatch(/task\.change_technician/);
   });
 
   it('team MANAGER can reassign technicianId', async () => {

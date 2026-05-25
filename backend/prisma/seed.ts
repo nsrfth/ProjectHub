@@ -100,6 +100,46 @@ async function main(): Promise<void> {
     create: { name: 'Demo Team', slug: 'demo-team', color: '#3b82f6' },
   });
 
+  // v1.23: ensure the team has its two system roles (Manager + Member) with
+  // the default permission sets. Migration creates these for upgrades; seed
+  // re-runs need to create them too for fresh installs.
+  const DEFAULT_MANAGER_PERMS = [
+    'task.delete',
+    'task.modify_dates',
+    'task.change_technician',
+    'task.change_assignee',
+    'comment.delete_others',
+    'project.edit',
+    'project.delete',
+    'project.set_accountable',
+    'team.invite_member',
+    'team.remove_member',
+    'team.change_role',
+    'team.manage_roles',
+    'webhooks.manage',
+    'trash.purge',
+  ];
+  const DEFAULT_MEMBER_PERMS = ['task.delete', 'task.modify_dates'];
+
+  async function ensureSystemRole(name: 'Manager' | 'Member', perms: string[]): Promise<string> {
+    const existing = await prisma.role.findUnique({
+      where: { teamId_name: { teamId: team.id, name } },
+    });
+    if (existing) return existing.id;
+    const created = await prisma.role.create({
+      data: {
+        teamId: team.id,
+        name,
+        description: `Default ${name} role. System-managed: editable but undeletable.`,
+        isSystem: true,
+        permissions: { create: perms.map((permission) => ({ permission })) },
+      },
+    });
+    return created.id;
+  }
+  const managerRoleId = await ensureSystemRole('Manager', DEFAULT_MANAGER_PERMS);
+  const memberRoleId = await ensureSystemRole('Member', DEFAULT_MEMBER_PERMS);
+
   // Memberships — admin + riley as MANAGERs so the demo exercises both roles.
   for (const [user, role] of [
     [admin, TeamRole.MANAGER],
@@ -107,10 +147,11 @@ async function main(): Promise<void> {
     [maya, TeamRole.MEMBER],
     [jordan, TeamRole.MEMBER],
   ] as const) {
+    const roleId = role === TeamRole.MANAGER ? managerRoleId : memberRoleId;
     await prisma.teamMembership.upsert({
       where: { userId_teamId: { userId: user.id, teamId: team.id } },
-      update: { role },
-      create: { userId: user.id, teamId: team.id, role },
+      update: { role, roleId },
+      create: { userId: user.id, teamId: team.id, role, roleId },
     });
   }
 

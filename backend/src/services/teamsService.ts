@@ -20,6 +20,11 @@ export interface TeamMemberView {
   email: string;
   name: string;
   role: TeamRole;
+  // v1.23: custom role pointer + joined name. Null when the membership row
+  // still relies on the legacy `role` enum fallback (rare; only during
+  // migration).
+  roleId: string | null;
+  roleName: string | null;
   joinedAt: Date;
 }
 
@@ -75,7 +80,12 @@ export class TeamsService {
   ): Promise<{ team: TeamWithRole; members: TeamMemberView[] }> {
     const team = await prisma.team.findUnique({
       where: { id: teamId },
-      include: { memberships: { include: { user: true }, orderBy: { joinedAt: 'asc' } } },
+      include: {
+        memberships: {
+          include: { user: true, customRole: { select: { name: true } } },
+          orderBy: { joinedAt: 'asc' },
+        },
+      },
     });
     if (!team) throw Errors.notFound('Team not found');
 
@@ -96,6 +106,8 @@ export class TeamsService {
         email: m.user.email,
         name: m.user.name,
         role: m.role,
+        roleId: m.roleId,
+        roleName: m.customRole?.name ?? null,
         joinedAt: m.joinedAt,
       })),
     };
@@ -131,16 +143,29 @@ export class TeamsService {
     const user = await prisma.user.findUnique({ where: { email: input.email } });
     if (!user) throw Errors.notFound('No user with that email');
 
+    // v1.23: also look up the matching system role for the team so the new
+    // membership lands with both `role` and `roleId` populated.
+    const systemRole = await prisma.role.findFirst({
+      where: { teamId, isSystem: true, name: input.role === 'MANAGER' ? 'Manager' : 'Member' },
+    });
+
     try {
       const m = await prisma.teamMembership.create({
-        data: { teamId, userId: user.id, role: input.role },
-        include: { user: true },
+        data: {
+          teamId,
+          userId: user.id,
+          role: input.role,
+          ...(systemRole && { roleId: systemRole.id }),
+        },
+        include: { user: true, customRole: { select: { name: true } } },
       });
       return {
         userId: m.userId,
         email: m.user.email,
         name: m.user.name,
         role: m.role,
+        roleId: m.roleId,
+        roleName: m.customRole?.name ?? null,
         joinedAt: m.joinedAt,
       };
     } catch (err) {
@@ -171,10 +196,15 @@ export class TeamsService {
     });
   }
 
+  // v1.23: accepts either the legacy `role` enum (for backwards compat) or
+  // a `roleId` pointing at a custom Role row. Both update the same membership
+  // — but when roleId is supplied, we ALSO sync the legacy enum to match the
+  // system role family ("Manager" or "Member") so old code paths reading the
+  // enum keep behaving sensibly until v1.24 drops them.
   async updateMemberRole(
     teamId: string,
     userId: string,
-    newRole: TeamRole,
+    input: { role?: TeamRole; roleId?: string },
   ): Promise<TeamMemberView> {
     const membership = await prisma.teamMembership.findUnique({
       where: { userId_teamId: { userId, teamId } },
@@ -182,7 +212,32 @@ export class TeamsService {
     });
     if (!membership) throw Errors.notFound('Member not found');
 
-    // Same "last MANAGER" guard for demotion as for removal.
+    // Resolve the final (role, roleId) pair.
+    let newRole: TeamRole = membership.role;
+    let newRoleId: string | null = membership.roleId;
+
+    if (input.roleId !== undefined) {
+      // Custom-role path.
+      const target = await prisma.role.findUnique({ where: { id: input.roleId } });
+      if (!target || target.teamId !== teamId) {
+        throw Errors.badRequest('Role does not belong to this team');
+      }
+      newRoleId = target.id;
+      // Mirror the system-role intent in the legacy enum so v1.18 / v1.21
+      // gates that consult `membership.role` keep working. Custom roles
+      // default to MEMBER for that purpose; admins are still bypassed.
+      newRole = target.name === 'Manager' ? 'MANAGER' : 'MEMBER';
+    } else if (input.role !== undefined) {
+      // Legacy enum path. Map to the matching system role for the team.
+      newRole = input.role;
+      const systemRole = await prisma.role.findFirst({
+        where: { teamId, isSystem: true, name: newRole === 'MANAGER' ? 'Manager' : 'Member' },
+      });
+      newRoleId = systemRole?.id ?? null;
+    }
+
+    // Same "last MANAGER" guard for demotion as for removal — applies whether
+    // demotion comes via legacy enum or a custom role that maps to MEMBER.
     if (membership.role === 'MANAGER' && newRole !== 'MANAGER') {
       const managerCount = await prisma.teamMembership.count({
         where: { teamId, role: 'MANAGER' },
@@ -192,14 +247,19 @@ export class TeamsService {
 
     const updated = await prisma.teamMembership.update({
       where: { userId_teamId: { userId, teamId } },
-      data: { role: newRole },
-      include: { user: true },
+      data: { role: newRole, roleId: newRoleId },
+      include: {
+        user: true,
+        customRole: { select: { name: true } },
+      },
     });
     return {
       userId: updated.userId,
       email: updated.user.email,
       name: updated.user.name,
       role: updated.role,
+      roleId: updated.roleId,
+      roleName: updated.customRole?.name ?? null,
       joinedAt: updated.joinedAt,
     };
   }

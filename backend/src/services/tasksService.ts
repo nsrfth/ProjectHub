@@ -4,6 +4,7 @@ import { Errors } from '../lib/errors.js';
 import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
 import { WebhookService } from './webhookService.js';
+import { userHasPermission } from '../middleware/requirePermission.js';
 
 // v1.18: read the instance-level date-edit restriction at PATCH time. Members
 // can always ADD a date that's null; only MANAGERS / global ADMINs can MODIFY
@@ -329,13 +330,15 @@ export class TasksService {
       if (!membership) throw Errors.badRequest('Assignee is not a member of this team');
     }
 
-    // v1.19: technician change gate. Members can never change the technician
-    // (even to themselves). Managers/admins can — and the target must be a
-    // team member (skip the check when clearing to null).
+    // v1.19 → v1.23: technician change gate. Now gated by the
+    // `task.change_technician` permission (default = Manager only). Custom
+    // roles can grant it independently of the legacy MANAGER bit.
     if (input.technicianId !== undefined && input.technicianId !== existing.technicianId) {
-      if (actorTeamRole !== 'MANAGER' && actorGlobalRole !== 'ADMIN') {
+      if (
+        !(await userHasPermission(actorId, teamId, actorGlobalRole, 'task.change_technician'))
+      ) {
         throw Errors.forbidden(
-          'Only team managers or admins can change the assigned Technician',
+          'Missing permission: task.change_technician',
         );
       }
       if (input.technicianId !== null) {

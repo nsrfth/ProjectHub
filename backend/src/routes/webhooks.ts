@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { WebhookService } from '../services/webhookService.js';
 import { WebhooksController } from '../controllers/webhooksController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/requirePermission.js';
 import {
   webhookCreateBody,
   webhookCreatedResponse,
@@ -25,7 +26,11 @@ export async function webhooksRoutes(app: FastifyInstance): Promise<void> {
   const r = app.withTypeProvider<ZodTypeProvider>();
 
   r.addHook('preHandler', requireAuth);
-  r.addHook('preHandler', requireTeamRole('MANAGER'));
+  // v1.23: webhook management is gated by the `webhooks.manage` permission
+  // rather than the legacy MANAGER role check. requireTeamRole still runs
+  // so the membership is stashed on the request for the permission lookup.
+  r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  r.addHook('preHandler', requirePermission('webhooks.manage'));
 
   r.get('/', {
     schema: {
