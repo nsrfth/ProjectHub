@@ -109,6 +109,31 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  # v1.23: throwaway Postgres for the integration test suite. Gated by the
+  # `test` profile so a stock `docker compose up` doesn't start it. Bring up
+  # explicitly with:
+  #   docker compose --profile test up -d postgres-test
+  # Then run the suite with the test DATABASE_URL — see backend/package.json
+  # `test:integration` and tests/setup.ts (which refuses to run if the URL
+  # doesn't look like a test DB). Volume is anonymous so a fresh start
+  # always wipes prior fixtures.
+  postgres-test:
+    image: postgres:16-alpine
+    profiles: ['test']
+    environment:
+      POSTGRES_USER: taskhub
+      POSTGRES_PASSWORD: taskhub
+      POSTGRES_DB: taskhub_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskhub -d taskhub_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/postgresql/data
+
   # v1.22: self-upgrade sidecar. PRIVILEGED — mounts the host docker socket +
   # the repo directory so it can run `git pull && docker compose up -d --build`.
   # Gated by the `upgrade` profile so a stock `docker compose up` doesn't

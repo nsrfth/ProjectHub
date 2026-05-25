@@ -466,12 +466,17 @@ docker compose up --build frontend-build
 docker compose up -d --force-recreate backend
 
 # Run the test suite against a DISPOSABLE Postgres
-#   IMPORTANT: tests call prisma.user.deleteMany() in beforeEach — never
-#   point them at the production database.
-docker compose --project-name taskhub-test up -d postgres
-DATABASE_URL=postgresql://taskhub:$POSTGRES_PASSWORD@localhost:5433/taskhub \
-  npm --prefix backend test
-docker compose --project-name taskhub-test down -v
+#   Integration tests call prisma.user.deleteMany() in beforeEach. v1.23
+#   adds a guard in tests/setup.ts that refuses to run unless DATABASE_URL
+#   clearly identifies a test DB — but the right workflow is to use the
+#   `postgres-test` compose service:
+docker compose --profile test up -d postgres-test
+docker run --rm --network taskhub_default \
+  -e DATABASE_URL=postgresql://taskhub:taskhub@postgres-test:5432/taskhub_test?schema=public \
+  -v "$(pwd)/backend:/app" -w /app node:20-alpine \
+  sh -c "apk add --no-cache openssl >/dev/null && npx prisma migrate deploy && npm test"
+# The test DB lives on a tmpfs — tear it down with:
+docker compose --profile test down postgres-test
 ```
 
 ---

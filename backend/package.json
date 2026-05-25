@@ -16,6 +16,7 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:setup": "DATABASE_URL=postgresql://taskhub:taskhub@postgres-test:5432/taskhub_test?schema=public prisma migrate deploy",
     "typecheck": "tsc --noEmit"
   },
   "prisma": {
