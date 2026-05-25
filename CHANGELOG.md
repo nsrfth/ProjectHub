@@ -57,6 +57,80 @@ Opt-in "update available" check.
 - Cache is in-memory per replica. In a multi-replica deploy each backend
   gets its own GitHub call; harmless at ~4 calls/day/replica.
 
+## [1.22.0] — 2026-05-24
+
+In-app self-upgrade (opt-in, privileged sidecar).
+
+### New sidecar
+
+- New `updater/server.js` — ~80-line Node HTTP server. POST `/upgrade`
+  spawns a detached `sh -c "git fetch && git pull --ff-only origin main
+  && docker compose up -d --build"`; GET `/status` returns last run +
+  log tail. Single-token bearer auth (`X-Updater-Token`).
+- New `docker/updater.Dockerfile` — node:20-alpine plus the
+  `git`, `docker-cli`, and `docker-cli-compose` packages.
+- New compose service `updater` under `profiles: ['upgrade']`. Mounts
+  `/var/run/docker.sock` and the host repo dir at `/repo`. **No port
+  mapping** — reachable only from inside the compose network.
+
+### Backend
+
+- New env vars `UPDATER_URL` (default unset) + `UPDATER_TOKEN`. Both
+  blank = self-upgrade disabled; the admin endpoint returns 503.
+- New admin-only `POST /api/admin/upgrade` — proxies to the updater
+  sidecar with the shared token, 10-second connect timeout. Returns
+  202 with `startedAt` on success; 503 with a friendly error when the
+  sidecar isn't configured / unreachable / rejecting the token.
+
+### Frontend
+
+- New "Run upgrade now" pill button on the About page, next to the
+  v1.16 update-available badge. Visible only when:
+  - viewer is global ADMIN
+  - the update-check is enabled
+  - GitHub returned a strictly newer tag
+- On click: confirmation prompt (reminds the operator to back up
+  Postgres per UPGRADE.md), POST to admin endpoint, then shows an
+  "Upgrading… page will reload when done" badge and polls
+  `/api/health` every 5 s. Reloads the SPA the first time health
+  answers 200. Hard timeout at 5 minutes.
+
+### Docs
+
+- New `UPGRADE.md § Self-upgrade` — explains what the sidecar is, the
+  security model (docker socket = root on the host), how to enable it,
+  what the upgrade command actually runs, and what to do when it fails.
+  Explicit "do not enable in production unless you've thought through
+  the threat model" callout.
+- `.env.example` (both root + backend) carry the new env vars,
+  disabled by default with a comment pointing at UPGRADE.md.
+- `docker-compose.yml` pipes `UPDATER_URL` + `UPDATER_TOKEN` to the
+  backend.
+
+### Verified
+
+- Backend + frontend typecheck clean.
+- Endpoint not smoke-tested live (would require setting up the
+  sidecar against the running stack which the user can do); contract
+  is exercised by typechecking + the read of the admin route schema.
+
+### Phase boundary — caveats
+
+- **Self-upgrade is the highest-risk surface in this codebase.** A
+  compromised backend can reach the updater can take over the docker
+  daemon can run anything on the host. Mitigation: opt-in profile,
+  bearer token, no port mapping. The manual upgrade path (`git
+  checkout && docker compose up -d --build`) remains the documented
+  default in UPGRADE.md.
+- The updater pulls `origin/main` — not a specific tag. If you want
+  a specific version, `git checkout vX.Y.Z` on the host first.
+- No rollback button. A failed upgrade requires SSH access and a
+  `git checkout v1.PREVIOUS && docker compose up -d --build`.
+- The updater container itself is not self-upgrading. After a future
+  release that touches `updater/server.js` or
+  `docker/updater.Dockerfile`, you'll need `docker compose --profile
+  upgrade up -d --build updater` to roll the sidecar forward.
+
 ## [1.21.0] — 2026-05-24
 
 Trash: soft-delete for Tasks + Comments, restore, admin-gated purge.

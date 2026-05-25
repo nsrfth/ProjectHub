@@ -40,3 +40,9 @@ export interface UpdateCheck {
 export async function fetchUpdateCheck(): Promise<UpdateCheck> {
   return (await api.get<UpdateCheck>('/admin/update-check')).data;
 }
+
+// v1.22: trigger an in-app self-upgrade via the updater sidecar. Returns 503
+// if the sidecar isn't configured; the SPA surfaces a friendly hint then.
+export async function triggerUpgrade(): Promise<{ status: string; startedAt: string }> {
+  return (await api.post<{ status: string; startedAt: string }>('/admin/upgrade')).data;
+}

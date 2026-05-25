@@ -78,6 +78,71 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     handler: ctrl.deleteUser,
   });
 
+  // v1.22: trigger an in-app self-upgrade. Disabled (503) when UPDATER_URL is
+  // unset — the standard config. When enabled, this POSTs to the privileged
+  // updater sidecar which runs `git pull && docker compose up -d --build` in
+  // a detached process. The mid-upgrade UX is the SPA's problem: it polls
+  // /api/health and reloads when the new backend is up.
+  r.post('/upgrade', {
+    schema: {
+      tags: ['admin'],
+      summary:
+        'Trigger an in-app self-upgrade via the updater sidecar (admin-only). Returns 503 when the sidecar is not configured.',
+      response: {
+        202: z.object({ status: z.string(), startedAt: z.string() }),
+        503: z.object({ error: z.object({ code: z.string(), message: z.string() }) }),
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (_req, reply) => {
+      const url = process.env.UPDATER_URL;
+      const token = process.env.UPDATER_TOKEN ?? '';
+      if (!url) {
+        return reply.status(503).send({
+          error: {
+            code: 'UPDATER_DISABLED',
+            message:
+              'In-app upgrade is not configured. The operator must add the `updater` sidecar and set UPDATER_URL + UPDATER_TOKEN. See UPGRADE.md.',
+          },
+        });
+      }
+      // Fire-and-forget — the updater returns 202 immediately and the
+      // upgrade continues in a detached child process there. 10s timeout
+      // because the network call itself is local-only.
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 10_000);
+      try {
+        const res = await fetch(`${url.replace(/\/$/, '')}/upgrade`, {
+          method: 'POST',
+          headers: token ? { 'X-Updater-Token': token } : {},
+          signal: ac.signal,
+        });
+        const body = (await res.json().catch(() => null)) as
+          | { status?: string; startedAt?: string }
+          | null;
+        if (!res.ok) {
+          return reply.status(503).send({
+            error: {
+              code: 'UPDATER_REJECTED',
+              message: `Updater returned ${res.status}`,
+            },
+          });
+        }
+        return reply.status(202).send({
+          status: body?.status ?? 'started',
+          startedAt: body?.startedAt ?? new Date().toISOString(),
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'network error';
+        return reply.status(503).send({
+          error: { code: 'UPDATER_UNREACHABLE', message: msg },
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  });
+
   // v1.16: opt-in "update available" check. Disabled by default — the
   // backend only contacts GitHub when the operator sets UPDATE_CHECK_ENABLED.
   // Admin-only because the badge only matters to people who can actually

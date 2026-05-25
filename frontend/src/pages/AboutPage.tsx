@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { fetchSystemInfo, fetchUpdateCheck } from '@/features/system/api';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import axios from 'axios';
+import { fetchSystemInfo, fetchUpdateCheck, triggerUpgrade } from '@/features/system/api';
 import { useAuth } from '@/features/auth/AuthContext';
 
 // "About" view — quick reference to the running instance: version, build
@@ -70,6 +72,14 @@ export default function AboutPage(): JSX.Element {
                     ↑ Update available: {update.latestVersion}
                   </a>
                 )}
+                {/* v1.22: Admin-only "Run upgrade now" button. Visible only
+                    when there's actually an update to run. Goes through the
+                    privileged updater sidecar; the operator must opt in by
+                    configuring UPDATER_URL + UPDATER_TOKEN AND bringing the
+                    `upgrade` compose profile up. */}
+                {isAdmin && update?.enabled && update.updateAvailable && (
+                  <UpgradeButton latestVersion={update.latestVersion ?? 'latest'} />
+                )}
               </span>
             </Field>
             {data.buildTime && (
@@ -131,5 +141,94 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-xs uppercase tracking-wide text-slate-500 pt-0.5">{label}</span>
       <span className="text-slate-800">{children}</span>
     </div>
+  );
+}
+
+// v1.22: "Run upgrade now" button + the mid-upgrade overlay. POSTs to the
+// admin endpoint, then polls /health every 5 s; auto-reloads the SPA when
+// the backend comes back. If UPDATER_URL isn't configured, the endpoint
+// returns 503 with a friendly message that we surface inline.
+function UpgradeButton({ latestVersion }: { latestVersion: string }): JSX.Element {
+  const [phase, setPhase] = useState<'idle' | 'starting' | 'waiting' | 'failed'>('idle');
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  const startMut = useMutation({
+    mutationFn: () => triggerUpgrade(),
+    onMutate: () => {
+      setErrMsg(null);
+      setPhase('starting');
+    },
+    onSuccess: () => {
+      setPhase('waiting');
+      // Poll /api/health every 5 s. Reload the SPA the first time it answers
+      // — that's the cheapest "the new backend is alive" signal. We don't
+      // try to compare versions; reload is safe even if the upgrade was a
+      // no-op (e.g. operator was already on the latest tag).
+      const startedAt = Date.now();
+      const id = setInterval(async () => {
+        try {
+          const res = await fetch('/api/health', { cache: 'no-store' });
+          if (res.ok) {
+            clearInterval(id);
+            window.location.reload();
+          }
+        } catch {
+          /* network blip while the backend restarts — keep polling */
+        }
+        // Hard timeout at 5 minutes — past that, something's wrong and the
+        // operator should look at `docker compose logs`.
+        if (Date.now() - startedAt > 5 * 60_000) {
+          clearInterval(id);
+          setPhase('failed');
+          setErrMsg('Backend did not come back within 5 minutes. Check `docker compose logs`.');
+        }
+      }, 5_000);
+    },
+    onError: (err) => {
+      setPhase('failed');
+      if (axios.isAxiosError(err)) {
+        setErrMsg(err.response?.data?.error?.message ?? 'Upgrade request failed');
+      } else {
+        setErrMsg('Upgrade request failed');
+      }
+    },
+  });
+
+  if (phase === 'waiting') {
+    return (
+      <span
+        role="status"
+        className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs"
+        title="Polling /api/health every 5 s. The SPA will reload automatically when the new backend is up."
+      >
+        Upgrading… page will reload when done
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => {
+          if (
+            window.confirm(
+              `Run in-app upgrade to ${latestVersion}? The backend will restart and this page will reload automatically when it's back. Make sure you've taken a Postgres backup first (see UPGRADE.md).`,
+            )
+          ) {
+            startMut.mutate();
+          }
+        }}
+        disabled={phase === 'starting'}
+        className="rounded-full bg-slate-900 text-white px-2 py-0.5 text-xs hover:bg-slate-700 disabled:opacity-50"
+      >
+        {phase === 'starting' ? 'Starting…' : 'Run upgrade now'}
+      </button>
+      {errMsg && (
+        <span className="text-xs text-red-600 dark:text-red-400" title={errMsg}>
+          {errMsg}
+        </span>
+      )}
+    </span>
   );
 }

@@ -121,6 +121,90 @@ unless you're deliberately resetting the install.
 
 ---
 
+## Self-upgrade (v1.22) — opt-in, privileged
+
+TaskHub ships a sidecar container that can run the upgrade from inside the
+running app. **It is disabled by default** because enabling it adds a
+privileged container with access to the host's docker socket — that's
+equivalent to root on the host. Read this section in full before turning it
+on in production.
+
+### What it is
+
+- A tiny Node HTTP server in [`updater/server.js`](updater/server.js).
+- Image built from [`docker/updater.Dockerfile`](docker/updater.Dockerfile) —
+  node:20-alpine plus `git` and `docker-cli`.
+- Compose service `updater` (under `profiles: ['upgrade']`) with two mounts:
+  - `/var/run/docker.sock:/var/run/docker.sock` — so it can call
+    `docker compose up -d --build`
+  - `.:/repo` — the host repo dir, so it can `git pull`
+- Listens on `0.0.0.0:9000` **inside the compose network only**. No port
+  mapping. Caddy never proxies through to it.
+- Authenticated by a shared token (`UPDATER_TOKEN`) checked against the
+  `X-Updater-Token` header.
+
+### Security trade-offs
+
+- The container holds the docker socket. Anyone who reaches it can run
+  arbitrary containers on the host — `docker run -v /:/host …` ⇒ root.
+- Mitigations: opt-in compose profile, no port mapping, bearer token, no
+  auth bypass. But: a backend compromise = an updater compromise =
+  host compromise. **If your threat model rules this out, do not enable
+  the sidecar.** The manual `git checkout && docker compose up -d --build`
+  flow stays available — it's safer.
+
+### Enable it
+
+```bash
+# 1. Generate a long random token.
+TOKEN=$(openssl rand -base64 48)
+
+# 2. Append to .env on the host.
+echo "UPDATER_URL=http://updater:9000" >> .env
+echo "UPDATER_TOKEN=$TOKEN" >> .env
+
+# 3. Bring the sidecar up.
+docker compose --profile upgrade up -d --build updater
+
+# 4. Recreate the backend so it picks up UPDATER_URL.
+docker compose up -d --force-recreate backend
+```
+
+### Use it
+
+- Sign in as a global ADMIN; open **About**.
+- If GitHub has a newer release than the running `TASKHUB_VERSION`, a
+  **Run upgrade now** button appears next to the version field.
+- Click it → confirm the prompt → the SPA shows an "Upgrading… page will
+  reload when done" badge, polls `/api/health` every 5 s, and reloads
+  itself when the backend comes back.
+- Logs of each run: `docker exec taskhub-updater-1 cat /tmp/upgrade.log`.
+
+### What the updater actually runs
+
+```sh
+cd /repo \
+  && git fetch origin --tags \
+  && git pull --ff-only origin main \
+  && docker compose up -d --build
+```
+
+Pins to `origin/main`. If you want a specific tag, `git checkout vX.Y.Z`
+on the host first, then click Upgrade — the `git pull --ff-only` will be a
+no-op and only the compose rebuild runs.
+
+### When it fails
+
+- The SPA polls for 5 minutes. If `/api/health` doesn't come back, you'll
+  see "Backend did not come back within 5 minutes." In that case SSH in
+  and check `docker compose logs backend`. The most likely cause is a new
+  required env var that wasn't in `.env`.
+- Rolling back: `git checkout v1.PREVIOUS && docker compose up -d --build`.
+  Schema migrations are additive, so the prior code can read the newer
+  schema — see "What carries across upgrades" above.
+
+---
+
 ## Rollback
 
 If an upgrade behaves unexpectedly, **rolling code back is one

@@ -67,6 +67,11 @@ services:
       # the right tag. Empty string is fine — the backend falls back to "dev".
       TASKHUB_VERSION: ${TASKHUB_VERSION:-}
       TASKHUB_BUILD_TIME: ${TASKHUB_BUILD_TIME:-}
+      # v1.22: self-upgrade plumbing. Backend POSTs to UPDATER_URL on a
+      # successful admin upgrade-now request. Leave both blank to disable
+      # the in-app upgrade button (the API endpoint then returns 503).
+      UPDATER_URL: ${UPDATER_URL:-}
+      UPDATER_TOKEN: ${UPDATER_TOKEN:-}
     volumes:
       - uploads_data:/app/uploads
     expose:
@@ -103,6 +108,27 @@ services:
       - frontend_dist:/srv/www:ro
       - caddy_data:/data
       - caddy_config:/config
+
+  # v1.22: self-upgrade sidecar. PRIVILEGED — mounts the host docker socket +
+  # the repo directory so it can run `git pull && docker compose up -d --build`.
+  # Gated by the `upgrade` profile so a stock `docker compose up` doesn't
+  # start it. Bring it up explicitly with:
+  #   docker compose --profile upgrade up -d updater
+  # Set UPDATER_TOKEN in .env to a long random string; the backend will only
+  # talk to the updater when both ends share the same token.
+  updater:
+    build:
+      context: ./updater
+      dockerfile: ../docker/updater.Dockerfile
+    profiles: ['upgrade']
+    restart: unless-stopped
+    environment:
+      UPDATER_TOKEN: ${UPDATER_TOKEN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/repo
+    # No port mapping — the updater is reachable only from inside the compose
+    # network at updater:9000. Never expose this to the host or the world.
 
   # Local OpenLDAP for development + the LDAP integration test. Gated by the
   # `ldap` profile so a plain `docker compose up` doesn't start it.

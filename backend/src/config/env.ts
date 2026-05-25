@@ -109,6 +109,19 @@ const envSchema = z.object({
   // GitHub call. Unauthenticated GitHub API is 60 req/hr/IP — 6 h keeps
   // a busy instance well under the limit even with multiple admin tabs.
   UPDATE_CHECK_CACHE_HOURS: z.coerce.number().positive().default(6),
+
+  // v1.22: in-app self-upgrade. Backend POSTs to UPDATER_URL when an admin
+  // clicks "Run upgrade now" on the About page. Disabled (admin endpoint
+  // returns 503) when UPDATER_URL is unset — the standard config that ships
+  // out of the box. Set UPDATER_URL = http://updater:9000 + UPDATER_TOKEN
+  // = <long random string> and bring the `upgrade` profile up to enable.
+  //
+  // The z.preprocess coerces empty strings to undefined — docker-compose
+  // substitutes unset .env vars as `""` which would otherwise trip the
+  // .url() validator. Same shape we'd want for PUBLIC_APP_URL too, but
+  // that has a default-via-CORS fallback already.
+  UPDATER_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
+  UPDATER_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
 });
 
 export type Env = z.infer<typeof envSchema> & { corsOrigins: string[] };
