@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AdminService, AdminUserView, AdminTeamView } from '../services/adminService.js';
-import type { ListQuery } from '../schemas/admin.js';
+import type { CreateUserBody, ListQuery } from '../schemas/admin.js';
 import { Errors } from '../lib/errors.js';
 
 type UserParams = { userId: string };
@@ -27,6 +27,17 @@ export class AdminController {
   ) => {
     const page = await this.svc.listUsers(req.query);
     return reply.send({ items: page.items.map(serializeUser), nextCursor: page.nextCursor });
+  };
+
+  createUser = async (
+    req: FastifyRequest<{ Body: CreateUserBody }>,
+    reply: FastifyReply,
+  ) => {
+    const result = await this.svc.createUser(req.body);
+    return reply.status(201).send({
+      user: serializeUser(result.user),
+      generatedPassword: result.generatedPassword,
+    });
   };
 
   updateUserRole = async (

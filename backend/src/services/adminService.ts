@@ -1,6 +1,8 @@
 import { Prisma, type GlobalRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { hashPassword } from '../lib/hashing.js';
+import { randomBytes } from 'node:crypto';
 
 // Admin operations bypass team-level RBAC and instead require GlobalRole=ADMIN
 // (enforced by the route layer). The hard invariant this service guards is
@@ -142,6 +144,63 @@ export class AdminService {
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw Errors.notFound('User not found');
+      }
+      throw err;
+    }
+  }
+
+  // v1.26: admin-provisioned user account. The admin types email + name and
+  // either a password OR omits it for an auto-generated one. The new account
+  // can immediately sign in with the returned credentials.
+  //
+  // Distinct from self-register: this path bypasses verification (admin
+  // vouches for the address by default) and surfaces the password ONCE so
+  // the admin can hand it over. Nothing is logged.
+  async createUser(input: {
+    email: string;
+    name: string;
+    password?: string;
+    globalRole: GlobalRole;
+    emailVerified: boolean;
+  }): Promise<{ user: AdminUserView; generatedPassword: string | null }> {
+    // Resolve password: caller-supplied wins; otherwise generate a 20-char
+    // URL-safe token. The schema validator already enforced the policy when
+    // a password was supplied, so we trust it here.
+    const generatedPassword = input.password
+      ? null
+      : // 15 bytes -> 20 base64 chars; strip URL-unfriendly chars to keep it
+        // copy-paste-safe (no + / =) and add a trailing digit so it always
+        // satisfies the "must contain digits" rule.
+        (randomBytes(15).toString('base64').replace(/[+/=]/g, '').slice(0, 19) + '7');
+    const plaintext = input.password ?? generatedPassword!;
+    const passwordHash = await hashPassword(plaintext);
+
+    try {
+      const created = await prisma.user.create({
+        data: {
+          email: input.email,
+          name: input.name,
+          passwordHash,
+          globalRole: input.globalRole,
+          emailVerifiedAt: input.emailVerified ? new Date() : null,
+        },
+        include: { _count: { select: { memberships: true } } },
+      });
+      return {
+        user: {
+          id: created.id,
+          email: created.email,
+          name: created.name,
+          globalRole: created.globalRole,
+          emailVerifiedAt: created.emailVerifiedAt,
+          createdAt: created.createdAt,
+          membershipCount: created._count.memberships,
+        },
+        generatedPassword,
+      };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw Errors.conflict('A user with this email already exists');
       }
       throw err;
     }

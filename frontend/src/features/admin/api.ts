@@ -51,3 +51,21 @@ export async function deleteTeam(teamId: string): Promise<void> {
 export async function deleteUser(userId: string): Promise<void> {
   await api.delete(`/admin/users/${userId}`);
 }
+
+// v1.26: admin-driven user provisioning. password omitted => server
+// generates and returns it once in `generatedPassword`. emailVerified
+// defaults to true on the server side (admin vouches for the address).
+export interface CreateUserResult {
+  user: AdminUser;
+  generatedPassword: string | null;
+}
+
+export async function createUser(input: {
+  email: string;
+  name: string;
+  password?: string;
+  globalRole?: GlobalRole;
+  emailVerified?: boolean;
+}): Promise<CreateUserResult> {
+  return (await api.post<CreateUserResult>('/admin/users', input)).data;
+}

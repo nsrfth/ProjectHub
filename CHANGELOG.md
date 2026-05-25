@@ -57,6 +57,61 @@ Opt-in "update available" check.
 - Cache is in-memory per replica. In a multi-replica deploy each backend
   gets its own GitHub call; harmless at ~4 calls/day/replica.
 
+## [1.26.0] — 2026-05-25
+
+Admin-provisioned user accounts.
+
+### What's new
+
+- Admins can create a new user with email + name + password directly from
+  the Admin page. The new account can sign in immediately with the
+  supplied credentials — no self-registration / no invite email required.
+- If the admin omits the password, the server generates a 20-char URL-safe
+  one and surfaces it ONCE in the response. The UI shows it inline so the
+  admin can copy-paste it to the new user.
+- Admin-provisioned accounts default to `emailVerifiedAt = now()` — the
+  admin vouches for the address.
+- Global role can be set on create (defaults to MEMBER).
+
+### Backend
+
+- New `POST /api/admin/users` route. Admin-only.
+- `AdminService.createUser` hashes the password with argon2id (same as
+  the self-register path), creates the user, returns the new shape plus
+  `generatedPassword: string | null`. Nothing is logged.
+- Schema validates the supplied password against the existing policy
+  (≥ 12 chars, letters + digits); duplicate emails → 409.
+
+### Frontend
+
+- "New user" section on AdminPage with email / name / password / role
+  fields. **Auto** button clears the password so the server generates one.
+- Success state shows a green inline box with the credentials. Password
+  is `select-all` so a single click + Ctrl-C grabs it cleanly. Dismiss
+  button when copied.
+
+### Tests
+
+- 6 new integration tests: admin-only gate, explicit-password login
+  works, auto-generated-password login works, duplicate email 409, weak
+  password 400, promote-to-admin on create.
+
+### Verified
+
+- Backend + frontend typecheck clean.
+- Suite: 226/231 passing + 5 skipped (lone failing file is the
+  pre-existing LDAP env-specific test).
+- Backend rebuilt + frontend bundle redeployed.
+
+### Phase boundary
+
+- No "send invite by email" alternative — the admin must hand the
+  password over manually. Adding an email-invite flow would need a new
+  table (invite tokens) + an SMTP-gated path. Easy follow-up.
+- No optional "add to team on create" step — admin creates the user,
+  then uses the existing team UI to add them. Two clicks instead of one;
+  keeps the endpoint focused.
+
 ## [1.25.0] — 2026-05-25
 
 Three charts on the Dashboard.

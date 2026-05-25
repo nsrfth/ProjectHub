@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { passwordSchema } from './auth.js';
 
 export const globalRoleEnum = z.enum(['ADMIN', 'MEMBER']);
 
@@ -43,4 +44,30 @@ export const adminTeamResponse = z.object({
 export const teamsPage = z.object({
   items: z.array(adminTeamResponse),
   nextCursor: z.string().nullable(),
+});
+
+// v1.26: admin-driven user provisioning. Admin types email + name and either
+// a password OR omits it to have the server generate one. The response
+// surfaces the generated password ONCE so the admin can hand it off; nothing
+// is logged.
+export const createUserBody = z.object({
+  email: z.string().email().max(254).toLowerCase(),
+  name: z.string().min(1).max(120).trim(),
+  // Same policy as self-register (min 12 chars, letters + digits). When
+  // omitted, the service generates a random 20-char string and returns it.
+  password: passwordSchema.optional(),
+  globalRole: globalRoleEnum.default('MEMBER'),
+  // Skip the email-verification flow for admin-provisioned accounts — the
+  // admin vouches for the address. Override to false if you want them to
+  // confirm via the verification token first.
+  emailVerified: z.boolean().default(true),
+});
+
+export type CreateUserBody = z.infer<typeof createUserBody>;
+
+export const createUserResponse = z.object({
+  user: adminUserResponse,
+  // Present only when the admin let the server generate a password. Echoed
+  // back exactly once — there's no way to retrieve it later.
+  generatedPassword: z.string().nullable(),
 });

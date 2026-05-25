@@ -93,6 +93,37 @@ export default function AdminPage(): JSX.Element {
     },
   });
 
+  // v1.26: admin-provisioned new user. Form state lives here so we can
+  // surface the one-time generated password without a modal — show it
+  // inline after a successful create, then dismiss on the next action.
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState<adminApi.GlobalRole>('MEMBER');
+  const [newError, setNewError] = useState<string | null>(null);
+  const [newCreated, setNewCreated] = useState<adminApi.CreateUserResult | null>(null);
+
+  const createUserMut = useMutation({
+    mutationFn: () =>
+      adminApi.createUser({
+        email: newEmail.trim(),
+        name: newName.trim(),
+        // Empty string -> omit -> server generates a password.
+        password: newPassword || undefined,
+        globalRole: newRole,
+      }),
+    onSuccess: (result) => {
+      setNewError(null);
+      setNewCreated(result);
+      setNewEmail('');
+      setNewName('');
+      setNewPassword('');
+      setNewRole('MEMBER');
+      resetUsers();
+    },
+    onError: (err) => setNewError(errorMessage(err, 'Could not create user')),
+  });
+
   const deleteTeamMut = useMutation({
     mutationFn: (teamId: string) => adminApi.deleteTeam(teamId),
     onSuccess: () => {
@@ -111,6 +142,114 @@ export default function AdminPage(): JSX.Element {
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <h1 className="text-2xl font-semibold mb-6">Admin</h1>
+
+      {/* v1.26: admin-provisioned user. Email + name + password (or auto-
+          generate). The one-time-only generated password is shown inline
+          after the mutation succeeds so it can be copied. */}
+      <section className="bg-white dark:bg-slate-800 rounded shadow p-4 mb-6">
+        <h2 className="font-medium mb-3">New user</h2>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setNewCreated(null);
+            createUserMut.mutate();
+          }}
+          className="grid grid-cols-1 md:grid-cols-2 gap-2"
+        >
+          <input
+            type="email"
+            required
+            placeholder="user@example.com"
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
+            className="rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-sm"
+          />
+          <input
+            type="text"
+            required
+            placeholder="Full name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            className="rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-sm"
+          />
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Password (leave blank to auto-generate)"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="flex-1 rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-sm font-mono"
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              onClick={() => setNewPassword('')}
+              title="Clear so the server generates one"
+              className="text-xs rounded border border-slate-300 dark:border-slate-600 px-2 py-1 text-slate-600 dark:text-slate-300"
+            >
+              Auto
+            </button>
+          </div>
+          <select
+            value={newRole}
+            onChange={(e) => setNewRole(e.target.value as adminApi.GlobalRole)}
+            className="rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-sm"
+          >
+            <option value="MEMBER">MEMBER (default)</option>
+            <option value="ADMIN">ADMIN</option>
+          </select>
+          <div className="md:col-span-2 flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={createUserMut.isPending || !newEmail.trim() || !newName.trim()}
+              className="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            >
+              {createUserMut.isPending ? 'Creating…' : 'Create user'}
+            </button>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Password rule: ≥ 12 characters, letters + digits. Leave blank
+              and the server will generate one — shown ONCE below.
+            </p>
+          </div>
+        </form>
+        {newError && <p className="text-xs text-red-600 dark:text-red-400 mt-2">{newError}</p>}
+        {newCreated && (
+          <div className="mt-3 rounded border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-sm">
+            <p className="font-medium text-emerald-900 dark:text-emerald-200">
+              User created — copy credentials now
+            </p>
+            <p className="mt-1">
+              Email:{' '}
+              <code className="bg-white dark:bg-slate-800 px-1 rounded">
+                {newCreated.user.email}
+              </code>
+            </p>
+            <p>
+              Password:{' '}
+              {newCreated.generatedPassword ? (
+                <code className="bg-white dark:bg-slate-800 px-1 rounded select-all">
+                  {newCreated.generatedPassword}
+                </code>
+              ) : (
+                <span className="text-slate-500 italic">
+                  (the value you entered)
+                </span>
+              )}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+              This is the only time the password is displayed. Hand it over via
+              a secure channel; have the user change it after first sign-in.
+            </p>
+            <button
+              type="button"
+              onClick={() => setNewCreated(null)}
+              className="text-xs underline mt-2"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </section>
 
       <section className="bg-white rounded shadow p-4 mb-6">
         <h2 className="font-medium mb-3">Users</h2>

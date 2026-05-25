@@ -7,6 +7,8 @@ import { requireAuth, requireGlobalRole } from '../middleware/auth.js';
 import { updateCheckService } from '../services/updateCheckService.js';
 import {
   adminUserResponse,
+  createUserBody,
+  createUserResponse,
   listQuery,
   teamsPage,
   updateUserRoleBody,
@@ -32,6 +34,22 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.listUsers,
+  });
+
+  // v1.26: admin-driven user provisioning. Admin types email + name and
+  // either a password OR omits it for the server to generate one. The
+  // response surfaces the generated password ONCE so the admin can hand it
+  // over; we never log it.
+  r.post('/users', {
+    schema: {
+      tags: ['admin'],
+      summary:
+        'Create a user with credentials (ADMIN only). Server-generated password returned once when not supplied.',
+      body: createUserBody,
+      response: { 201: createUserResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.createUser,
   });
 
   r.patch('/users/:userId', {
