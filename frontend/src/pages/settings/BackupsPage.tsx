@@ -7,8 +7,10 @@ import {
   deleteBackup,
   downloadBackup,
   fetchBackups,
+  restoreBackup,
   runBackupNow,
   updateBackupConfig,
+  uploadBackup,
   type BackupFile,
 } from '@/features/backups/api';
 
@@ -88,6 +90,23 @@ export default function BackupsPage(): JSX.Element {
 
   const deleteMut = useMutation({
     mutationFn: (filename: string) => deleteBackup(filename),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['backups'] }),
+  });
+
+  const restoreMut = useMutation({
+    mutationFn: (filename: string) => restoreBackup(filename),
+    onSuccess: (res) => {
+      qc.invalidateQueries();
+      window.alert(
+        `Restore complete: ${res.filename} (${(res.durationMs / 1000).toFixed(1)}s).\n` +
+          'Reload the page so every tab picks up the restored data.',
+      );
+    },
+    onError: (e) => window.alert(errorMessage(e, 'Restore failed')),
+  });
+
+  const uploadMut = useMutation({
+    mutationFn: (file: File) => uploadBackup(file),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['backups'] }),
   });
 
@@ -211,6 +230,11 @@ export default function BackupsPage(): JSX.Element {
             {runError && <p className="text-xs text-red-600">{runError}</p>}
           </form>
 
+          <UploadSection
+            onUpload={(f) => uploadMut.mutateAsync(f)}
+            pending={uploadMut.isPending}
+          />
+
           <section>
             <h3 className="font-medium mb-2 text-sm">
               Stored backups ({data.items.length})
@@ -230,7 +254,17 @@ export default function BackupsPage(): JSX.Element {
                         deleteMut.mutate(b.filename);
                       }
                     }}
-                    disabled={deleteMut.isPending}
+                    onRestore={() => {
+                      const confirmText =
+                        'RESTORE this dump? This will REPLACE all data in the live database.\n\n' +
+                        `File: ${b.filename}\n\n` +
+                        'Type RESTORE to confirm:';
+                      const answer = window.prompt(confirmText);
+                      if (answer === 'RESTORE') {
+                        restoreMut.mutate(b.filename);
+                      }
+                    }}
+                    disabled={deleteMut.isPending || restoreMut.isPending}
                   />
                 ))}
               </ul>
@@ -245,10 +279,12 @@ export default function BackupsPage(): JSX.Element {
 function BackupRow({
   backup,
   onDelete,
+  onRestore,
   disabled,
 }: {
   backup: BackupFile;
   onDelete: () => void;
+  onRestore: () => void;
   disabled: boolean;
 }): JSX.Element {
   const [downloading, setDownloading] = useState(false);
@@ -285,6 +321,14 @@ function BackupRow({
       </button>
       <button
         type="button"
+        onClick={onRestore}
+        disabled={disabled}
+        className="text-xs rounded border border-amber-400 text-amber-700 dark:border-amber-500 dark:text-amber-300 px-2 py-1 hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-50"
+      >
+        Restore
+      </button>
+      <button
+        type="button"
         onClick={onDelete}
         disabled={disabled}
         className="text-xs rounded border border-red-300 text-red-700 dark:border-red-500 dark:text-red-300 px-2 py-1 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50"
@@ -292,5 +336,65 @@ function BackupRow({
         Delete
       </button>
     </li>
+  );
+}
+
+function UploadSection({
+  onUpload,
+  pending,
+}: {
+  onUpload: (file: File) => Promise<unknown>;
+  pending: boolean;
+}): JSX.Element {
+  const [file, setFile] = useState<File | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  async function submit(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    if (!file) return;
+    setErr(null);
+    setOk(null);
+    try {
+      await onUpload(file);
+      setOk(`Uploaded ${file.name}`);
+      setFile(null);
+      // Reset the file input.
+      const input = (e.currentTarget as HTMLFormElement).querySelector(
+        'input[type=file]',
+      ) as HTMLInputElement | null;
+      if (input) input.value = '';
+    } catch (e2) {
+      setErr(errorMessage(e2, 'Upload failed'));
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="border border-slate-200 dark:border-slate-700 rounded p-4 space-y-3"
+    >
+      <h3 className="font-medium text-sm">Upload a backup</h3>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Drop in a <code>.dump</code> file produced by <code>pg_dump --format=custom</code>
+        {' '}— typically a download from another TaskHub instance. The file is stored
+        alongside scheduler-written dumps and can be restored from the list below.
+      </p>
+      <input
+        type="file"
+        accept=".dump,application/octet-stream"
+        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+        className="block text-sm"
+      />
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      {ok && <p className="text-xs text-emerald-700 dark:text-emerald-400">{ok}</p>}
+      <button
+        type="submit"
+        disabled={pending || !file}
+        className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
+      >
+        {pending ? 'Uploading…' : 'Upload'}
+      </button>
+    </form>
   );
 }

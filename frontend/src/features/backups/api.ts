@@ -47,6 +47,33 @@ export async function deleteBackup(filename: string): Promise<void> {
   await api.delete(`/admin/backups/${encodeURIComponent(filename)}`);
 }
 
+// v1.28: restore an existing dump back into the live database. DESTRUCTIVE —
+// the page wraps the call in an explicit confirm. After the request returns
+// the browser will see new data on the next refetch; live websockets may
+// surface stale state until the user reloads, which the success toast says.
+export async function restoreBackup(
+  filename: string,
+): Promise<{ filename: string; durationMs: number }> {
+  return (
+    await api.post<{ filename: string; durationMs: number }>(
+      `/admin/backups/${encodeURIComponent(filename)}/restore`,
+      {},
+    )
+  ).data;
+}
+
+// v1.28: upload a .dump from disk. Returns the on-disk filename the backend
+// assigned (server-side rename keeps things sane + prevents collisions).
+export async function uploadBackup(file: File): Promise<BackupFile> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return (
+    await api.post<BackupFile>('/admin/backups/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  ).data;
+}
+
 // Auth on the API is via in-memory Bearer header (refresh cookie only fires
 // on /auth/*), so a plain <a download> would send no token and 401. We fetch
 // the bytes through the axios client (auth header attached) then trigger a

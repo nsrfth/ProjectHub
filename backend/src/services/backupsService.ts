@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { promises as fs, createReadStream } from 'node:fs';
+import { promises as fs, createReadStream, createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { join, basename } from 'node:path';
 import { Errors } from '../lib/errors.js';
 import { prisma } from '../data/prisma.js';
@@ -96,7 +97,9 @@ export class BackupsService {
   async list(): Promise<BackupFile[]> {
     await fs.mkdir(this.backupDir, { recursive: true });
     const entries = await fs.readdir(this.backupDir);
-    const matches = entries.filter((n) => n.startsWith(FILE_PREFIX) && n.endsWith(FILE_SUFFIX));
+    const matches = entries.filter(
+      (n) => (n.startsWith(FILE_PREFIX) || n.startsWith(UPLOAD_PREFIX)) && n.endsWith(FILE_SUFFIX),
+    );
     const out: BackupFile[] = [];
     for (const name of matches) {
       try {
@@ -160,6 +163,88 @@ export class BackupsService {
     };
   }
 
+  // v1.28: pg_restore the given dump back into the live database. DESTRUCTIVE:
+  // `--clean --if-exists` drops existing objects before recreating them, so
+  // any data not in the dump is gone. The admin must explicitly opt in from
+  // the UI confirm dialog; the caller is expected to have already taken a
+  // safety dump.
+  //
+  // The connection is bounced around the restore: Prisma's pool will still
+  // hold connections to objects that pg_restore is about to drop, which can
+  // make pg_restore wait on lock acquisition. We `prisma.$disconnect()`
+  // first; Prisma transparently reconnects on the next query.
+  async restoreBackup(filename: string): Promise<{ filename: string; durationMs: number }> {
+    const safe = sanitiseFilename(filename);
+    const fullPath = join(this.backupDir, safe);
+    try {
+      await fs.access(fullPath);
+    } catch {
+      throw Errors.notFound('Backup not found');
+    }
+
+    await prisma.$disconnect();
+
+    const { connectionUrl, schema } = cleanPrismaUrl(this.databaseUrl);
+    const args = ['--clean', '--if-exists', '--no-owner', '--no-acl', '--dbname', connectionUrl];
+    // --schema scopes the restore to a single schema; matches what runBackup
+    // does with --schema=public on a Prisma-style URL.
+    if (schema) args.push('--schema', schema);
+    args.push(fullPath);
+
+    const startedAt = Date.now();
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('pg_restore', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (b) => {
+        stderr += b.toString();
+      });
+      child.on('error', (err) => {
+        reject(new Error(`pg_restore failed to start: ${err.message}`));
+      });
+      child.on('close', (code) => {
+        // pg_restore exits non-zero whenever ANY object failed to restore —
+        // including the harmless "extension already exists" / "schema public
+        // already exists" lines on a clean target. Treat exit 1 with no
+        // ERROR-level lines as success; surface anything else verbatim.
+        if (code === 0) return resolve();
+        const hasFatal = /\bERROR:/i.test(stderr) || /\bFATAL:/i.test(stderr);
+        if (code === 1 && !hasFatal) return resolve();
+        reject(new Error(`pg_restore exited ${code}: ${stderr.trim() || 'unknown error'}`));
+      });
+    });
+
+    return { filename: safe, durationMs: Date.now() - startedAt };
+  }
+
+  // v1.28: stream an admin-uploaded .dump into BACKUP_DIR. The caller-supplied
+  // filename is sanitised + namespaced so it can never collide with a
+  // scheduler-written file (those start with `taskhub-`).
+  async saveUpload(args: {
+    stream: NodeJS.ReadableStream;
+    originalName: string;
+    isTruncated: () => boolean;
+  }): Promise<BackupFile> {
+    await fs.mkdir(this.backupDir, { recursive: true });
+    const finalName = uploadedFilename(args.originalName);
+    const fullPath = join(this.backupDir, finalName);
+    try {
+      await pipeline(args.stream, createWriteStream(fullPath));
+    } catch (err) {
+      await fs.unlink(fullPath).catch(() => undefined);
+      throw err;
+    }
+    if (args.isTruncated()) {
+      await fs.unlink(fullPath).catch(() => undefined);
+      throw Errors.badRequest('Uploaded file exceeded the size limit');
+    }
+    const st = await fs.stat(fullPath);
+    return {
+      filename: finalName,
+      sizeBytes: st.size,
+      createdAt: st.mtime.toISOString(),
+    };
+  }
+
   async deleteBackup(filename: string): Promise<void> {
     const safe = sanitiseFilename(filename);
     const fullPath = join(this.backupDir, safe);
@@ -189,7 +274,11 @@ export class BackupsService {
 
   private async applyRetention(): Promise<number> {
     const cfg = await this.getConfig();
-    const files = await this.list();
+    // Retention only applies to scheduler-written dumps. Admin uploads sit
+    // outside the rotation — they're explicit acts the admin can delete by
+    // hand. Otherwise an uploaded restore-source would vanish on the next
+    // tick.
+    const files = (await this.list()).filter((f) => f.filename.startsWith(FILE_PREFIX));
     if (files.length <= cfg.retention) return 0;
     const stale = files.slice(cfg.retention);
     let removed = 0;
@@ -263,14 +352,30 @@ function cleanPrismaUrl(raw: string): { connectionUrl: string; schema: string | 
 // filename to the client. Reject path traversal + anything outside the
 // known prefix/suffix shape so a hand-crafted DELETE can't unlink arbitrary
 // files inside the container.
+//
+// v1.28: also accept the upload prefix so admin-uploaded dumps round-trip
+// through download / restore / delete.
+const UPLOAD_PREFIX = 'upload-';
+
 function sanitiseFilename(name: string): string {
   const bare = basename(name);
   if (bare !== name) throw Errors.badRequest('Invalid backup filename');
-  if (!bare.startsWith(FILE_PREFIX) || !bare.endsWith(FILE_SUFFIX)) {
-    throw Errors.badRequest('Invalid backup filename');
-  }
+  const ok = (bare.startsWith(FILE_PREFIX) || bare.startsWith(UPLOAD_PREFIX)) && bare.endsWith(FILE_SUFFIX);
+  if (!ok) throw Errors.badRequest('Invalid backup filename');
   if (bare.includes('/') || bare.includes('\\') || bare.includes('..')) {
     throw Errors.badRequest('Invalid backup filename');
   }
   return bare;
+}
+
+// Derive a safe on-disk name from an admin-uploaded dump. We keep the
+// original stem (without extension) for human readability, but enforce the
+// `upload-{ISO timestamp}-{stem}.dump` shape so listing / download /
+// retention all work the same as for scheduler-written files.
+function uploadedFilename(original: string): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const base = basename(original);
+  // Strip extension + anything that isn't a friendly file character.
+  const stem = base.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 60) || 'dump';
+  return `${UPLOAD_PREFIX}${stamp}-${stem}${FILE_SUFFIX}`;
 }

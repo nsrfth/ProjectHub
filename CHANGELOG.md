@@ -4,6 +4,74 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.0] — 2026-05-26
+
+Restore + upload for the backup feature.
+
+### Backend
+
+- `services/backupsService.ts` gains two methods:
+  - `restoreBackup(filename)` — spawns `pg_restore --clean --if-exists
+    --no-owner --dbname=<connectionUrl> [--schema=<schema>] <file>`. Calls
+    `prisma.$disconnect()` first so the pool isn't holding locks on objects
+    pg_restore is about to drop; Prisma reconnects automatically. Exit
+    code 1 with no ERROR/FATAL stderr lines is treated as success (the
+    expected "extension already exists" noise from `--clean` on a fresh
+    schema).
+  - `saveUpload({ stream, originalName, isTruncated })` — streams an
+    admin-uploaded `.dump` into `BACKUP_DIR`. Server-side renames to
+    `upload-<ISO ts>-<sanitised stem>.dump` so admin uploads can't collide
+    with scheduler-written `taskhub-*.dump` files. On truncation (over the
+    fileSize limit) the partial file is unlinked + the request 400s.
+- Two new endpoints under `/api/admin/backups`:
+  - `POST /:filename/restore` — destructive; UI wraps in confirm.
+  - `POST /upload` — multipart/form-data, single file. Per-route
+    `fileSize` override pulled from `BACKUP_UPLOAD_MAX_BYTES` so backup
+    uploads aren't capped by the 10 MiB `UPLOAD_MAX_BYTES` global (sized
+    for task attachments).
+- `applyRetention` now scopes to `taskhub-*` only — admin uploads are
+  outside the rotation, so an uploaded restore-source can't vanish on the
+  next scheduler tick.
+- New env var `BACKUP_UPLOAD_MAX_BYTES` (default 2 GiB).
+
+### Frontend
+
+- `pages/settings/BackupsPage.tsx`:
+  - New "Upload a backup" section between the config form and the file
+    list. `<input type="file" accept=".dump">` + Upload button. On success
+    the list refetches and the new file appears.
+  - New per-row "Restore" button (amber outline). Click pops a
+    `window.prompt` asking the admin to type `RESTORE` to confirm — extra
+    friction because this is destructive and an accidental Enter on a
+    bare `confirm()` is plausible.
+  - On restore success, the page invalidates ALL queries (not just
+    `['backups']`) and alerts the admin to reload so other tabs pick up
+    the post-restore data.
+- `features/backups/api.ts` adds `restoreBackup(filename)` and
+  `uploadBackup(file: File)` (uses FormData + multipart/form-data CT).
+
+### Verified
+
+- Two new integration tests:
+  - Upload via `app.inject` with a hand-rolled multipart body; verifies
+    server-side filename sanitisation (spaces stripped), list/download/
+    delete round-trip on the uploaded file.
+  - Restore endpoint: non-admin → 403; admin + missing file → 404.
+  - pg_restore path itself is covered manually: ran a fresh `pg_dump`
+    against the live stack, then `pg_restore` from the same file (~3 s
+    for a 79 KB dump). Confirmed admin login + session continuity post-
+    restore.
+
+### Phase boundary
+
+- Restore is online — running services see errors while pg_restore is in
+  flight. Acceptable for single-instance self-hosted; a future release
+  could put the backend behind a "maintenance mode" gate during restore.
+- Restore does NOT migrate the schema before applying the dump. If the
+  dump was taken from an older code version, run `prisma migrate deploy`
+  manually before restoring (or use a same-version dump). UI-side schema
+  diffing is a v1.29+ concern.
+
 ## [1.27.0] — 2026-05-26
 
 Automatic Postgres backups, admin-configurable.

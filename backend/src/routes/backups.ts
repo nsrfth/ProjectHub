@@ -99,6 +99,57 @@ export async function backupsRoutes(
     },
   });
 
+  // v1.28: restore an existing dump. DESTRUCTIVE — pg_restore --clean --if-exists
+  // drops + recreates the schema. Admin-only (the route hook already enforces
+  // GlobalRole=ADMIN). The frontend wraps this in an explicit confirm dialog.
+  r.post('/:filename/restore', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Restore a backup dump into the live database (ADMIN only, DESTRUCTIVE)',
+      params: backupFilenameParam,
+      response: {
+        200: z.object({ filename: z.string(), durationMs: z.number().int().nonnegative() }),
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (
+      req: FastifyRequest<{ Params: z.infer<typeof backupFilenameParam> }>,
+      reply: FastifyReply,
+    ) => {
+      const result = await svc.restoreBackup(req.params.filename);
+      return reply.send(result);
+    },
+  });
+
+  // v1.28: stream an admin-uploaded .dump into BACKUP_DIR. Multipart/form-data,
+  // single file. Override the global multipart fileSize limit (sized for task
+  // attachments, default 10 MiB) with the BACKUP_UPLOAD_MAX_BYTES knob.
+  r.post('/upload', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Upload a .dump (multipart/form-data, single file) for later restore.',
+      consumes: ['multipart/form-data'],
+      response: {
+        201: z.object({
+          filename: z.string(),
+          sizeBytes: z.number().int().nonnegative(),
+          createdAt: z.string(),
+        }),
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const file = await req.file({ limits: { fileSize: opts.env.BACKUP_UPLOAD_MAX_BYTES } });
+      if (!file) throw Errors.badRequest('Expected a multipart file upload');
+      const saved = await svc.saveUpload({
+        stream: file.file,
+        originalName: file.filename || 'backup.dump',
+        isTruncated: () => file.file.truncated,
+      });
+      return reply.status(201).send(saved);
+    },
+  });
+
   r.delete('/:filename', {
     schema: {
       tags: ['admin'],

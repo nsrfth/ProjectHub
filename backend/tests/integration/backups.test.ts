@@ -178,6 +178,73 @@ describe('/api/admin/backups', () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it('accepts an admin-uploaded .dump + list/download/delete round-trip', async () => {
+    const { adminToken } = await setup();
+    // Build a small multipart body by hand — light_my_request handles it.
+    const boundary = '----TaskHubBackupTestBoundary';
+    const body =
+      `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="file"; filename="my external dump.dump"\r\n' +
+      'Content-Type: application/octet-stream\r\n\r\n' +
+      'pretend-this-is-pg_dump-output\r\n' +
+      `--${boundary}--\r\n`;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/admin/backups/upload',
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: body,
+    });
+    expect(res.statusCode).toBe(201);
+    const saved = res.json() as { filename: string; sizeBytes: number };
+    expect(saved.filename).toMatch(/^upload-.*\.dump$/);
+    // Filename should NOT contain the original space (sanitised away).
+    expect(saved.filename).not.toContain(' ');
+    expect(saved.sizeBytes).toBeGreaterThan(0);
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/admin/backups',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect((list.json().items as Array<{ filename: string }>).map((i) => i.filename)).toContain(saved.filename);
+
+    // The uploaded file is reachable via the same download endpoint as
+    // scheduler-written dumps.
+    const dl = await app.inject({
+      method: 'GET',
+      url: `/api/admin/backups/${saved.filename}/download`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(dl.statusCode).toBe(200);
+    expect(dl.body).toBe('pretend-this-is-pg_dump-output');
+
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/api/admin/backups/${saved.filename}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(del.statusCode).toBe(204);
+  });
+
+  it('restore endpoint 404s when the file is missing', async () => {
+    const { adminToken, memberToken } = await setup();
+    const member = await app.inject({
+      method: 'POST',
+      url: '/api/admin/backups/taskhub-1999.dump/restore',
+      headers: { authorization: `Bearer ${memberToken}` },
+    });
+    expect(member.statusCode).toBe(403);
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/api/admin/backups/taskhub-1999-01-01T00-00-00-000Z.dump/restore',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
   it('rejects path-traversal + non-backup filenames', async () => {
     const { adminToken } = await setup();
     const evil = await app.inject({

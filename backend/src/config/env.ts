@@ -141,6 +141,10 @@ const envSchema = z.object({
   // Where dumps land inside the container. Mapped to the backups_data named
   // volume in docker-compose.yml so files survive container rebuilds.
   BACKUP_DIR: z.string().default('./backups'),
+  // v1.28: maximum size of an admin-uploaded .dump. Generous default (2 GiB)
+  // because dumps grow unpredictably + the upload endpoint is admin-only.
+  // Overrides the global UPLOAD_MAX_BYTES which is sized for task attachments.
+  BACKUP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
 });
 
 export type Env = z.infer<typeof envSchema> & { corsOrigins: string[] };
