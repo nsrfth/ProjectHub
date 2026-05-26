@@ -60,6 +60,14 @@ const NAV: NavItem[] = [
     descriptionKey: 'settings.nav.apiDesc',
     roles: ['ADMIN', 'MANAGER', 'MEMBER'],
   },
+  // v1.27: automatic database backups. Admin-only because it exposes file
+  // download + scheduler config that affects the whole instance.
+  {
+    to: '/settings/backups',
+    labelKey: 'settings.nav.backups',
+    descriptionKey: 'settings.nav.backupsDesc',
+    roles: ['ADMIN'],
+  },
 ];
 
 export default function SettingsLayout(): JSX.Element {

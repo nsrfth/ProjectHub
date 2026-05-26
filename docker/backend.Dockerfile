@@ -22,7 +22,10 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 # OpenSSL is required by Prisma's database engine on Alpine.
-RUN apk add --no-cache openssl
+# postgresql16-client added in v1.27 so pg_dump is available to the
+# automatic-backup scheduler. Matches the major version of the postgres:16
+# server image so dump formats stay compatible.
+RUN apk add --no-cache openssl postgresql16-client
 
 # Run as non-root.
 RUN addgroup -S app && adduser -S app -G app
@@ -36,7 +39,10 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 
-RUN mkdir -p /app/uploads && chown -R app:app /app
+# Pre-create /app/uploads + /app/backups so the named-volume mounts inherit
+# their ownership (named volumes copy ownership from the image's matching
+# path on first mount).
+RUN mkdir -p /app/uploads /app/backups && chown -R app:app /app
 USER app
 
 EXPOSE 4000

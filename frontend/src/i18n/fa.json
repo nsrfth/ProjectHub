@@ -53,6 +53,8 @@
   "settings.nav.auditDesc": "فعالیت + ورود",
   "settings.nav.api": "API و وب‌هوک‌ها",
   "settings.nav.apiDesc": "توکن‌های شخصی + وب‌هوک تیم",
+  "settings.nav.backups": "پشتیبان‌گیری",
+  "settings.nav.backupsDesc": "پشتیبان‌گیری زمان‌بندی‌شده از پایگاه داده",
 
   "preferences.title": "ترجیحات",
   "preferences.subtitle": "تنظیمات شخصی نمایش. فقط روی حساب شما اعمال می‌شود.",

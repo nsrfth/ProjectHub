@@ -53,6 +53,8 @@
   "settings.nav.auditDesc": "Activity + sign-in log",
   "settings.nav.api": "API & Webhooks",
   "settings.nav.apiDesc": "Personal tokens + team webhooks",
+  "settings.nav.backups": "Backups",
+  "settings.nav.backupsDesc": "Scheduled database dumps",
 
   "preferences.title": "Preferences",
   "preferences.subtitle": "Personal display settings. Changes apply only to your account.",

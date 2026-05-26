@@ -122,6 +122,25 @@ const envSchema = z.object({
   // that has a default-via-CORS fallback already.
   UPDATER_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
   UPDATER_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+
+  // v1.27: automatic Postgres backups. Same opt-in shape as the TASK_DUE /
+  // WEBHOOK / RECURRENCE schedulers — disabled by default so tests + small
+  // dev runs don't kick off pg_dump in the background. Multi-instance
+  // deploys: enable on exactly one node. Period + retention are configured
+  // by an admin in Settings → Backups (persisted to InstanceSetting), not
+  // here — env only controls whether the scheduler ticks + where dumps land.
+  BACKUP_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  // How often the scheduler wakes up to check whether a new backup is due.
+  // The actual cadence is admin-configurable (e.g. every 24h); this is just
+  // the tick granularity. Keep it small relative to the smallest allowed
+  // interval (1h).
+  BACKUP_CHECK_INTERVAL_MIN: z.coerce.number().int().positive().default(15),
+  // Where dumps land inside the container. Mapped to the backups_data named
+  // volume in docker-compose.yml so files survive container rebuilds.
+  BACKUP_DIR: z.string().default('./backups'),
 });
 
 export type Env = z.infer<typeof envSchema> & { corsOrigins: string[] };

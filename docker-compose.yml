@@ -72,8 +72,17 @@ services:
       # the in-app upgrade button (the API endpoint then returns 503).
       UPDATER_URL: ${UPDATER_URL:-}
       UPDATER_TOKEN: ${UPDATER_TOKEN:-}
+      # v1.27: automatic database backups. Off by default — set
+      # BACKUP_ENABLED=true in .env to let the scheduler tick. Interval /
+      # retention are admin-configurable in Settings → Backups (persisted
+      # to InstanceSetting). BACKUP_DIR lives on the named volume so dumps
+      # survive container rebuilds.
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-false}
+      BACKUP_DIR: ${BACKUP_DIR:-/app/backups}
+      BACKUP_CHECK_INTERVAL_MIN: ${BACKUP_CHECK_INTERVAL_MIN:-15}
     volumes:
       - uploads_data:/app/uploads
+      - backups_data:/app/backups
     expose:
       - "4000"
 
@@ -177,6 +186,7 @@ volumes:
   postgres_data:
   redis_data:
   uploads_data:
+  backups_data:
   frontend_dist:
   caddy_data:
   caddy_config:

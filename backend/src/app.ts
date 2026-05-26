@@ -27,6 +27,7 @@ import { systemRoutes } from './routes/system.js';
 import { calendarRoutes } from './routes/calendar.js';
 import { trashRoutes } from './routes/trash.js';
 import { rolesRoutes } from './routes/roles.js';
+import { backupsRoutes } from './routes/backups.js';
 import { prisma } from './data/prisma.js';
 
 // App factory — separate from server.ts so tests can spin up the app without
@@ -83,6 +84,10 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(notificationsRoutes, { prefix: '/notifications' });
     // Admin endpoints sit above team-level RBAC — gated by GlobalRole=ADMIN.
     await api.register(adminRoutes, { prefix: '/admin' });
+    // v1.27: backup management — sits under /admin so it shares the
+    // GlobalRole=ADMIN gate. Separate file so the route module stays small
+    // and the BackupsService receives env (DATABASE_URL + BACKUP_DIR).
+    await api.register(backupsRoutes, { prefix: '/admin/backups', env });
     // Labels live at the team scope; attach/detach lives under the task path.
     await api.register(labelsRoutes, { prefix: '/teams/:teamId/labels' });
     await api.register(taskLabelsRoutes, {

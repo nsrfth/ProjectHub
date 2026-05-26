@@ -15,6 +15,7 @@ import AuditPage from '@/pages/settings/AuditPage';
 import ApiWebhooksPage from '@/pages/settings/ApiWebhooksPage';
 import PreferencesPage from '@/pages/settings/PreferencesPage';
 import RolesPage from '@/pages/settings/RolesPage';
+import BackupsPage from '@/pages/settings/BackupsPage';
 import HelpPage from '@/pages/HelpPage';
 import AboutPage from '@/pages/AboutPage';
 import CalendarPage from '@/pages/CalendarPage';
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
           { path: 'security', element: <SecurityPage /> },
           { path: 'audit', element: <AuditPage /> },
           { path: 'api', element: <ApiWebhooksPage /> },
+          { path: 'backups', element: <BackupsPage /> },
         ],
       },
     ],

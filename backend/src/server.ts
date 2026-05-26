@@ -3,6 +3,8 @@ import { loadEnv } from './config/env.js';
 import { createDueDateScheduler } from './scheduler/dueDateScheduler.js';
 import { createWebhookDispatcher } from './scheduler/webhookDispatcher.js';
 import { createRecurrenceScheduler } from './scheduler/recurrenceScheduler.js';
+import { createBackupScheduler } from './scheduler/backupScheduler.js';
+import { BackupsService } from './services/backupsService.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -39,12 +41,24 @@ async function main(): Promise<void> {
     : null;
   recurrenceScheduler?.start();
 
+  // Automatic Postgres backups (v1.27). Same opt-in shape; the admin can
+  // also disable backups in Settings → Backups without an env change.
+  const backupScheduler = env.BACKUP_ENABLED
+    ? createBackupScheduler({
+        service: new BackupsService(env.DATABASE_URL, env.BACKUP_DIR),
+        intervalMin: env.BACKUP_CHECK_INTERVAL_MIN,
+        logger: app.log,
+      })
+    : null;
+  backupScheduler?.start();
+
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'shutting down');
     try {
       dueScheduler?.stop();
       webhookDispatcher?.stop();
       recurrenceScheduler?.stop();
+      backupScheduler?.stop();
       await app.close();
       process.exit(0);
     } catch (err) {

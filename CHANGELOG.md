@@ -4,6 +4,75 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.0] — 2026-05-26
+
+Automatic Postgres backups, admin-configurable.
+
+### Backend
+
+- New `services/backupsService.ts` shells out to `pg_dump --format=custom`,
+  writes to `BACKUP_DIR` (default `/app/backups`), prunes oldest files past
+  the retention count after every successful run. Strips Prisma-specific
+  query params (`?schema=public`, `connection_limit`) before handing the
+  URL to libpq + lifts `schema` into the proper `--schema` flag so pg_dump
+  doesn't 400 on unknown query keys.
+- New `scheduler/backupScheduler.ts` — same opt-in shape as the TASK_DUE /
+  WEBHOOK / RECURRENCE schedulers. `BACKUP_ENABLED=true` opts the loop in;
+  `BACKUP_CHECK_INTERVAL_MIN` (default 15 min) is the tick granularity.
+  Per-tick logic reads the admin-set config + `backup.lastRunAt`
+  InstanceSetting, fires `pg_dump` when `(now - lastRunAt) >= intervalHours`.
+- Five new admin-only endpoints under `/api/admin/backups`:
+  - `GET /` — config + lastRunAt + nextRunAt + file list
+  - `PUT /config` — partial update of `{ enabled, intervalHours, retention }`
+  - `POST /run` — synchronous pg_dump now
+  - `GET /:filename/download` — streams the dump (Bearer-auth, octet-stream)
+  - `DELETE /:filename` — removes one dump
+  Filename sanitisation rejects path traversal + anything outside the
+  `taskhub-*.dump` shape.
+- `docker/backend.Dockerfile`: install `postgresql16-client` in the runner
+  stage so `pg_dump` is available. `mkdir -p /app/backups` + chown to the
+  `app` user so the named volume inherits the right ownership on first
+  mount (named volumes copy ownership from the image path).
+- `docker-compose.yml`: new `backups_data` named volume mounted at
+  `/app/backups` in the backend service.
+- New env vars (all sensible-default + opt-in):
+  `BACKUP_ENABLED=false`, `BACKUP_DIR=/app/backups`,
+  `BACKUP_CHECK_INTERVAL_MIN=15`. Admin tunes period + retention in the UI.
+
+### Frontend
+
+- New `pages/settings/BackupsPage.tsx` — ADMIN-only page in Settings.
+  Toggle scheduler, set period in hours (1..720), set retention (1..365),
+  "Run backup now" button (synchronous; surfaces filename + size +
+  duration on success). Lists every stored dump with timestamp, size,
+  Download + Delete per row. Download uses a blob fetch (axios with auth
+  header) since the Bearer token doesn't ride on plain `<a>` clicks.
+- New `features/backups/api.ts` client.
+- New sidebar entry in Settings, gated to `globalRole === 'ADMIN'`.
+
+### Verified
+
+- Six new integration tests in `backups.test.ts` — admin gate (member 403),
+  config defaults, config persistence, range clamping (`intervalHours
+  99999` → 400), file listing, download, delete, and filename-sanitisation
+  rejection of `../etc/passwd` + non-backup filenames. pg_dump path is
+  covered by manual end-to-end against the running compose stack — the
+  test runner doesn't bundle Postgres client tools.
+- Manual: enabled scheduler at 1 h interval / 3 retention, ran 4 backups
+  back-to-back, confirmed the oldest dump was pruned after each new write.
+
+### Phase boundary
+
+- Backup files are dumped to a docker named volume on the backend host.
+  Off-host replication (S3, restic) is a deliberate v1.28 follow-up — the
+  primary risk this release closes is "I have no recent dump at all," not
+  "my host's disk died."
+- Restore is a documented manual procedure (`pg_restore --clean --no-owner
+  --dbname=$DATABASE_URL …`); a one-click restore UI is also a v1.28
+  follow-up. Restore-from-UI introduces enough write-side risk
+  (overwriting live data while users are connected) that it warrants its
+  own design pass.
+
 ## [1.16.0] — 2026-05-24
 
 Opt-in "update available" check.

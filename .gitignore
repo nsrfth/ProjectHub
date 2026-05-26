@@ -11,6 +11,10 @@ build/
 .env
 .env.local
 .env.*.local
+.env.bak.*
+
+# Leftover from a prior history-rewrite session — local-only safety copy
+.git.backup-before-rewrite/
 
 # logs
 *.log

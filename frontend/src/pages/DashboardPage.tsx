@@ -41,110 +41,117 @@ export default function DashboardPage(): JSX.Element {
     <div className="p-8 max-w-5xl mx-auto">
       <h1 className="text-2xl font-semibold mb-6">{t('dashboard.title')}</h1>
 
-      <div className="bg-white dark:bg-slate-800 rounded shadow p-6 mb-6">
-        <p className="text-sm text-slate-600 dark:text-slate-400">{t('dashboard.signedInAs')}</p>
-        <p className="font-medium">{user?.name}</p>
-        <p className="text-sm text-slate-500 dark:text-slate-400">{user?.email}</p>
-        <p className="text-xs text-slate-400 mt-2">{t('dashboard.role')}: {user?.globalRole}</p>
-      </div>
+      {/* v1.27: top row — Current team (left) and At a glance (right)
+          side-by-side. Two-column grid on lg+; stacks on smaller
+          viewports. Both cards stretch to the same height via
+          `items-stretch`. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-stretch">
+        <div className="bg-white dark:bg-slate-800 rounded shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-medium">{t('dashboard.currentTeam')}</h2>
+            <Link to="/teams" className="text-sm underline">
+              {t('dashboard.manageTeams')}
+            </Link>
+          </div>
 
-      <div className="bg-white dark:bg-slate-800 rounded shadow p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-medium">{t('dashboard.currentTeam')}</h2>
-          <Link to="/teams" className="text-sm underline">
-            {t('dashboard.manageTeams')}
-          </Link>
+          {loading && <p className="text-sm text-slate-500 dark:text-slate-400">{t('dashboard.loadingTeams')}</p>}
+
+          {!loading && teams.length === 0 && (
+            <p className="text-sm text-slate-500">
+              You're not in any team yet.{' '}
+              <Link to="/teams" className="underline">
+                Create one
+              </Link>
+              .
+            </p>
+          )}
+
+          {!loading && teams.length > 0 && (
+            <div className="flex items-center gap-3">
+              <select
+                value={currentTeamId ?? ''}
+                onChange={(e) => setCurrentTeamId(e.target.value || null)}
+                className="rounded border-slate-300 px-2 py-1 border text-sm"
+              >
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              {currentTeam && (
+                <span className="text-xs uppercase tracking-wide text-slate-500">
+                  {currentTeam.myRole}
+                </span>
+              )}
+            </div>
+          )}
+
+          {currentTeam && (
+            <div className="mt-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+              <Link to="/projects" className="underline">
+                {t('dashboard.viewProjects').replace('{team}', currentTeam.name)}
+              </Link>
+              <Link to="/reports" className="underline text-slate-600 dark:text-slate-300">
+                {t('nav.reports')}
+              </Link>
+              <Link to="/calendar" className="underline text-slate-600 dark:text-slate-300">
+                {t('nav.calendar')}
+              </Link>
+            </div>
+          )}
+          <p className="mt-2 text-xs text-slate-500">
+            Open a project to see its kanban board and tasks.
+          </p>
         </div>
 
-        {loading && <p className="text-sm text-slate-500 dark:text-slate-400">{t('dashboard.loadingTeams')}</p>}
-
-        {!loading && teams.length === 0 && (
-          <p className="text-sm text-slate-500">
-            You're not in any team yet.{' '}
-            <Link to="/teams" className="underline">
-              Create one
-            </Link>
-            .
-          </p>
-        )}
-
-        {!loading && teams.length > 0 && (
-          <div className="flex items-center gap-3">
-            <select
-              value={currentTeamId ?? ''}
-              onChange={(e) => setCurrentTeamId(e.target.value || null)}
-              className="rounded border-slate-300 px-2 py-1 border text-sm"
-            >
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-            {currentTeam && (
-              <span className="text-xs uppercase tracking-wide text-slate-500">
-                {currentTeam.myRole}
-              </span>
-            )}
-          </div>
-        )}
-
-        {currentTeam && (
-          <div className="mt-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-            <Link to="/projects" className="underline">
-              {t('dashboard.viewProjects').replace('{team}', currentTeam.name)}
-            </Link>
-            <Link to="/reports" className="underline text-slate-600 dark:text-slate-300">
-              {t('nav.reports')}
-            </Link>
-            <Link to="/calendar" className="underline text-slate-600 dark:text-slate-300">
-              {t('nav.calendar')}
-            </Link>
-          </div>
-        )}
-        <p className="mt-2 text-xs text-slate-500">
-          Open a project to see its kanban board and tasks.
-        </p>
-      </div>
-
-      {/* Summary widget — three headline numbers when a team is active. */}
-      {currentTeam && summary && (
-        <div className="bg-white dark:bg-slate-800 rounded shadow p-6 mt-6">
+        {/* At a glance — placeholder card when no team is selected yet
+            so the grid stays two-up + the user knows something will
+            appear here once they pick a team. */}
+        <div className="bg-white dark:bg-slate-800 rounded shadow p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-medium">At a glance</h2>
-            <Link to="/reports" className="text-sm underline">
-              Full reports →
-            </Link>
+            {currentTeam && summary && (
+              <Link to="/reports" className="text-sm underline">
+                Full reports →
+              </Link>
+            )}
           </div>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-2xl font-semibold tabular-nums">{summary.openCount}</p>
-              <p className="text-xs text-slate-500 uppercase tracking-wide mt-1">Open</p>
+          {currentTeam && summary ? (
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{summary.openCount}</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide mt-1">Open</p>
+              </div>
+              <div>
+                <p className="text-2xl font-semibold tabular-nums text-emerald-700">
+                  {summary.doneLast7Days}
+                </p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide mt-1">Done (7d)</p>
+              </div>
+              <div>
+                <p
+                  className={`text-2xl font-semibold tabular-nums ${
+                    summary.overdueCount > 0 ? 'text-red-700' : 'text-slate-700'
+                  }`}
+                >
+                  {summary.overdueCount}
+                </p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide mt-1">Overdue</p>
+              </div>
             </div>
-            <div>
-              <p className="text-2xl font-semibold tabular-nums text-emerald-700">
-                {summary.doneLast7Days}
-              </p>
-              <p className="text-xs text-slate-500 uppercase tracking-wide mt-1">Done (7d)</p>
-            </div>
-            <div>
-              <p
-                className={`text-2xl font-semibold tabular-nums ${
-                  summary.overdueCount > 0 ? 'text-red-700' : 'text-slate-700'
-                }`}
-              >
-                {summary.overdueCount}
-              </p>
-              <p className="text-xs text-slate-500 uppercase tracking-wide mt-1">Overdue</p>
-            </div>
-          </div>
+          ) : (
+            <p className="text-sm text-slate-500 italic">
+              Select a team to see headline numbers.
+            </p>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* v1.25: three visual widgets — one card each. Grid stacks on
-          mobile, two-up on lg, three-up on xl. */}
+      {/* Charts grid — sits just below the top row. Three cards in a
+          responsive grid (1 / 2 / 3 columns at sm / lg / xl). */}
       {currentTeam && (
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
           {summary && (
             <ChartCard title="Where work sits" subtitle="By status">
               <StatusDonut byStatus={summary.byStatus} />
@@ -162,6 +169,19 @@ export default function DashboardPage(): JSX.Element {
           )}
         </div>
       )}
+
+      {/* Signed-in identity — least urgent info, lives at the bottom now
+          that the user menu in the top-right also surfaces it. */}
+      <div className="bg-white dark:bg-slate-800 rounded shadow px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <span className="text-slate-500 dark:text-slate-400">
+          {t('dashboard.signedInAs')}:
+        </span>
+        <span className="font-medium">{user?.name}</span>
+        <span className="text-slate-500 dark:text-slate-400">{user?.email}</span>
+        <span className="ml-auto text-[10px] font-medium uppercase tracking-wide rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5">
+          {user?.globalRole}
+        </span>
+      </div>
     </div>
   );
 }
