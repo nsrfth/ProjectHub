@@ -31,6 +31,11 @@ beforeEach(async () => {
   await prisma.passwordReset.deleteMany();
   await prisma.emailVerification.deleteMany();
   await prisma.teamMembership.deleteMany();
+  // v1.30.6: also wipe directories so a prior test file's leftovers
+  // don't route this file's "unknown user" login through a stale JIT
+  // bind path. Cheap; idempotent when empty.
+  await prisma.directoryGroupMapping.deleteMany();
+  await prisma.directory.deleteMany();
   await prisma.user.deleteMany();
 });
 

@@ -165,6 +165,18 @@ export class DirectoryService {
       const team = await prisma.team.findUnique({ where: { id: input.teamId } });
       if (!team) throw Errors.badRequest('teamId references a non-existent team');
     }
+    // v1.30.6 (S-6 / S-7): when an explicit roleId is supplied, verify
+    // it belongs to the mapping's team — otherwise a typo (or a malicious
+    // admin) could pin a membership to a role row in a different team.
+    if (input.roleId) {
+      if (!input.teamId) {
+        throw Errors.badRequest('roleId requires teamId on the same mapping');
+      }
+      const role = await prisma.role.findUnique({ where: { id: input.roleId } });
+      if (!role || role.teamId !== input.teamId) {
+        throw Errors.badRequest('roleId does not belong to the mapping team');
+      }
+    }
     return prisma.directoryGroupMapping.create({
       data: {
         directoryId,
@@ -172,6 +184,7 @@ export class DirectoryService {
         globalRole: input.globalRole,
         teamId: input.teamId,
         teamRole: input.teamRole,
+        roleId: input.roleId,
       },
     });
   }

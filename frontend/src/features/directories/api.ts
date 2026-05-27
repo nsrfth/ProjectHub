@@ -58,6 +58,11 @@ export interface GroupMapping {
   globalRole: DirectoryGlobalRole | null;
   teamId: string | null;
   teamRole: DirectoryTeamRole | null;
+  // v1.30.6 (S-6 / S-7): optional pointer at a custom Role row in the
+  // team. When set, the LDAP/SCIM provisioning path assigns this role
+  // on the TeamMembership it creates. When null, the path falls back
+  // to the team's system Manager/Member role matching `teamRole`.
+  roleId: string | null;
 }
 
 export interface GroupMappingCreateInput {
@@ -65,6 +70,7 @@ export interface GroupMappingCreateInput {
   globalRole?: DirectoryGlobalRole | null;
   teamId?: string | null;
   teamRole?: DirectoryTeamRole | null;
+  roleId?: string | null;
 }
 
 export interface TestResult {

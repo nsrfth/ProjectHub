@@ -64,11 +64,16 @@ export const directoryListResponse = z.object({
 export const directoryIdParams = z.object({ directoryId: z.string() });
 
 // DirectoryGroupMapping schemas — group DN → role.
+//
+// v1.30.6 (S-6 / S-7) adds optional `roleId` — the admin can point a
+// mapping at a custom Role row directly. When omitted, the service
+// derives the team's system Manager/Member role from `teamRole`.
 export const groupMappingCreateBody = z.object({
   externalGroupDn: z.string().min(1).max(500),
   globalRole: z.enum(['ADMIN', 'MEMBER']).nullable().default(null),
   teamId: z.string().nullable().default(null),
   teamRole: z.enum(['MANAGER', 'MEMBER']).nullable().default(null),
+  roleId: z.string().nullable().default(null),
 });
 
 export const groupMappingResponse = z.object({
@@ -78,6 +83,7 @@ export const groupMappingResponse = z.object({
   globalRole: z.enum(['ADMIN', 'MEMBER']).nullable(),
   teamId: z.string().nullable(),
   teamRole: z.enum(['MANAGER', 'MEMBER']).nullable(),
+  roleId: z.string().nullable(),
 });
 
 export const groupMappingListResponse = z.object({

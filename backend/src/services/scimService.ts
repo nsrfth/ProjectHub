@@ -1,5 +1,6 @@
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { ensureSystemRoles } from '../lib/teamRoles.js';
 import {
   groupResource,
   parsePagination,
@@ -291,16 +292,28 @@ export class ScimService {
       ? (body.members as AnyRecord[]).map((m) => asString(m.value)).filter((v): v is string => !!v)
       : [];
 
+    // v1.30.6 (S-6 / S-7): every membership must carry a roleId. Create
+    // the team first (without nested memberships) so we have a teamId
+    // to seed system roles against; then upsert the memberships with
+    // the right roleId.
     const team = await prisma.team.create({
-      data: {
-        name: displayName,
-        slug: finalSlug,
-        directoryId,
-        memberships: { create: memberIds.map((uid) => ({ userId: uid, role: 'MEMBER' as const })) },
-      },
+      data: { name: displayName, slug: finalSlug, directoryId },
+    });
+    if (memberIds.length > 0) {
+      const { memberId } = await ensureSystemRoles(team.id);
+      for (const uid of memberIds) {
+        await prisma.teamMembership.upsert({
+          where: { userId_teamId: { userId: uid, teamId: team.id } },
+          update: { role: 'MEMBER', roleId: memberId },
+          create: { userId: uid, teamId: team.id, role: 'MEMBER', roleId: memberId },
+        });
+      }
+    }
+    const reloaded = await prisma.team.findUnique({
+      where: { id: team.id },
       include: { memberships: { include: { user: true } } },
     });
-    return this.groupToResource(team);
+    return this.groupToResource(reloaded!);
   }
 
   async replaceGroup(directoryId: string, id: string, body: AnyRecord): Promise<ScimGroupResource> {
@@ -313,18 +326,28 @@ export class ScimService {
       : null;
 
     // Replace semantics: members list is fully overwritten when provided.
+    // v1.30.6 (S-6 / S-7): every recreated membership carries roleId.
+    if (memberIds === null) {
+      const updated = await prisma.team.update({
+        where: { id },
+        data: { name: displayName },
+        include: { memberships: { include: { user: true } } },
+      });
+      return this.groupToResource(updated);
+    }
+    const { memberId } = await ensureSystemRoles(id);
     const updated = await prisma.team.update({
       where: { id },
       data: {
         name: displayName,
-        ...(memberIds !== null
-          ? {
-              memberships: {
-                deleteMany: {},
-                create: memberIds.map((uid) => ({ userId: uid, role: 'MEMBER' as const })),
-              },
-            }
-          : {}),
+        memberships: {
+          deleteMany: {},
+          create: memberIds.map((uid) => ({
+            userId: uid,
+            role: 'MEMBER' as const,
+            roleId: memberId,
+          })),
+        },
       },
       include: { memberships: { include: { user: true } } },
     });
@@ -345,14 +368,20 @@ export class ScimService {
         continue;
       }
       // Members add: extract value[].value, upsert memberships.
+      // v1.30.6 (S-6 / S-7): newly added members must carry roleId.
+      // Existing memberships keep their (possibly admin-curated) roleId
+      // — we only set roleId on the create branch.
       if (op.op === 'add' && (op.path === 'members' || !op.path) && Array.isArray(op.value)) {
         const ids = (op.value as AnyRecord[]).map((m) => asString(m.value)).filter((v): v is string => !!v);
-        for (const uid of ids) {
-          await prisma.teamMembership.upsert({
-            where: { userId_teamId: { userId: uid, teamId: id } },
-            update: {},
-            create: { userId: uid, teamId: id, role: 'MEMBER' },
-          });
+        if (ids.length > 0) {
+          const { memberId } = await ensureSystemRoles(id);
+          for (const uid of ids) {
+            await prisma.teamMembership.upsert({
+              where: { userId_teamId: { userId: uid, teamId: id } },
+              update: {},
+              create: { userId: uid, teamId: id, role: 'MEMBER', roleId: memberId },
+            });
+          }
         }
         continue;
       }

@@ -177,11 +177,20 @@ model DirectoryGroupMapping {
   globalRole      GlobalRole?
   teamId          String?
   teamRole        TeamRole?
+  // v1.30.6 (S-6 / S-7): explicit custom-role pointer. When set, the
+  // LDAP / SCIM provisioning path stamps THIS role onto the
+  // TeamMembership it creates. When null, the path falls back to the
+  // team's system Manager / Member role matching `teamRole`. SetNull
+  // on Role delete so removing a role just degrades the mapping to
+  // "use system Member" — doesn't cascade-delete the mapping itself.
+  roleId          String?
+  role            Role?      @relation(fields: [roleId], references: [id], onDelete: SetNull)
 
   directory       Directory  @relation(fields: [directoryId], references: [id], onDelete: Cascade)
 
   @@unique([directoryId, externalGroupDn])
   @@index([directoryId])
+  @@index([roleId])
 }
 
 model User {
@@ -349,6 +358,8 @@ model Role {
   team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   permissions RolePermission[]
   memberships TeamMembership[] @relation("MembershipRole")
+  // v1.30.6 (S-6 / S-7): directory mappings pointing at this custom role.
+  directoryMappings DirectoryGroupMapping[]
 
   @@unique([teamId, name])
   @@index([teamId])

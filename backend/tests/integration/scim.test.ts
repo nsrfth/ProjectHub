@@ -242,6 +242,31 @@ describe('SCIM /Groups', () => {
     expect(group.displayName).toBe('Demo Team');
     expect(group.members).toHaveLength(2);
 
+    // v1.30.6 (S-6 / S-7): every SCIM-provisioned membership must
+    // carry roleId pointing at the team's system Member role. Before
+    // this patch, SCIM created memberships with roleId=null and the
+    // v1.23 permission system fell back to the hardcoded
+    // DEFAULT_MEMBER_PERMISSIONS instead of the team's own (possibly
+    // edited) Member role row.
+    const memberships = await prisma.teamMembership.findMany({
+      where: { teamId: group.id },
+    });
+    expect(memberships.length).toBeGreaterThan(0);
+    for (const m of memberships) {
+      expect(m.roleId).not.toBeNull();
+    }
+    // The system roles were created for this team.
+    const systemRoles = await prisma.role.findMany({
+      where: { teamId: group.id, isSystem: true },
+    });
+    const names = systemRoles.map((r) => r.name).sort();
+    expect(names).toEqual(['Manager', 'Member']);
+    // Every membership points at the system Member role specifically.
+    const memberRoleId = systemRoles.find((r) => r.name === 'Member')!.id;
+    for (const m of memberships) {
+      expect(m.roleId).toBe(memberRoleId);
+    }
+
     // List.
     const list = await scim('GET', '/Groups', token);
     expect(list.json().totalResults).toBe(1);

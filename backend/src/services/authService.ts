@@ -9,6 +9,7 @@ import { DirectoryService } from './directoryService.js';
 import { LdapService, type LdapAuthResult } from './ldapService.js';
 import { TwoFactorService } from './twoFactorService.js';
 import { emailService } from './emailService.js';
+import { systemRoleIdFor } from '../lib/teamRoles.js';
 
 // All token lifecycle logic lives here. Routes/controllers don't talk to Prisma directly.
 
@@ -204,7 +205,7 @@ export class AuthService {
       user = existing;
     }
 
-    await this.applyGroupMappings(user.id, directoryId, result.groups);
+    await this.applyDirectoryGroups(user.id, directoryId, result.groups);
     // Re-read so the caller sees the post-mapping globalRole.
     const refreshed = await prisma.user.findUnique({ where: { id: user.id } });
     return refreshed ?? user;
@@ -224,7 +225,7 @@ export class AuthService {
     if (Object.keys(dataUpdate).length) {
       await prisma.user.update({ where: { id: user.id }, data: dataUpdate });
     }
-    await this.applyGroupMappings(user.id, directoryId, result.groups);
+    await this.applyDirectoryGroups(user.id, directoryId, result.groups);
   }
 
   // Translate LDAP group DNs into TaskHub role assignments. Only fires when
@@ -234,7 +235,12 @@ export class AuthService {
   //   - mapping.teamId + teamRole → upsert TeamMembership(userId, teamId)
   //     with the mapped role; remove memberships that no longer match any
   //     mapping for this directory (so removing a group revokes access).
-  private async applyGroupMappings(
+  // Renamed from `applyGroupMappings` → made public in v1.30.6 (S-6 /
+  // S-7) so the new directoryGroupMappings integration tests can drive
+  // it directly without needing a live OpenLDAP container. The function
+  // is idempotent and DB-driven; the LDAP bind step only feeds it the
+  // `groupDns` array, which is just data.
+  async applyDirectoryGroups(
     userId: string,
     directoryId: string,
     groupDns: string[],
@@ -262,10 +268,21 @@ export class AuthService {
     );
     for (const m of matched) {
       if (!m.teamId || !m.teamRole) continue;
+      // v1.30.6 (S-6 / S-7): EVERY directory-managed membership must
+      // carry a roleId. Resolution order:
+      //   1. Mapping carries an explicit custom roleId — use it.
+      //   2. Otherwise resolve the team's system Manager / Member role
+      //      matching the mapping's teamRole; create the system roles
+      //      first if the team didn't have them yet (covers SCIM-
+      //      created teams + pre-v1.23 backfill gaps).
+      // BOTH the legacy `role` enum AND the new `roleId` are written.
+      // The enum stays so the v1.23 fallback in requirePermission keeps
+      // working for any code path that hasn't migrated to roleId yet.
+      const roleId = m.roleId ?? (await systemRoleIdFor(m.teamId, m.teamRole));
       await prisma.teamMembership.upsert({
         where: { userId_teamId: { userId, teamId: m.teamId } },
-        update: { role: m.teamRole },
-        create: { userId, teamId: m.teamId, role: m.teamRole },
+        update: { role: m.teamRole, roleId },
+        create: { userId, teamId: m.teamId, role: m.teamRole, roleId },
       });
     }
     // Strip memberships in directory-mapped teams that the user no longer

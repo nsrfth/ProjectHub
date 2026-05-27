@@ -4,6 +4,150 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.6] — 2026-05-27
+
+**Security patch — S-6 + S-7 (+ partial S-21): LDAP and SCIM
+provisioning bypassed the v1.23 custom-role system by writing only the
+legacy `TeamMembership.role` enum and leaving `roleId` null. Custom
+roles assigned by admins didn't apply to directory-managed members,
+and a SCIM-created team had no system roles at all.**
+
+### Summary
+
+Two directory-driven write paths created `TeamMembership` rows with
+`roleId: null`:
+
+- **LDAP** (`authService.applyGroupMappings`): JIT provisioning + every
+  subsequent login upserted `{ role: m.teamRole }` only. The v1.23
+  permission resolver fell back to the hardcoded
+  `DEFAULT_MANAGER_PERMISSIONS` / `DEFAULT_MEMBER_PERMISSIONS`
+  constants — diverging from whatever the team's own (potentially
+  admin-edited) Manager / Member rows actually granted.
+- **SCIM** (`scimService.createGroup` / `replaceGroup` / `patchGroup`):
+  SCIM-created teams had no system roles created for them, so even if
+  the SCIM path WANTED to point at the right role row, there was no
+  row to point at.
+
+Bonus failure mode: an admin who assigned a custom role to an
+LDAP-managed member would see the legacy `role` enum overwritten on
+the next bind. Net effect — custom roles for directory-managed users
+were unsupported.
+
+### Fix
+
+- **Schema**: `DirectoryGroupMapping.roleId String?` — optional FK to
+  `Role(id)`. `SetNull` on Role delete so removing a role just
+  degrades the mapping to "use system Member" rather than cascade-
+  deleting the mapping. Indexed.
+- **Migration `20260527150000_directory_mapping_roleid`** — additive:
+  `ADD COLUMN ... NULL` + `CREATE INDEX` + `ADD CONSTRAINT FK ... SET
+  NULL`. No backfill needed — existing mappings still carry
+  `teamRole`, and the service derives the team's system Manager /
+  Member role from that when the explicit `roleId` is absent.
+- **New `lib/teamRoles.ts`** with two exports:
+  - `ensureSystemRoles(teamId)` — idempotent. Upserts the team's
+    Manager + Member system roles (id `mgr_${teamId}` /
+    `mem_${teamId}`, matching the v1.23 backfill convention),
+    populates the default permission sets, returns the two ids.
+  - `systemRoleIdFor(teamId, teamRole)` — convenience: ensure roles,
+    return the id matching the legacy enum.
+- **`authService.applyGroupMappings` → `applyDirectoryGroups`** — same
+  body, RENAMED + made PUBLIC so tests can drive it without a live
+  OpenLDAP container (the S-21 problem; see "Testing strategy"
+  below). The upsert now writes `roleId = mapping.roleId ?? systemRoleIdFor(teamId, teamRole)`
+  on BOTH the create and update branches. Both the legacy enum AND
+  the new `roleId` are written; the enum stays so the v1.23 legacy
+  fallback in `requirePermission` keeps working for any code path
+  that hasn't migrated to `roleId` yet.
+- **`scimService.createGroup`** restructured: create the team first,
+  then `ensureSystemRoles(team.id)`, then upsert memberships with
+  `roleId = memberId`. Same change in `replaceGroup` (replace
+  semantics) and `patchGroup` (add members op).
+- **`schemas/directories.ts`** + **`directoryService.createMapping`**
+  accept the new `roleId`. The service validates that the supplied
+  role belongs to the mapping's team (defence against a typo or a
+  malicious admin pinning a membership at a different team's role
+  row).
+- **Frontend `features/directories/api.ts`** types the new field on
+  `GroupMapping` + `GroupMappingCreateInput`. The mappings management
+  UI itself doesn't exist on the frontend yet — admins create
+  mappings via the API today. Building the UI form (team picker
+  driving a per-team roles dropdown) is the v1.31 UX follow-up
+  flagged below.
+
+### Testing strategy — the S-21 problem
+
+The user spec called out that the existing `ldap.test.ts` is gated on
+a live OpenLDAP container; adding the new `roleId` assertions there
+would put them behind a skip. The actual S-6 / S-7 bug is DB-driven
+(`applyDirectoryGroups` takes a list of group DNs already extracted
+from the LDAP bind and does pure Prisma work), so the new
+**`directoryGroupMappings.test.ts`** runs the service path DIRECTLY
+without needing a live LDAP server. The LDAP integration test stays
+as the end-to-end smoke when OpenLDAP IS available; correctness is
+pinned in the new file.
+
+Five new regression tests:
+
+- JIT-provisioned MEMBER membership has `roleId` set, pointing at the
+  team's auto-created system Member role (which is now an actual
+  `Role` row, not a hardcoded constant).
+- JIT-provisioned MANAGER mapping resolves to the team's system
+  Manager role.
+- A mapping with an explicit custom `roleId` honors it, AND a SECOND
+  sync does NOT downgrade — this is the bug the user flagged most
+  forcefully.
+- The strip-stale-memberships behavior still works (user no longer
+  matches → membership removed). Guards against an accidental
+  regression while we were patching the upsert.
+- `syncRolesFromGroups: false` is still a no-op (existing fallback).
+
+Plus one assertion appended in `scim.test.ts`:
+
+- After SCIM `POST /Groups` creates a team with two members, every
+  resulting `TeamMembership` has `roleId` populated AND points at the
+  team's freshly-created system Member role. The team's system roles
+  exist (Manager + Member). Before this patch, SCIM-created memberships
+  had `roleId: null` and the team had no Role rows.
+
+### Test infrastructure note (partial S-21)
+
+We did NOT spin up the OpenLDAP container as part of the default test
+invocation in this release. The `ldap.test.ts` file remains
+skipped-by-default — running it still requires
+`docker compose --profile ldap up -d openldap`. Bringing the OpenLDAP
+profile into the standard test harness (so the LDAP smoke is
+exercised on every PR) is a separate, larger infra change tracked
+here as the remaining piece of S-21. The new
+`directoryGroupMappings.test.ts` verifies S-6 / S-7 in isolation
+against the same Prisma queries the LDAP path would run — the bug
+fix has actual coverage; the live-LDAP end-to-end smoke does not.
+
+### Verified
+
+- Backend `tsc` ✅. Migration applied to the test DB.
+- Frontend `vite build` ✅ (api.ts types updated; no UI changes yet).
+- `directoryGroupMappings.test.ts` 5/5. `scim.test.ts` 10/10.
+  `auth.test.ts` 18/18 (after adding `directory` + `directoryGroupMapping`
+  to its `beforeEach` cleanup so a prior test file's lingering rows
+  don't route an "unknown user" login through a stale JIT bind and
+  surface a 400 instead of 401).
+- Full integration suite: **295 passed, 5 skipped** (LDAP, pre-existing).
+  +5 from v1.30.5.
+
+### Phase boundary
+
+- The frontend mappings-management UI (per-mapping team picker that
+  drives a custom-role dropdown via `GET /api/teams/:teamId/roles`)
+  is queued for v1.31. The backend supports it today via the API.
+- Running the OpenLDAP container as part of standard CI / `npm test`
+  remains S-21. The new tests pin S-6 / S-7 correctness, but the
+  end-to-end LDAP smoke still requires the operator to opt in.
+- `applyGroupMappings` was renamed to `applyDirectoryGroups` and made
+  public. Existing call sites updated; no public API surface change
+  (the function isn't exported from any route or wired into a public
+  endpoint).
+
 ## [1.30.5] — 2026-05-27
 
 **Security patch — S-4 (+ S-26): refresh-token reuse never triggered

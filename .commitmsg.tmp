@@ -1,48 +1,49 @@
-﻿v1.30.5 - SECURITY: refresh-token family revocation on reuse (S-4, S-26)
+﻿v1.30.6 - SECURITY: LDAP/SCIM provisioning sets roleId (S-6, S-7) + partial S-21
 
-The pre-patch /refresh rotation revoked the OLD token, but the LIVE
-sibling issued during that rotation kept working. An attacker with a
-phished refresh cookie could race the legitimate client: present R1
-first, get R2 back, ride the session. The user's next /refresh would
-401 ("token revoked"); they'd assume their session expired and
-re-login, leaving the attacker holding the only live token in the
-chain. There was no reuse detection -- a second presentation of an
-already-rotated token never signalled theft.
+The LDAP path (applyGroupMappings) upserted TeamMembership with only
+the legacy ole enum, never oleId. The v1.23 permission resolver
+then fell back to the hardcoded DEFAULT_*_PERMISSIONS constants instead
+of the team's own (potentially admin-edited) Manager/Member role rows.
+SCIM was worse: SCIM-created teams had no system Role rows at all.
 
 Fix:
-- Schema: new RefreshToken.familyId (String, indexed). On first issue
-  (login / register / 2FA-login) familyId = self.id. On rotation the
-  new token inherits the presented token's familyId.
-- Migration 20260527120000_refresh_token_family is additive: ADD COLUMN
-  nullable -> backfill familyId = id for every existing row -> SET NOT
-  NULL -> CREATE INDEX. Existing tokens become self-rooted families;
-  rotation chains can't be reconstructed retroactively but the
-  reuse-detection logic only fires on already-revoked tokens, so the
-  backfill never wrongly kills a session.
-- authService.issueSession pre-generates the row id so familyId = id
-  can self-root in one INSERT. Accepts optional { familyId } from
-  refresh() to inherit the chain.
-- authService.refresh detects reuse: when the presented token is found
-  AND revokedAt is set, someone is replaying a token already rotated
-  away. updateMany every sibling with that familyId where revokedAt
-  IS NULL, set revokedAt = now. Attacker AND victim both die;
-  legitimate user re-logs-in (correct response to detected theft).
-- Unknown / expired / bad-signature tokens keep their boring 401 with
-  no side effect. Those happen routinely and aren't theft signals.
-- logout unchanged - deliberate single-token revoke, not a family kill.
+- Schema: DirectoryGroupMapping.roleId (nullable FK -> Role, SetNull),
+  indexed. Migration is additive; no backfill needed because existing
+  mappings still carry teamRole.
+- New lib/teamRoles.ts: ensureSystemRoles(teamId) is idempotent and
+  upserts mgr_/mem_ system roles (matching v1.23 backfill convention);
+  systemRoleIdFor(teamId, teamRole) resolves to the right id.
+- authService.applyGroupMappings was renamed applyDirectoryGroups and
+  made public so tests can drive it without a live OpenLDAP container
+  (the S-21 problem). The upsert now sets BOTH role (legacy enum, kept
+  as the v1.23 fallback mirror) AND roleId = mapping.roleId ?? systemRoleIdFor(teamId, teamRole).
+- scimService.createGroup restructured: create team first, then
+  ensureSystemRoles, then upsert memberships with roleId = memberId.
+  Same in replaceGroup + patchGroup.
+- schemas/directories.ts + directoryService.createMapping accept the
+  new roleId. Service validates the role belongs to the mapping team.
+- Frontend api.ts types the new field on GroupMapping. The mappings
+  management UI doesn't exist on the frontend yet; admins create
+  mappings via the API today. UI is v1.31 UX work.
 
-3 new tests in describe('S-4 refresh-token family revocation'):
-- Happy path: three consecutive /refresh calls succeed; DB read shows
-  exactly one familyId for the user.
-- Reuse cascade: rotate R1 -> R2, replay R1 -> R1 returns 401 AND R2
-  is now also revoked (its next /refresh returns 401). Every row in
-  the family has revokedAt set.
-- Family isolation: two separate logins for the same user create two
-  distinct families; reuse-revoking family A leaves family B fully
-  working.
+Testing strategy: the existing ldap.test.ts sits behind a live-OpenLDAP
+gate (S-21). Putting the roleId assertions there would mean they sit
+behind a skip. Instead, new directoryGroupMappings.test.ts drives
+applyDirectoryGroups directly (pure Prisma; no LDAP server needed).
+Five new tests: JIT MEMBER + roleId, JIT MANAGER + roleId, custom
+roleId honored AND second sync does NOT downgrade (the actual bug),
+strip-stale-memberships still works, syncRolesFromGroups=false still
+no-ops. Plus one new assertion in scim.test.ts (POST /Groups -> every
+membership has roleId, team has Manager+Member system roles).
 
-scim.test.ts seeded a RefreshToken directly without familyId; updated
-to mirror the issueSession convention.
+Test infra cleanup: auth.test.ts beforeEach now also wipes Directory
+and DirectoryGroupMapping so a prior file's leftover rows don't route
+an "unknown user" login through a stale JIT bind (which surfaces a 400
+"baseDN missing" instead of the expected 401).
 
-Verified: tsc clean. auth.test.ts 18/18. Full suite 290 passed,
+Phase boundary: running openldap as part of standard CI remains the
+unfinished part of S-21 - the new tests pin S-6/S-7 correctness; the
+end-to-end LDAP smoke still requires the operator to opt in.
+
+Verified: tsc clean (backend + frontend). Full suite 295 passed,
 5 skipped (LDAP).
