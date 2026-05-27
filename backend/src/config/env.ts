@@ -145,6 +145,14 @@ const envSchema = z.object({
   // because dumps grow unpredictably + the upload endpoint is admin-only.
   // Overrides the global UPLOAD_MAX_BYTES which is sized for task attachments.
   BACKUP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
+  // v1.30.7 (S-11): SSRF allow-list for the webhook target guard.
+  // Comma-separated host names that are EXEMPT from the private-IP /
+  // loopback / link-local rejection. Default empty so a fresh install
+  // can never be used as an SSRF probe. Operators with deliberate
+  // internal receivers (a monitoring sidecar on the same VM, etc.)
+  // list each host explicitly. The test suite sets `127.0.0.1` here
+  // so the existing receiver-stub tests keep passing.
+  WEBHOOK_ALLOWED_HOSTS: z.string().default(''),
 })
   // v1.30.2 (S-1): when the in-app self-upgrade plumbing is wired
   // (UPDATER_URL set), UPDATER_TOKEN MUST be a >=24-char string. Without

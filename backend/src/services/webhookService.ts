@@ -3,6 +3,11 @@ import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { randomTokenHex } from '../lib/hashing.js';
+import {
+  SsrfBlockedError,
+  assertWebhookUrlSafe,
+  parseAllowedHosts,
+} from '../lib/ssrfGuard.js';
 
 // Webhook management + delivery.
 //
@@ -80,6 +85,29 @@ export interface WebhookUpdateInput {
 }
 
 export class WebhookService {
+  // v1.30.7 (S-11): SSRF allow-list is read at instance construction so
+  // the env-cache check happens once per service instance. The test
+  // suite sets WEBHOOK_ALLOWED_HOSTS=127.0.0.1 so its stub HTTP server
+  // is reachable; production starts empty (no allow-list).
+  private readonly allowedHosts: readonly string[] = parseAllowedHosts(
+    process.env.WEBHOOK_ALLOWED_HOSTS,
+  );
+
+  // Convert an SsrfBlockedError into a domain 400 so it bubbles through
+  // the standard route error handler. We DON'T leak the resolved IP to
+  // a non-admin caller — the user with `webhooks.manage` IS the admin
+  // for this surface, so the diagnostic is appropriate here.
+  private async guardUrl(url: string): Promise<void> {
+    try {
+      await assertWebhookUrlSafe(url, { allowedHosts: this.allowedHosts });
+    } catch (err) {
+      if (err instanceof SsrfBlockedError) {
+        throw Errors.badRequest(err.message);
+      }
+      throw err;
+    }
+  }
+
   // ── CRUD ────────────────────────────────────────────────────────────
   async list(teamId: string): Promise<WebhookView[]> {
     const rows = await prisma.webhook.findMany({
@@ -99,6 +127,11 @@ export class WebhookService {
     teamId: string,
     input: WebhookCreateInput,
   ): Promise<{ view: WebhookView; rawSecret: string }> {
+    // v1.30.7 (S-11): block private / loopback / link-local targets at
+    // create time so admins get fast feedback if they typo'd a URL or
+    // pointed at the wrong service. Delivery re-checks (see
+    // deliverOnce) to defend against DNS rebinding.
+    await this.guardUrl(input.url);
     const rawSecret = input.secret ?? randomTokenHex(32);
     const row = await prisma.webhook.create({
       data: {
@@ -116,6 +149,10 @@ export class WebhookService {
   async update(teamId: string, id: string, input: WebhookUpdateInput): Promise<WebhookView> {
     const existing = await prisma.webhook.findUnique({ where: { id } });
     if (!existing || existing.teamId !== teamId) throw Errors.notFound('Webhook not found');
+    // v1.30.7 (S-11): re-check the URL when it changes.
+    if (input.url !== undefined && input.url !== existing.url) {
+      await this.guardUrl(input.url);
+    }
     const data: Record<string, unknown> = {};
     if (input.name !== undefined) data.name = input.name;
     if (input.url !== undefined) data.url = input.url;
@@ -241,6 +278,21 @@ export class WebhookService {
     payload: unknown,
     deliveryId: string,
   ): Promise<{ ok: boolean; httpStatus?: number; errorMessage?: string }> {
+    // v1.30.7 (S-11): re-resolve the host RIGHT BEFORE sending. The
+    // create-time check defends against typos; this check defends
+    // against DNS rebinding (host public at create, private now). A
+    // refusal here marks the delivery FAILED without contacting the
+    // target — the dispatcher's retry/backoff then drives it through
+    // the usual failure path.
+    try {
+      await assertWebhookUrlSafe(webhook.url, { allowedHosts: this.allowedHosts });
+    } catch (err) {
+      if (err instanceof SsrfBlockedError) {
+        return { ok: false, errorMessage: `SSRF guard refused delivery: ${err.message}` };
+      }
+      return { ok: false, errorMessage: `URL guard failed: ${(err as Error).message}` };
+    }
+
     const bodyText = JSON.stringify({
       event: eventType,
       deliveryId,

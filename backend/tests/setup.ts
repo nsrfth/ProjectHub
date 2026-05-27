@@ -54,3 +54,11 @@ process.env.JWT_ACCESS_SECRET ??= 'test_access_secret_at_least_32_chars_long_xx'
 process.env.JWT_REFRESH_SECRET ??= 'test_refresh_secret_at_least_32_chars_long_x';
 process.env.CORS_ORIGINS ??= 'http://localhost:5173';
 process.env.COOKIE_SECURE ??= 'false';
+
+// v1.30.7 (S-11): the existing webhook tests POST to a stub HTTP server
+// on 127.0.0.1; that endpoint would otherwise be refused by the SSRF
+// guard. Allow-list it here so those tests still pass. The NEW S-11
+// tests deliberately do NOT set this entry for the URLs they probe
+// (they pick fresh hostnames like `internal-test.invalid` or send
+// literal RFC 1918 IPs) so the guard's refusal IS exercised.
+process.env.WEBHOOK_ALLOWED_HOSTS ??= '127.0.0.1';

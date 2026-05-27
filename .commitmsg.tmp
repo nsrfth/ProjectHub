@@ -1,49 +1,53 @@
-﻿v1.30.6 - SECURITY: LDAP/SCIM provisioning sets roleId (S-6, S-7) + partial S-21
+﻿v1.30.7 - SECURITY: SSRF guard on webhook URLs (S-11)
 
-The LDAP path (applyGroupMappings) upserted TeamMembership with only
-the legacy ole enum, never oleId. The v1.23 permission resolver
-then fell back to the hardcoded DEFAULT_*_PERMISSIONS constants instead
-of the team's own (potentially admin-edited) Manager/Member role rows.
-SCIM was worse: SCIM-created teams had no system Role rows at all.
+A user with webhooks.manage could create a webhook pointed at
+127.0.0.1, 169.254.169.254 (cloud metadata), updater:9000, or any
+RFC 1918 host on the compose network. On every matching event the
+backend POSTed the team payload + HMAC headers, turning TaskHub into
+an SSRF probe into otherwise unreachable infrastructure.
 
 Fix:
-- Schema: DirectoryGroupMapping.roleId (nullable FK -> Role, SetNull),
-  indexed. Migration is additive; no backfill needed because existing
-  mappings still carry teamRole.
-- New lib/teamRoles.ts: ensureSystemRoles(teamId) is idempotent and
-  upserts mgr_/mem_ system roles (matching v1.23 backfill convention);
-  systemRoleIdFor(teamId, teamRole) resolves to the right id.
-- authService.applyGroupMappings was renamed applyDirectoryGroups and
-  made public so tests can drive it without a live OpenLDAP container
-  (the S-21 problem). The upsert now sets BOTH role (legacy enum, kept
-  as the v1.23 fallback mirror) AND roleId = mapping.roleId ?? systemRoleIdFor(teamId, teamRole).
-- scimService.createGroup restructured: create team first, then
-  ensureSystemRoles, then upsert memberships with roleId = memberId.
-  Same in replaceGroup + patchGroup.
-- schemas/directories.ts + directoryService.createMapping accept the
-  new roleId. Service validates the role belongs to the mapping team.
-- Frontend api.ts types the new field on GroupMapping. The mappings
-  management UI doesn't exist on the frontend yet; admins create
-  mappings via the API today. UI is v1.31 UX work.
+- New lib/ssrfGuard.ts uses ipaddr.js (added as a runtime dep) to
+  classify addresses into named ranges. Refuses loopback, private
+  (RFC 1918), link-local (INCLUDES 169.254.169.254 metadata), CGN,
+  reserved, unspecified, broadcast, multicast, plus IPv6 loopback,
+  unique-local, link-local. IPv4-mapped IPv6 (::ffff:10.0.0.1) is
+  detected and the underlying IPv4 re-classified - the classic SSRF
+  bypass.
+- HTTP/HTTPS schemes only. file://, gopher://, ftp:// are refused at
+  the scheme check.
+- Hostnames are resolved via dns.lookup({ all: true }); ANY internal
+  A/AAAA record refuses.
+- Operator escape hatch: WEBHOOK_ALLOWED_HOSTS env, comma-list,
+  default empty. Exact hostname match (no CIDR / wildcard) for
+  deliberate internal receivers.
+- Two-point enforcement: WebhookService.create + update (when URL
+  changes) for fast admin feedback; WebhookService.deliverOnce
+  re-resolves before EVERY fetch to defend against DNS rebinding.
+  Delivery refusal marks the row failed with the guard reason - no
+  HTTP request leaves the backend.
 
-Testing strategy: the existing ldap.test.ts sits behind a live-OpenLDAP
-gate (S-21). Putting the roleId assertions there would mean they sit
-behind a skip. Instead, new directoryGroupMappings.test.ts drives
-applyDirectoryGroups directly (pure Prisma; no LDAP server needed).
-Five new tests: JIT MEMBER + roleId, JIT MANAGER + roleId, custom
-roleId honored AND second sync does NOT downgrade (the actual bug),
-strip-stale-memberships still works, syncRolesFromGroups=false still
-no-ops. Plus one new assertion in scim.test.ts (POST /Groups -> every
-membership has roleId, team has Manager+Member system roles).
+15 new tests in webhookSsrf.test.ts: unit-level classifier coverage
+(7 cases including the 169.254.169.254 cloud-metadata IP and the
+::ffff:10.0.0.1 IPv4-mapped IPv6 bypass), create endpoint refusal
+(7 cases for various private targets + a sanity check that the
+explicitly allow-listed 127.0.0.1 still creates), and a delivery
+refusal that mutates the URL in the DB to simulate DNS rebinding.
 
-Test infra cleanup: auth.test.ts beforeEach now also wipes Directory
-and DirectoryGroupMapping so a prior file's leftover rows don't route
-an "unknown user" login through a stale JIT bind (which surfaces a 400
-"baseDN missing" instead of the expected 401).
+tests/setup.ts sets WEBHOOK_ALLOWED_HOSTS=127.0.0.1 so the existing
+receiver-stub tests in apiTokensAndWebhooks.test.ts keep working. The
+new tests use 127.0.0.2 / 192.168.x / 10.x / 169.254.x / [::1] /
+[::ffff:10.x] so the guard's refusal IS exercised.
 
-Phase boundary: running openldap as part of standard CI remains the
-unfinished part of S-21 - the new tests pin S-6/S-7 correctness; the
-end-to-end LDAP smoke still requires the operator to opt in.
+Phase boundary:
+- Allow-list is literal hostname match - no CIDR, no wildcard.
+  Documented; operators add each host explicitly.
+- fetch() does its own DNS lookup after our guard returns; a racy
+  attacker could theoretically slip a bad address between them.
+  Pinning the address via a custom undici dispatcher is a v1.31+
+  follow-up.
+- ipaddr.js is the first new runtime dep since v1.27.
 
-Verified: tsc clean (backend + frontend). Full suite 295 passed,
-5 skipped (LDAP).
+Verified: tsc clean. webhookSsrf.test.ts 15/15.
+apiTokensAndWebhooks.test.ts 15/15. Full suite 309 passed, 5 skipped
+(LDAP), 1 pre-existing backups order-flake (passes in isolation).

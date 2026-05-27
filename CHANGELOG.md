@@ -4,6 +4,116 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.7] — 2026-05-27
+
+**Security patch — S-11: webhook URLs unvalidated, usable as an SSRF
+probe into the compose network + cloud-metadata endpoint.**
+
+### Summary
+
+A user with `webhooks.manage` could create a webhook pointed at
+anything — `http://127.0.0.1`, `http://169.254.169.254/latest/...`
+(AWS / GCP / Azure metadata), `http://updater:9000/upgrade`, any
+RFC 1918 host on the compose network. On every matching event the
+backend POSTed the team's payload (and HMAC headers) to that target,
+turning TaskHub into an unauthenticated SSRF probe into otherwise
+unreachable infrastructure.
+
+### Fix
+
+- **New `lib/ssrfGuard.ts`** — `assertWebhookUrlSafe(url, opts)`. Uses
+  the maintained **`ipaddr.js`** library (hand-rolled SSRF checks
+  miss IPv4-mapped IPv6 and alternate encodings). Refuses any URL
+  whose host:
+  - Is not parseable as a URL or is not `http:` / `https:` (no
+    `file://`, `gopher://`, `ftp://`).
+  - Is an IP literal that classifies into a blocked range — the
+    library's named-range check catches: IPv4 `loopback` (127/8),
+    `private` (10/8 + 172.16/12 + 192.168/16), `linkLocal` (169.254/16
+    — covers the cloud metadata IP), `carrierGradeNat`, `reserved`,
+    `unspecified`, `broadcast`, `multicast`; and the IPv6 equivalents
+    `loopbackV6`, `uniqueLocal` (fc00::/7), `linkLocalV6` (fe80::/10),
+    `unspecifiedV6`. IPv4-mapped IPv6 forms (`::ffff:127.0.0.1`) are
+    detected via `IPv6.isIPv4MappedAddress()` and the underlying IPv4
+    is re-checked.
+  - Is a hostname that DNS-resolves to ANY of the above. We pull
+    every A/AAAA record via `dns.promises.lookup({ all: true })` and
+    refuse if any single record is internal.
+- **Operator escape hatch**: `WEBHOOK_ALLOWED_HOSTS` (env, comma-list,
+  default empty). Each entry is a lowercased exact hostname; matches
+  bypass the guard. For deliberate internal receivers (an on-host
+  monitoring sidecar, etc.) — and for the test suite, which sets
+  `127.0.0.1` so its stub HTTP receiver stays reachable.
+- **Two-point enforcement**:
+  - `WebhookService.create` and `WebhookService.update` (when the URL
+    changes) call the guard. Refusal surfaces as `400 BAD_REQUEST`
+    with the guard's diagnostic — admins see immediately if they
+    typo'd or pointed at the wrong service.
+  - `WebhookService.deliverOnce` calls the guard ALSO, right before
+    every `fetch`. This is the security-critical second check: it
+    defends against DNS rebinding, where `evil.example.com` resolves
+    public at create time and private a few seconds later. On refusal
+    the delivery row is marked failed with `errorMessage: 'SSRF guard
+    refused delivery: …'` — the dispatcher's retry/backoff drives it
+    through the usual failure path; the backend never contacts the
+    target.
+
+### Regression tests
+
+`tests/integration/webhookSsrf.test.ts` — 15 cases:
+
+- **Unit-level address classifier** (7 cases): loopback 127.0.0.1,
+  private 10/172.16/192.168, link-local INCLUDING cloud metadata
+  (`169.254.169.254` specifically), IPv6 loopback `::1`, unique-local
+  `fc00::1`, IPv4-mapped IPv6 (`::ffff:10.0.0.1` — the classic SSRF
+  bypass), and that real public IPv4/IPv6 (`1.1.1.1`,
+  `2606:4700:4700::1111`) are NOT refused.
+- **Create endpoint** (7 cases): rejects 192.168.1.50, rejects
+  169.254.169.254 specifically (cloud metadata), rejects 127.0.0.2
+  (loopback not on the test allow-list — proves the allow-list is
+  exact-match not CIDR), rejects `[::1]`, rejects
+  `[::ffff:10.0.0.1]`, rejects `file://` + `gopher://`, AND confirms
+  that the explicitly-allow-listed `127.0.0.1` still creates with 201
+  (sanity check for `tests/setup.ts`'s allow-list entry).
+- **Delivery refusal** (1 case): create a webhook against the
+  allow-listed `127.0.0.1`, rewrite its URL directly in the DB to
+  `http://10.99.99.99/hook` to simulate DNS rebinding (or a tampered
+  row), then `POST /webhooks/:id/test` — the test-send returns
+  `ok: false` with `errorMessage` containing `SSRF guard refused`.
+  Crucially, no HTTP request leaves the backend.
+
+`tests/setup.ts` now sets `WEBHOOK_ALLOWED_HOSTS=127.0.0.1` so the
+existing receiver-stub tests in `apiTokensAndWebhooks.test.ts` (which
+POST to a local HTTP stub) keep passing. The new S-11 tests pick
+addresses NOT in the allow-list (`127.0.0.2`, `192.168.1.50`,
+`10.99.99.99`, `169.254.169.254`, `[::1]`, `[::ffff:10.0.0.1]`) so
+the guard's refusal IS exercised.
+
+### Verified
+
+- Backend `tsc` ✅.
+- `webhookSsrf.test.ts` 15/15. `apiTokensAndWebhooks.test.ts` 15/15.
+- Full integration suite: **309 passed, 5 skipped** (LDAP, pre-existing).
+  One pre-existing flake on `backups.test.ts` (`BACKUP_DIR` env-cache
+  order dependency — passes in isolation). +14 from v1.30.6 (300 → 314
+  attempted; 309 pass + 1 flake = 310, plus 4 skips → 314).
+
+### Phase boundary
+
+- The allow-list matches hostnames LITERALLY (no CIDR, no wildcard).
+  An operator who wants "anything in 10.10.42.0/24" has to list each
+  host explicitly or write a small upstream proxy. Sufficient for the
+  intentional-internal-receiver use case; revisit if patterns drift.
+- We re-resolve at delivery time, but the underlying `fetch` does its
+  own resolve and we don't pin the address it uses. A racy attacker
+  could theoretically still slip a bad address between our `lookup`
+  and `fetch`'s resolve. A truly robust fix is to resolve ONCE and
+  hand `fetch` a custom `dispatcher` / `lookup` that returns a frozen
+  set of IPs. That's a bigger change; deferred until we see it
+  exploited.
+- `ipaddr.js` was added as a new dependency (10 kB, MIT-licensed,
+  well-maintained). The first new runtime dep since v1.27.
+
 ## [1.30.6] — 2026-05-27
 
 **Security patch — S-6 + S-7 (+ partial S-21): LDAP and SCIM
