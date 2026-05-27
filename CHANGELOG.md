@@ -4,6 +4,78 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.1] — 2026-05-27
+
+**Security patch — S-3: pending-2FA token accepted by `requireAuth`.**
+
+### Summary
+
+A token issued after a correct password but before the second factor
+(`signPending`, `kind: '2fa-pending'`, signed with the access JWT secret
++ 5-minute TTL) was accepted by `requireAuth` as if it were a regular
+access token. An attacker who phished a password against a 2FA-enabled
+account could:
+
+1. Call `POST /api/auth/login` and receive a pending token.
+2. Skip the second factor entirely by attaching the pending token to any
+   `requireAuth`-gated request.
+3. **Mint a long-lived API token** via `POST /api/settings/api-tokens` —
+   converting the 5-minute pending window into a persistent account
+   takeover that outlived the pending TTL.
+
+### Fix
+
+- `lib/jwt.ts` — `verifyAccess` now inspects the decoded payload and
+  rejects any token carrying a `kind` claim. Real access tokens have no
+  `kind`; pending-2FA tokens set `kind:'2fa-pending'`. Rejection goes
+  through the same 401 path as any invalid/expired token, so callers
+  see no information leak.
+- `verifyPending` is unchanged — it already required `kind ===
+  '2fa-pending'`, so the `/auth/2fa/login` flow continues to work.
+
+### Approach: shared secret + verify-time guard (NOT dedicated secret)
+
+The spec offered the option of a dedicated third secret
+(`JWT_PENDING_SECRET`). We kept the shared access secret and added the
+`kind`-claim guard at verify time. Rationale:
+
+- The guard alone closes the vulnerability — a pending token can never
+  satisfy `requireAuth` regardless of which secret signed it.
+- A dedicated secret is an operational change (admins must rotate `.env`,
+  redeploy) that would slow patch adoption without further reducing the
+  attack surface for this specific finding.
+- A separate `JWT_PENDING_SECRET` remains a sensible v1.32+ follow-up
+  for cryptographic separation (so a leaked access secret can't forge
+  pending tokens either) — tracked under the phase boundary.
+
+### Regression tests
+
+Added under `describe('S-3 regression: …')` in
+`tests/integration/twoFactor.test.ts`:
+
+1. `GET /api/auth/me` with a pending token → 401.
+2. `POST /api/settings/api-tokens` with a pending token → 401 (the
+   takeover chain — its absence is why this shipped).
+3. Full happy path: login → pending → `/auth/2fa/login` with a correct
+   TOTP code → full session; the new access token then succeeds on
+   `/api/auth/me`.
+
+### Verified
+
+- Backend `tsc` ✅.
+- `twoFactor.test.ts` — all 11 tests pass (8 existing + 3 new S-3).
+- Full integration suite: 260 passed, 1 unrelated pre-existing flake
+  (`backups.test.ts` `BACKUP_DIR` env-cache order dependency — passes in
+  isolation), 5 skipped (LDAP — needs the `ldap` profile).
+
+### Phase boundary
+
+- The pending and access tokens still share the JWT signing secret.
+  Cryptographic separation (`JWT_PENDING_SECRET >= 32 chars`) is a v1.32+
+  follow-up. The current `kind`-claim verify-time guard is sufficient
+  for this finding because a forged pending token can't satisfy
+  `verifyAccess` regardless of which secret signed it.
+
 ## [1.30.0] — 2026-05-27
 
 Full-text search across tasks, comments, and projects.

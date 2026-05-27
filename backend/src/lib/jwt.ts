@@ -49,7 +49,22 @@ export function decorateJwt(app: FastifyInstance, accessTtl: string): void {
   app.decorate('signAccess', (payload: AccessTokenPayload) =>
     app.jwt.sign(payload, { expiresIn: accessTtl }),
   );
-  app.decorate('verifyAccess', (token: string) => app.jwt.verify(token) as AccessTokenPayload);
+  // v1.30.1 (S-3): reject any token carrying a `kind` claim. Pending-2FA
+  // tokens set kind:'2fa-pending'; real access tokens have no kind. Without
+  // this guard a pending token — signed with the same secret — would pass
+  // requireAuth and let an attacker who phished a password-only login skip
+  // the second factor (and, worse, mint an API token via /settings/api-tokens,
+  // turning a 5-minute pending window into a long-lived takeover). The
+  // route layer still calls verifyPending() to consume pending tokens at
+  // /auth/2fa/login; that path is unaffected because it doesn't go through
+  // verifyAccess.
+  app.decorate('verifyAccess', (token: string) => {
+    const payload = app.jwt.verify(token) as AccessTokenPayload & { kind?: unknown };
+    if (payload && typeof payload === 'object' && 'kind' in payload && payload.kind !== undefined) {
+      throw new Error('Token is not an access token');
+    }
+    return payload;
+  });
   // @fastify/jwt v8 exposes namespaced instances at `app.jwt.<namespace>`, not
   // `app.<namespace>`. The plugin in security.ts registers with namespace 'refresh',
   // so the sign/verify functions live on app.jwt.refresh. Assert it's present so
@@ -61,11 +76,11 @@ export function decorateJwt(app: FastifyInstance, accessTtl: string): void {
   );
   app.decorate('verifyRefresh', (token: string) => refreshJwt.verify(token) as RefreshTokenPayload);
 
-  // Pending-2FA tokens reuse the access secret so we don't need a separate env
-  // var. The 5-minute TTL is short enough to bound the replay window; the
-  // `kind` claim prevents the token from being interpreted as a real access
-  // token even if it leaks (verifyAccess casts to AccessTokenPayload without
-  // checking `kind`, so the route layer must call verifyPending instead).
+  // Pending-2FA tokens reuse the access secret so we don't need a separate
+  // env var. The 5-minute TTL bounds the replay window. The `kind` claim is
+  // BOTH the route-level discriminator (verifyPending checks it explicitly)
+  // AND a guard in verifyAccess: any token with a `kind` claim is rejected,
+  // so a pending token can never satisfy requireAuth. (S-3 patched in v1.30.1.)
   app.decorate('signPending', (sub: string) =>
     app.jwt.sign({ sub, kind: '2fa-pending' } as unknown as AccessTokenPayload, { expiresIn: '5m' }),
   );

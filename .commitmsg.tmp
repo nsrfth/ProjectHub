@@ -1,27 +1,26 @@
-﻿v1.30.0 - full-text search via Postgres tsvector
+﻿v1.30.1 - SECURITY: reject pending-2FA tokens in requireAuth (S-3)
 
-Schema: generated tsvector columns + GIN indexes on Task, Comment, Project.
-simple text-search config (no stemming) because TaskHub content is heavily
-Persian. setweight('A') on title, setweight('B') on description so title
-hits outrank description-heavy hits at the same term frequency.
+A token issued after a correct password but before the second factor was
+accepted by requireAuth as a regular access token. An attacker with a
+phished password against a 2FA-enabled account could skip the second
+factor AND mint a long-lived API token via /settings/api-tokens,
+converting the 5-minute pending window into a persistent takeover.
 
-Backend: GET /api/search runs three parameterised raw queries (one per
-bucket) with plainto_tsquery + ts_headline + ts_rank. Tenant isolation
-via teamMembership.findMany; results restricted to teams the caller is a
-member of. No global-ADMIN bypass. Soft-deleted tasks/comments excluded.
-Per-bucket keyset cursor on (rank, id) with explicit ::real cast for
-correct float4 tiebreak. Cap 50 per page, default 20.
+Fix: verifyAccess now rejects any token carrying a kind claim. Real
+access tokens have no kind; pending tokens set kind:'2fa-pending'.
+verifyPending is unchanged (the /auth/2fa/login flow still consumes
+pending tokens correctly).
 
-Frontend: top-nav SearchInput (Enter-to-submit, sm+ visible) + /search
-results page with three buckets and per-bucket Load more. Excerpts
-render ts_headline output through a sanitiser that allows only <b>/</b>.
-EN + FA i18n.
+Kept the shared access secret + added the verify-time guard rather than
+introducing a dedicated JWT_PENDING_SECRET — the guard closes the
+vulnerability without forcing operators to rotate .env. Cryptographic
+secret separation tracked as a v1.32+ follow-up under phase boundary.
 
-Tests: 11 new integration tests cover basic match (title/comment/project),
-title-weighted ranking, cross-team isolation (critical), soft-delete
-exclusion, per-bucket keyset pagination across 25 same-keyword rows,
-type filter, empty q short-circuit, no-membership empty buckets, 401
-for anonymous callers. Full suite 258 passed, 5 skipped (LDAP-only).
+Three regression tests under describe('S-3 regression: ...') in
+twoFactor.test.ts: pending token -> 401 on /api/auth/me; pending token
+-> 401 on /api/settings/api-tokens (the takeover chain); full happy
+path still works.
 
-Phase boundary: simple config trades english stemming for Persian
-correctness; per-instance config setting is a v1.31 follow-up.
+Verified: tsc clean. twoFactor.test.ts 11/11. Full suite 260 passed,
+5 skipped (LDAP), 1 unrelated pre-existing flake (backups.test.ts
+BACKUP_DIR env-cache order dependency, passes in isolation).

@@ -219,6 +219,80 @@ describe('TOTP 2FA', () => {
     expect(denied.statusCode).toBe(401);
   });
 
+  // S-3 (v1.30.1): a pending-2FA token must NOT pass requireAuth. The
+  // previous implementation reused the access secret for pending tokens and
+  // verifyAccess didn't inspect the `kind` claim, so an attacker with a
+  // valid password (no second factor) could skip 2FA and even mint an API
+  // token via /settings/api-tokens — turning a 5-minute pending window into
+  // a long-lived account takeover.
+  describe('S-3 regression: pending tokens cannot satisfy requireAuth', () => {
+    async function freshPending(): Promise<string> {
+      const token = await register('s3@example.com');
+      await enrol(token);
+      const step1 = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 's3@example.com', password: PASSWORD },
+      });
+      expect(step1.statusCode).toBe(200);
+      const pending = step1.json().pendingToken as string;
+      expect(typeof pending).toBe('string');
+      return pending;
+    }
+
+    it('rejects a pending token on GET /api/auth/me with 401', async () => {
+      const pending = await freshPending();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/auth/me',
+        headers: { authorization: `Bearer ${pending}` },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('rejects a pending token on POST /api/settings/api-tokens with 401 (takeover chain)', async () => {
+      const pending = await freshPending();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/settings/api-tokens',
+        headers: { authorization: `Bearer ${pending}` },
+        payload: { name: 'should-not-work', scopes: ['read'] },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('still completes the normal flow: pending → /2fa/login → full session works', async () => {
+      const userToken = await register('s3flow@example.com');
+      const { secret } = await enrol(userToken);
+      const step1 = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 's3flow@example.com', password: PASSWORD },
+      });
+      const pending = step1.json().pendingToken as string;
+      expect(typeof pending).toBe('string');
+
+      const step2 = await app.inject({
+        method: 'POST',
+        url: '/api/auth/2fa/login',
+        payload: { pendingToken: pending, code: authenticator.generate(secret) },
+      });
+      expect(step2.statusCode).toBe(200);
+      const access = step2.json().accessToken as string;
+      expect(typeof access).toBe('string');
+
+      // The full-session access token works on the same routes the
+      // pending token was just denied on.
+      const me = await app.inject({
+        method: 'GET',
+        url: '/api/auth/me',
+        headers: { authorization: `Bearer ${access}` },
+      });
+      expect(me.statusCode).toBe(200);
+      expect(me.json().email).toBe('s3flow@example.com');
+    });
+  });
+
   it('login without 2FA enabled keeps the legacy single-step response shape', async () => {
     await register('local-only@example.com');
     const res = await app.inject({
