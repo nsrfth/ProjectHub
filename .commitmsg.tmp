@@ -1,0 +1,32 @@
+﻿v1.29.0 - task dependencies (blocked-by edges with cycle detection)
+
+Schema: new TaskDependency edge (taskId, dependsOnId, type) with cuid id,
+denormalised teamId, FK CASCADE on both endpoints, unique (taskId,
+dependsOnId), indexes on teamId and dependsOnId. New DependencyType enum
+(FINISH_TO_START + RELATES_TO) and new NotifyType value TASK_UNBLOCKED.
+Migration is additive + backfills task.manage_dependencies on every system
+Manager role.
+
+Service: BFS reachability cycle check before insert (409 DEPENDENCY_CYCLE),
+self-loop / cross-team / cross-project guards, status guard wired into
+tasksService.update + reorder, post-DONE unblock notification fan-out to
+assignee + technician, blocker-count map for kanban lists.
+
+Routes: GET/POST/DELETE under
+/api/teams/:teamId/projects/:projectId/tasks/:taskId/dependencies.
+Writes gated by the new task.manage_dependencies permission.
+
+Frontend: Dependencies section on TaskDetailPage with picker + inline
+cycle error; kanban card lock badge driven by incompleteBlockerCount on
+TaskView; admin Settings -> Preferences toggle for the
+tasks.dependencyEnforcement InstanceSetting (off / warn / block). EN +
+FA i18n strings.
+
+Tests: 13 new integration tests cover cycle / self-loop / cross-team /
+duplicate / both-directions GET / status guard block + warn + off /
+unblock notification / multi-blocker / FK cascade / DELETE / member-
+without-permission 403. Updated roles permissions catalog count
+(14 -> 15). Full suite 247 passed, 5 skipped (LDAP-only).
+
+Webhook events: task.dependency_added / task.dependency_removed.
+Activity-log entries via logActivity.

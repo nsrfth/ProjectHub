@@ -118,6 +118,17 @@ function SortableCard({ task, onOpen, onDelete, onStatusChange }: SortableCardPr
           ☑ {task.subtasks.filter((s) => s.done).length}/{task.subtasks.length}
         </div>
       )}
+      {/* v1.29: lock badge when the task has at least one incomplete
+          FINISH_TO_START blocker. Tooltip says how many. */}
+      {task.incompleteBlockerCount > 0 && (
+        <div
+          className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-700"
+          title={`Blocked by ${task.incompleteBlockerCount} incomplete task${task.incompleteBlockerCount === 1 ? '' : 's'}`}
+        >
+          <span aria-hidden>🔒</span>
+          <span>{task.incompleteBlockerCount}</span>
+        </div>
+      )}
       <div className="flex items-center justify-between mt-2 gap-2 text-xs">
         <span className={PRIORITY_CLASS[task.priority]}>{PRIORITY_LABEL[task.priority]}</span>
         <select

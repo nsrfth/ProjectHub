@@ -90,6 +90,10 @@ export const taskResponse = z.object({
   updatedAt: z.string(),
   labels: z.array(taskLabelResponse),
   subtasks: z.array(taskSubtaskResponse),
+  // v1.29: number of incomplete FINISH_TO_START blockers — drives the
+  // kanban lock badge + the TaskDetail status-guard preview. Always
+  // present; 0 when there are no blockers or all blockers are DONE.
+  incompleteBlockerCount: z.number().int().nonnegative(),
 });
 
 export type CreateTaskBody = z.infer<typeof createTaskBody>;

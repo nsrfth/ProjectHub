@@ -51,6 +51,19 @@ enum NotifyType {
   TASK_DUE
   MENTION
   TASK_STATUS
+  // v1.29: a task you depended on completed and you now have zero
+  // incomplete blockers. Recipient = assignee + technician of the dependent.
+  TASK_UNBLOCKED
+}
+
+// v1.29: relationship kind on a TaskDependency edge.
+//   FINISH_TO_START — the standard "blocker" edge: the dependent task
+//     cannot move to IN_PROGRESS/DONE while the dependsOn task is incomplete
+//     (gated by the tasks.dependencyEnforcement InstanceSetting).
+//   RELATES_TO     — informational link only; status guard ignores it.
+enum DependencyType {
+  FINISH_TO_START
+  RELATES_TO
 }
 
 enum DirectoryKind {
@@ -477,6 +490,13 @@ model Task {
   activities  Activity[]
   template          TaskTemplate? @relation("TaskTemplateSource")
   spawnedFromTemplate TaskTemplate? @relation("TaskSpawnedFrom", fields: [spawnedFromTemplateId], references: [id], onDelete: SetNull)
+  // v1.29: dependency edges. `dependencies` are edges OUT of this task —
+  // each row means "this task is blocked by row.dependsOn". `blockedTasks`
+  // are edges IN — each row means "row.task is blocked by this task".
+  // Both sides cascade on Task delete; the unique (taskId, dependsOnId)
+  // constraint on TaskDependency prevents duplicate edges.
+  dependencies TaskDependency[] @relation("TaskDependencyFrom")
+  blockedTasks TaskDependency[] @relation("TaskDependencyTo")
 
   @@index([teamId, status])
   @@index([teamId, assigneeId])
@@ -502,6 +522,30 @@ model Subtask {
 
   @@index([taskId])
   @@index([technicianId])
+}
+
+// v1.29: task dependency edges. `taskId` is the BLOCKED task; `dependsOnId`
+// is the BLOCKER. Cycle prevention lives in the service layer (DFS reachability
+// check before insert) — Postgres has no native cycle constraint and CHECK
+// expressions can't traverse the table. Both FKs cascade so a deleted task
+// tears its edges down with it.
+model TaskDependency {
+  id          String         @id @default(cuid())
+  // Denormalized for tenant scoping, same as Task. Every read filters by
+  // teamId so cross-tenant probes 404. Both endpoints of the edge must
+  // share this teamId — enforced in the service layer.
+  teamId      String
+  taskId      String
+  dependsOnId String
+  type        DependencyType @default(FINISH_TO_START)
+  createdAt   DateTime       @default(now())
+
+  task      Task @relation("TaskDependencyFrom", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOn Task @relation("TaskDependencyTo", fields: [dependsOnId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnId])
+  @@index([teamId])
+  @@index([dependsOnId])
 }
 
 model Label {

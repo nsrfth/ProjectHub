@@ -4,6 +4,121 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.0] — 2026-05-26
+
+Task dependencies — one task can be marked as blocked by another.
+
+### Schema
+
+- New model `TaskDependency`: cuid id, denormalised `teamId`, `taskId` (the
+  blocked task), `dependsOnId` (the blocker), a `type` enum
+  (`FINISH_TO_START` default + `RELATES_TO`), `createdAt`. Both FKs
+  `ON DELETE CASCADE` so deleting either task tears its edges down with
+  it. Unique `(taskId, dependsOnId)` prevents duplicate edges; indexes on
+  `teamId` (tenant scoping) and `dependsOnId` (used by the unblock fan-out).
+- New enum `DependencyType` + new value `TASK_UNBLOCKED` on `NotifyType`.
+- Migration `20260526120000_task_dependencies` is additive: creates the
+  enum + table + indexes + FKs, adds the enum value, and backfills the
+  new `task.manage_dependencies` permission onto every existing system
+  Manager role (v1.23 convention).
+
+### Backend
+
+- New `services/dependenciesService.ts`. Owns:
+  - `add()` — runs a BFS reachability check from `dependsOnId` over the
+    team's edge set; if `taskId` is reachable, throws `409
+    DEPENDENCY_CYCLE` BEFORE inserting. Also rejects self-loops (`400`),
+    cross-team targets (opaque `404`), cross-project targets (`400`), and
+    duplicate edges (`409 CONFLICT` via Prisma P2002).
+  - `remove()` — id-scoped by teamId so a forged id from another tenant
+    404s.
+  - `list()` — both directions joined with task titles + statuses.
+  - `assertStatusTransitionAllowed()` — the status guard. Wired into
+    `tasksService.update()` and `tasksService.reorder()`; throws `403
+    DEPENDENCY_BLOCKED` when the InstanceSetting
+    `tasks.dependencyEnforcement` is `"block"` and a transition to
+    `IN_PROGRESS`/`DONE` would leave incomplete blockers.
+  - `notifyUnblocked()` — runs inside the same transaction as a
+    `→ DONE` transition; for every dependent task whose remaining
+    incomplete-blocker count is now zero, writes a `TASK_UNBLOCKED`
+    Notification to its assignee + technician (deduped, actor excluded).
+  - `loadIncompleteBlockerCounts(taskIds)` — one round-trip yields a
+    `{taskId → count}` map. Used by the kanban list path so we don't
+    issue an N+1.
+- New permission constant `task.manage_dependencies` (group: `Tasks`).
+  Required for `POST /dependencies` and `DELETE /dependencies/:id`.
+  Reads are open to any team member; the migration grants the
+  permission to every existing system Manager role.
+- New `tasks.dependencyEnforcement` `InstanceSetting` mirroring the
+  v1.18 `tasks.dateEditRestriction` shape: `"off" | "warn" | "block"`,
+  default `"off"`.
+- New webhook events `task.dependency_added` / `task.dependency_removed`,
+  emitted after-commit using the v1.8 emit pattern.
+- Activity-log entries `task.dependency_added` / `task.dependency_removed`
+  via the standard `logActivity` helper.
+- `TaskView` (and its Zod response schema) gains
+  `incompleteBlockerCount: number` so the kanban can render a lock badge
+  without per-card lookups.
+
+### Routes
+
+- New `routes/dependencies.ts` mounted at
+  `/api/teams/:teamId/projects/:projectId/tasks/:taskId/dependencies`:
+  - `GET /`              — list both directions + `enforcement`.
+  - `POST /`             — add (requires `task.manage_dependencies`).
+  - `DELETE /:dependencyId` — remove (requires the same).
+
+### Frontend
+
+- New `features/dependencies/{api,DependenciesSection}.tsx`. The section
+  on `TaskDetailPage` renders "Blocked by" + "Blocking" side-by-side and a
+  picker scoped to the same project, excluding the current task + tasks
+  already listed as blockers. Friendly inline error for the `409
+  DEPENDENCY_CYCLE` and `409 CONFLICT` (duplicate) cases.
+- Kanban card on `TasksPage` shows a lock badge (`🔒 N`) when
+  `incompleteBlockerCount > 0`. Tooltip says how many.
+- New admin-only "Task dependencies — enforcement" section in
+  `Settings → Preferences`, three-way radio off / warn / block,
+  persisted to `tasks.dependencyEnforcement`.
+- EN + FA i18n strings under the `deps.*` namespace.
+
+### Tests
+
+- 13 new integration tests in `backends/tests/integration/dependencies.test.ts`:
+  self-loop (400), cross-team opaque 404, cross-project 400, cycle 409
+  DEPENDENCY_CYCLE, duplicate 409, both-directions GET, status guard in
+  `"block"` mode (rejects then allows once the blocker completes), guard
+  is a no-op in `"warn"`/`"off"`, unblock notification fan-out, no
+  notification when other blockers remain, FK cascade on hard delete,
+  DELETE /:id round-trip, member-without-permission 403.
+- Updated `tests/integration/roles.test.ts` permission-catalog count
+  (14 → 15) to reflect the new `task.manage_dependencies` constant.
+- Full suite: **247 passed, 5 skipped** (LDAP — pre-existing, needs the
+  `ldap` profile).
+
+### Verified
+
+- Backend + frontend typecheck pass.
+- Live smoke against the running stack: created Blocker / Blocked tasks,
+  added an edge, GET returned the join, attempting the reverse edge
+  returned `409 DEPENDENCY_CYCLE`. `incompleteBlockerCount` was `1` on
+  the dependent and `0` on the blocker.
+- Migration `20260526120000_task_dependencies` applied cleanly via
+  `prisma migrate deploy` (no manual SQL).
+
+### Phase boundary
+
+- Cross-project dependencies within a team are intentionally rejected
+  (`400`). Revisit if asked — the notification fan-out + status-guard
+  blast radius for cross-project edges deserves its own design pass.
+- Cycle detection is not transactionally serialised against concurrent
+  inserts. In a single-instance self-hosted deployment the race is
+  unlikely; the safe fix is a row-level lock or a periodic janitor —
+  tracked here as a v1.30 follow-up.
+- `RELATES_TO` edges are stored but unused by the UI today. They're in
+  the schema so a future "see also" affordance can light up without a
+  schema change.
+
 ## [1.28.0] — 2026-05-26
 
 Restore + upload for the backup feature.

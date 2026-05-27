@@ -23,6 +23,7 @@ import { auditRoutes } from './routes/audit.js';
 import { apiTokensRoutes } from './routes/apiTokens.js';
 import { webhooksRoutes } from './routes/webhooks.js';
 import { recurrenceRoutes } from './routes/recurrence.js';
+import { dependenciesRoutes } from './routes/dependencies.js';
 import { systemRoutes } from './routes/system.js';
 import { calendarRoutes } from './routes/calendar.js';
 import { trashRoutes } from './routes/trash.js';
@@ -121,6 +122,12 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(webhooksRoutes, { prefix: '/teams/:teamId/webhooks' });
     await api.register(recurrenceRoutes, {
       prefix: '/teams/:teamId/projects/:projectId/tasks/:taskId/recurrence',
+    });
+    // v1.29: task dependency edges. Same nesting as recurrence so the
+    // requireTeamRole gate carries through; per-route requirePermission
+    // gates write endpoints with `task.manage_dependencies`.
+    await api.register(dependenciesRoutes, {
+      prefix: '/teams/:teamId/projects/:projectId/tasks/:taskId/dependencies',
     });
 
     // v1.11: public read-only system info. No auth, no rate limit — used

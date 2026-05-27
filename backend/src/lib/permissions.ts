@@ -20,6 +20,9 @@ export const PERMISSIONS = [
   'task.modify_dates',
   'task.change_technician',
   'task.change_assignee',
+  // v1.29: add / remove dependency edges between tasks. Default = Manager
+  // only — curating the dependency graph is a curator's job. Admins bypass.
+  'task.manage_dependencies',
 
   // Comment moderation.
   'comment.delete_others',
@@ -51,7 +54,13 @@ export type Permission = (typeof PERMISSIONS)[number];
 // a new permission without updating this map leaves it ungrouped (would
 // surface a "(other)" bucket in the UI rather than disappear).
 export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
-  Tasks: ['task.delete', 'task.modify_dates', 'task.change_technician', 'task.change_assignee'],
+  Tasks: [
+    'task.delete',
+    'task.modify_dates',
+    'task.change_technician',
+    'task.change_assignee',
+    'task.manage_dependencies',
+  ],
   Comments: ['comment.delete_others'],
   Projects: ['project.edit', 'project.delete', 'project.set_accountable'],
   Team: ['team.invite_member', 'team.remove_member', 'team.change_role', 'team.manage_roles'],

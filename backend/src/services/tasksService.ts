@@ -4,6 +4,7 @@ import { Errors } from '../lib/errors.js';
 import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
 import { WebhookService } from './webhookService.js';
+import { DependenciesService } from './dependenciesService.js';
 import { userHasPermission } from '../middleware/requirePermission.js';
 
 // v1.18: read the instance-level date-edit restriction at PATCH time. Members
@@ -48,6 +49,11 @@ function assertCanEditDate(
 // Webhook emitter shared across task-mutating paths. emit() is best-effort
 // and runs after the transaction commits — failures don't bubble.
 const _webhooks = new WebhookService();
+
+// v1.29: dependency-graph reader used to hydrate blocker counts onto every
+// TaskView + run the status guard before status transitions. Held module-
+// level so the same instance is reused across calls.
+const _deps = new DependenciesService();
 
 // Tasks live inside a project, which lives inside a team. teamId is denormalized
 // on Task itself (see schema) so multi-tenancy queries are a single-column
@@ -102,6 +108,11 @@ export interface TaskView {
   updatedAt: Date;
   labels: TaskLabelView[];
   subtasks: TaskSubtaskView[];
+  // v1.29: number of FINISH_TO_START dependencies of this task whose
+  // blocker is not DONE (and not soft-deleted). 0 when no blockers exist,
+  // when every blocker is complete, or when toView was called before the
+  // blocker map was hydrated (only on internal helper paths).
+  incompleteBlockerCount: number;
 }
 
 // Prisma `include` shape reused across list/get/update so the labels[] and
@@ -118,7 +129,14 @@ const TASK_INCLUDE = {
   technician: { select: { name: true } },
 } as const;
 
-function toView(row: Prisma.TaskGetPayload<{ include: typeof TASK_INCLUDE }>): TaskView {
+function toView(
+  row: Prisma.TaskGetPayload<{ include: typeof TASK_INCLUDE }>,
+  // v1.29: optional blocker count — callers that don't pre-fetch the map
+  // pass undefined and default to 0. The list / get / update / create
+  // paths all hydrate this; subtask + label-tweak paths that touch a
+  // task without changing its dependency graph can rely on the default.
+  incompleteBlockerCount = 0,
+): TaskView {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -147,6 +165,7 @@ function toView(row: Prisma.TaskGetPayload<{ include: typeof TASK_INCLUDE }>): T
       technicianName: s.technician?.name ?? null,
       position: s.position,
     })),
+    incompleteBlockerCount,
   };
 }
 
@@ -247,7 +266,8 @@ export class TasksService {
           taskTitle: task.title,
         });
       }
-      return toView(task);
+      const blockerCount = await _deps.countIncompleteBlockers(task.id);
+      return toView(task, blockerCount);
     }).then(async (view) => {
       // Webhook emit after commit — never inside the transaction (the
       // dispatcher reads from the same table and we don't want to hold
@@ -278,7 +298,10 @@ export class TasksService {
       orderBy: [{ status: 'asc' }, { position: 'asc' }],
       include: TASK_INCLUDE,
     });
-    return rows.map(toView);
+    // v1.29: one round-trip yields a {taskId → count} map for the whole
+    // page. Missing keys default to 0 in toView.
+    const blockerCounts = await _deps.loadIncompleteBlockerCounts(rows.map((r) => r.id));
+    return rows.map((r) => toView(r, blockerCounts.get(r.id) ?? 0));
   }
 
   async get(teamId: string, projectId: string, taskId: string): Promise<TaskView> {
@@ -297,7 +320,8 @@ export class TasksService {
     ) {
       throw Errors.notFound('Task not found');
     }
-    return toView(task);
+    const blockerCount = await _deps.countIncompleteBlockers(task.id);
+    return toView(task, blockerCount);
   }
 
   async update(
@@ -388,6 +412,15 @@ export class TasksService {
           restriction,
         );
       }
+    }
+
+    // v1.29: dependency status-guard. When the InstanceSetting
+    // `tasks.dependencyEnforcement` is "block", reject moves to
+    // IN_PROGRESS / DONE while there's at least one incomplete
+    // FINISH_TO_START blocker. "off" / "warn" never throw here — "warn"
+    // surfaces an advisory in the UI without server-side enforcement.
+    if (input.status !== undefined && input.status !== existing.status) {
+      await _deps.assertStatusTransitionAllowed(taskId, input.status);
     }
 
     // Moving across status columns: re-append to the end of the new column so
@@ -489,6 +522,12 @@ export class TasksService {
             to: input.status!,
             taskTitle: updated.title,
           });
+          // v1.29: fan-out unblock notifications when this transition is
+          // TODO/IN_PROGRESS/REVIEW → DONE. Runs inside the transaction so a
+          // rollback wipes both the status change and the notifications.
+          if (input.status === 'DONE' && existing.status !== 'DONE') {
+            await _deps.notifyUnblocked(tx, taskId, actorId);
+          }
         }
         if (changedNonStatusFields.length > 0) {
           await logActivity(tx, {
@@ -514,7 +553,23 @@ export class TasksService {
             taskTitle: updated.title,
           });
         }
-        return { view: toView(updated), statusChanged, changedNonStatusFields, fromStatus: existing.status };
+        // v1.29: hydrate blocker count inside the same tx so the view
+        // we return reflects post-commit state — important when the
+        // transition itself just completed a dependent task (count
+        // drops to 0).
+        const blockerCount = await tx.taskDependency.count({
+          where: {
+            taskId,
+            type: 'FINISH_TO_START',
+            dependsOn: { status: { not: 'DONE' }, deletedAt: null },
+          },
+        });
+        return {
+          view: toView(updated, blockerCount),
+          statusChanged,
+          changedNonStatusFields,
+          fromStatus: existing.status,
+        };
       });
       // Post-commit webhook fan-out. status_changed is emitted as a separate
       // event from updated so subscribers can subscribe to only the signal
@@ -600,6 +655,11 @@ export class TasksService {
       }
 
       const statusChanged = input.status !== existing.status;
+      // v1.29: status guard also runs on the drag-and-drop reorder path so
+      // a member can't sidestep the gate by dragging a card across columns.
+      if (statusChanged) {
+        await _deps.assertStatusTransitionAllowed(taskId, input.status);
+      }
       const updated = await tx.task.update({
         where: { id: taskId },
         data: { status: input.status, position: newPosition },
@@ -621,8 +681,18 @@ export class TasksService {
           to: input.status,
           taskTitle: updated.title,
         });
+        if (input.status === 'DONE' && existing.status !== 'DONE') {
+          await _deps.notifyUnblocked(tx, taskId, actorId);
+        }
       }
-      return toView(updated);
+      const blockerCount = await tx.taskDependency.count({
+        where: {
+          taskId,
+          type: 'FINISH_TO_START',
+          dependsOn: { status: { not: 'DONE' }, deletedAt: null },
+        },
+      });
+      return toView(updated, blockerCount);
     });
   }
 

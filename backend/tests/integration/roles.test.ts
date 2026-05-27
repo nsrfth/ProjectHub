@@ -312,11 +312,14 @@ describe('permission gates end-to-end', () => {
 });
 
 describe('/api/system/permissions catalog', () => {
-  it('returns the 14 permission constants + UI groups', async () => {
+  it('returns the 15 permission constants + UI groups', async () => {
     const res = await inject({ method: 'GET', url: '/api/system/permissions' });
     expect(res.statusCode).toBe(200);
-    expect(res.json().permissions).toHaveLength(14);
+    // v1.29 added `task.manage_dependencies`.
+    expect(res.json().permissions).toHaveLength(15);
     expect(res.json().permissions).toContain('task.change_technician');
+    expect(res.json().permissions).toContain('task.manage_dependencies');
     expect(res.json().groups.Tasks).toContain('task.delete');
+    expect(res.json().groups.Tasks).toContain('task.manage_dependencies');
   });
 });

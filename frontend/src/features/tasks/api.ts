@@ -45,6 +45,9 @@ export interface Task {
   updatedAt: string;
   labels: TaskLabel[];
   subtasks: TaskSubtask[];
+  // v1.29: number of FINISH_TO_START dependencies whose blocker isn't DONE.
+  // Drives the kanban lock badge + the TaskDetail status-guard preview.
+  incompleteBlockerCount: number;
 }
 
 export async function listTasks(

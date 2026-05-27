@@ -12,6 +12,7 @@ import { LabelPicker } from '@/features/labels/LabelPicker';
 import { SubtaskList } from '@/features/subtasks/SubtaskList';
 import { AttachmentsSection } from '@/features/attachments/AttachmentsSection';
 import RecurrenceSection from '@/features/recurrence/RecurrenceSection';
+import DependenciesSection from '@/features/dependencies/DependenciesSection';
 import {
   formatRelativeTime,
   formatShamsiCalendarLong,
@@ -331,6 +332,12 @@ export default function TaskDetailPage(): JSX.Element {
             </div>
 
             <RecurrenceSection
+              teamId={teamId!}
+              projectId={projectId!}
+              taskId={taskId!}
+            />
+
+            <DependenciesSection
               teamId={teamId!}
               projectId={projectId!}
               taskId={taskId!}
