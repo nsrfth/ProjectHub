@@ -169,11 +169,15 @@ describe('SCIM /Users', () => {
     const userId = create.json().id;
 
     // Seed a refresh token directly so we can confirm revocation.
+    // v1.30.5 (S-4) added the required familyId column — seed it
+    // self-rooted, matching the issueSession() convention.
+    const seedTokenHash = 'hash-' + Math.random().toString(36).slice(2);
     const rt = await prisma.refreshToken.create({
       data: {
         userId,
-        tokenHash: 'hash-' + Math.random().toString(36).slice(2),
+        tokenHash: seedTokenHash,
         expiresAt: new Date(Date.now() + 86_400_000),
+        familyId: seedTokenHash, // any unique value works; mirror id-as-family
       },
     });
 

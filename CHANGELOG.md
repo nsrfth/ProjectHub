@@ -4,6 +4,103 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.5] — 2026-05-27
+
+**Security patch — S-4 (+ S-26): refresh-token reuse never triggered
+family revocation, so a stolen refresh cookie minted sessions indefinitely.**
+
+### Summary
+
+The pre-patch rotation logic correctly revoked the OLD token when
+`/api/auth/refresh` was called, but the LIVE sibling issued during that
+rotation kept working. So an attacker who phished a refresh cookie just
+had to race the legitimate client:
+
+1. Attacker presents stolen R1 to `/refresh` → backend rotates R1 → R2,
+   returns R2 to the attacker.
+2. Legitimate user (still on R1) calls `/refresh` next → 401 ("token
+   revoked"). User assumes their session expired and re-logs-in
+   (issuing a new family they never use again).
+3. Attacker holds the only live token in the original family and rides
+   the session for as long as the refresh TTL allows.
+
+There was no token-reuse detection, so the second presentation of an
+already-rotated token never signalled "theft happened, kill the family."
+
+### Fix
+
+- **Schema**: new `RefreshToken.familyId String` column + index. Every
+  refresh token now declares which rotation chain it belongs to. On
+  first issue (login / register / 2FA-login) `familyId = self.id` —
+  the token is its own family root. On rotation the new token
+  inherits the presented token's `familyId`.
+- **Migration `20260527120000_refresh_token_family`**: additive —
+  `ADD COLUMN ... NULL`, backfill `familyId = id` for every existing
+  row (each pre-existing token becomes its own family; rotation chains
+  can't be reconstructed retroactively, and the reuse-detection logic
+  only fires on already-revoked tokens, so this backfill never wrongly
+  nukes a session), `SET NOT NULL`, `CREATE INDEX`.
+- **`authService.issueSession`** pre-generates the row id so the
+  insert can self-root `familyId = id` in one statement. Accepts an
+  optional `{ familyId }` from `refresh` to inherit the chain.
+- **`authService.refresh`** — REUSE DETECTION:
+  - When the presented refresh token is found in the DB but already
+    has `revokedAt` set, that's someone replaying a token already
+    rotated away. We `updateMany` every `RefreshToken` with that
+    `familyId` whose `revokedAt IS NULL`, setting `revokedAt = now`.
+    The attacker AND the victim both die; the legitimate user has to
+    re-login, which is the right response to detected theft.
+  - Unknown / expired / bad-signature tokens still produce a plain
+    401 with no side effects. Those happen routinely (clock skew,
+    lost cookies, stale tabs) and aren't theft signals.
+- **`authService.logout`** unchanged — deliberate single-token revoke,
+  not a family kill.
+
+### Regression tests
+
+Three new cases in `describe('S-4 refresh-token family revocation')`:
+
+- **Happy path** — three consecutive `/refresh` calls each return 200;
+  the whole rotation chain shares a single `familyId` (DB read
+  confirms exactly one distinct family for the user).
+- **Reuse cascade** — register, rotate R1 → R2, replay R1: R1 returns
+  401 AND R2 (a previously-valid sibling) is now also revoked (its
+  next `/refresh` returns 401). Every row in the family has
+  `revokedAt` set in the DB. Before this patch R2 stayed valid.
+- **Family isolation** — same user logs in twice (register + login),
+  producing two distinct `familyId`s. A reuse-triggered revocation on
+  family A leaves family B's tokens fully working (rotating cleanly,
+  returns 200).
+
+### Verified
+
+- Backend `tsc` ✅. Migration applied to the test DB via
+  `prisma migrate deploy`.
+- `auth.test.ts` 18/18 (15 existing + 3 new).
+- Full integration suite: **290 passed, 5 skipped** (LDAP, pre-existing,
+  needs the `ldap` profile). +3 from v1.30.4.
+- Minor: `tests/integration/scim.test.ts` was seeding a refresh token
+  directly via `prisma.refreshToken.create` without `familyId`;
+  updated the seed to mirror the issueSession convention (`familyId`
+  set to a unique value).
+
+### Phase boundary
+
+- The reuse-detection branch reads `revokedAt` and family-revokes; it
+  doesn't distinguish "stolen and replayed" from "legitimate client
+  race-retried after a network blip." That false-positive cost is
+  modest (re-login) and erring on the side of revocation is the
+  correct security posture; if it becomes an operational pain point a
+  grace window (revokedAt within last 5s = no family revoke) is a
+  cheap follow-up.
+- We DON'T notify the user that a family revocation fired ("we think
+  someone replayed your session — re-login required"). The audit log
+  captures it via the existing refresh-error path; a dedicated
+  `auth.refresh_reuse_detected` Activity row + a "suspicious activity"
+  banner are tracked as a UX follow-up, not a security gap.
+- A leaked DB snapshot still doesn't yield usable sessions (token
+  hashes only, never raw values) — unchanged from v1.0.
+
 ## [1.30.4] — 2026-05-27
 
 **Security patch — S-5 (restore ran hot against a live DB) + S-12

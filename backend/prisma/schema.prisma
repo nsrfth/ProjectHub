@@ -254,9 +254,17 @@ model RefreshToken {
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
+  // v1.30.5 (S-4): rotation chains share a familyId. On first issue
+  // (login / register / 2FA-login) familyId = self.id. On rotation the
+  // newly issued row inherits the presented token's familyId. When a
+  // refresh sees an ALREADY-revoked token (replay of a token already
+  // rotated away), the whole family is revoked — that's the canonical
+  // response to detected token theft.
+  familyId  String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([familyId])
 }
 
 model PasswordReset {

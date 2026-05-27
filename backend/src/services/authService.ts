@@ -1,4 +1,5 @@
 import type { Prisma, User } from '@prisma/client';
+import { randomBytes } from 'node:crypto';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { hashPassword, randomTokenHex, sha256, verifyPassword } from '../lib/hashing.js';
@@ -281,8 +282,20 @@ export class AuthService {
     }
   }
 
-  // Rotates the refresh token: revokes the old, issues a new pair.
-  // If the same refresh token is presented twice, the second use fails (revoked).
+  // Rotates the refresh token: revokes the old, issues a new pair sharing
+  // the same `familyId`.
+  //
+  // v1.30.5 (S-4): refresh-token theft response.
+  // When a presented token is FOUND in the DB but is already revoked, the
+  // caller is replaying a token that was already rotated away. That's the
+  // canonical signal of theft (legitimate clients only ever hold the most
+  // recently issued sibling). We revoke every still-live sibling in the
+  // family so the attacker AND the victim's session both die — the
+  // legitimate user must re-login everywhere, which is the correct
+  // response to a detected steal. An unknown / expired / signature-bad
+  // token still produces the boring 401 with no side effect — those
+  // happen routinely (clock skew, lost cookies, stale tabs) and aren't
+  // theft signals.
   async refresh(rawRefreshToken: string): Promise<IssuedSession> {
     let payload: { sub: string; jti: string };
     try {
@@ -294,7 +307,20 @@ export class AuthService {
     const tokenHash = sha256(rawRefreshToken);
     const record = await prisma.refreshToken.findUnique({ where: { tokenHash } });
     if (!record || record.id !== payload.jti) throw Errors.unauthorized('Refresh token not recognized');
-    if (record.revokedAt) throw Errors.unauthorized('Refresh token revoked');
+
+    // ── Reuse-of-revoked-token detection ────────────────────────────────
+    // The record EXISTS (so the caller had a real, valid-shaped token at
+    // some point) but it's already revoked. Either the legitimate client
+    // is racing its own retry against rotation (unlikely with a proper
+    // SPA — refresh is single-flighted) or someone is replaying a token
+    // already rotated away. We assume theft and revoke the family.
+    if (record.revokedAt) {
+      await prisma.refreshToken.updateMany({
+        where: { familyId: record.familyId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      throw Errors.unauthorized('Refresh token revoked');
+    }
     if (record.expiresAt < new Date()) throw Errors.unauthorized('Refresh token expired');
 
     const user = await prisma.user.findUnique({ where: { id: record.userId } });
@@ -309,7 +335,9 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    return this.issueSession(user);
+    // Rotation: the new token inherits the family so subsequent replays
+    // of THIS token (now revoked) will trip the family-revoke above.
+    return this.issueSession(user, { familyId: record.familyId });
   }
 
   async logout(rawRefreshToken: string | undefined): Promise<void> {
@@ -409,7 +437,15 @@ export class AuthService {
 
   private async issueSession(
     user: Prisma.UserGetPayload<true>,
+    opts: { familyId?: string } = {},
   ): Promise<IssuedSession> {
+    // v1.30.5 (S-4): pre-generate the row id so we can self-root the
+    // familyId at insert time (familyId = id when no parent family is
+    // supplied — i.e. on first login / register / 2FA-login). The cuid
+    // shape isn't required — uniqueness on the @id column is what
+    // matters; a 12-byte random hex is plenty.
+    const id = 'rfk_' + randomBytes(12).toString('hex');
+    const familyId = opts.familyId ?? id;
     // Create the refresh-token row first so we have a stable jti to embed.
     const refreshExpiresAt = new Date(Date.now() + parseDuration(this.env.JWT_REFRESH_TTL));
     // We need the row id before we can sign with it; use a two-step create with
@@ -417,7 +453,7 @@ export class AuthService {
     // synthetic uuid + uniqueness check.
     const placeholder = sha256(randomTokenHex(16));
     const row = await prisma.refreshToken.create({
-      data: { userId: user.id, tokenHash: placeholder, expiresAt: refreshExpiresAt },
+      data: { id, userId: user.id, tokenHash: placeholder, expiresAt: refreshExpiresAt, familyId },
     });
 
     const refreshTokenRaw = this.signer.signRefresh(

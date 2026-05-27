@@ -1,53 +1,48 @@
-﻿v1.30.4 - SECURITY: restore now drains the listener + fails loud (S-5, S-12)
+﻿v1.30.5 - SECURITY: refresh-token family revocation on reuse (S-4, S-26)
 
-S-5: v1.28 restore ran pg_restore --clean --if-exists against a live DB
-while the backend was still serving traffic AND schedulers were still
-ticking. A request or scheduler tick could deadlock against a table
-pg_restore was about to drop.
-
-S-12: pg_restore exit code 1 was reported as success when stderr happened
-not to contain /ERROR:/i. Admins could see "Restore complete" over a
-half-restored database.
+The pre-patch /refresh rotation revoked the OLD token, but the LIVE
+sibling issued during that rotation kept working. An attacker with a
+phished refresh cookie could race the legitimate client: present R1
+first, get R2 back, ride the session. The user's next /refresh would
+401 ("token revoked"); they'd assume their session expired and
+re-login, leaving the attacker holding the only live token in the
+chain. There was no reuse detection -- a second presentation of an
+already-rotated token never signalled theft.
 
 Fix:
-- New lib/maintenance.ts + middleware/maintenance.ts. An InstanceSetting
-  key system.maintenanceMode flips on; an onRequest hook 503s every
-  route except /health and /api/health. 1s in-process cache so the
-  flood of in-flight requests doesn't hammer the pool. Retry-After: 30.
-- New lib/lifecycle.ts: app.lifecycle.stopBackground() stops every
-  scheduler; app.lifecycle.processExit(code) is process.exit in prod,
-  no-op in tests.
-- server.ts clears the maintenance flag AFTER listen() succeeds (so a
-  backend that crashed mid-boot doesn't lift the gate prematurely).
-- routes/backups.ts POST /:filename/restore orchestrates:
-  1. setMaintenance + reset cache
-  2. stopBackground
-  3. svc.restoreBackup
-  4a. success - respond 200 then setTimeout(processExit, 250) so body
-      flushes; compose restart picks up the restored schema and the
-      fresh boot clears the flag
-  4b. failure - clearMaintenance; rethrow AppError unchanged so 404
-      from missing dump stays 404; non-AppError becomes 400 with
-      pg_restore stderr verbatim
-- backupsService.restoreBackup adds --exit-on-error and treats ANY
-  non-zero exit as failure. Removes the regex-over-stderr heuristic.
-  Full stderr surfaces in the 400 body so admins see pg_restore's
-  complaint, not a vague generic.
-- app.ts adds GET /api/health (public counterpart to the internal
-  /health). Both are exempt from the maintenance gate.
+- Schema: new RefreshToken.familyId (String, indexed). On first issue
+  (login / register / 2FA-login) familyId = self.id. On rotation the
+  new token inherits the presented token's familyId.
+- Migration 20260527120000_refresh_token_family is additive: ADD COLUMN
+  nullable -> backfill familyId = id for every existing row -> SET NOT
+  NULL -> CREATE INDEX. Existing tokens become self-rooted families;
+  rotation chains can't be reconstructed retroactively but the
+  reuse-detection logic only fires on already-revoked tokens, so the
+  backfill never wrongly kills a session.
+- authService.issueSession pre-generates the row id so familyId = id
+  can self-root in one INSERT. Accepts optional { familyId } from
+  refresh() to inherit the chain.
+- authService.refresh detects reuse: when the presented token is found
+  AND revokedAt is set, someone is replaying a token already rotated
+  away. updateMany every sibling with that familyId where revokedAt
+  IS NULL, set revokedAt = now. Attacker AND victim both die;
+  legitimate user re-logs-in (correct response to detected theft).
+- Unknown / expired / bad-signature tokens keep their boring 401 with
+  no side effect. Those happen routinely and aren't theft signals.
+- logout unchanged - deliberate single-token revoke, not a family kill.
 
-6 new tests in backups.test.ts: /api/health and /health stay 200 under
-maintenance; normal API returns 503 with structured Retry-After + reason
-+ since; cache reset between tests; non-admin restore still 403; corrupt
-dump produces 400 with pg_restore stderr; maintenance flag is cleared on
-failure.
+3 new tests in describe('S-4 refresh-token family revocation'):
+- Happy path: three consecutive /refresh calls succeed; DB read shows
+  exactly one familyId for the user.
+- Reuse cascade: rotate R1 -> R2, replay R1 -> R1 returns 401 AND R2
+  is now also revoked (its next /refresh returns 401). Every row in
+  the family has revokedAt set.
+- Family isolation: two separate logins for the same user create two
+  distinct families; reuse-revoking family A leaves family B fully
+  working.
 
-Phase boundary: failed restore leaves schedulers stopped (DB is in
-unknown shape - operator runs docker compose restart backend). Does not
-use --single-transaction because CREATE EXTENSION isn't always
-transactional. In-flight requests get one last query each (no forceful
-app.close before pg_restore) - invisible on small instances, tracked.
+scim.test.ts seeded a RefreshToken directly without familyId; updated
+to mirror the issueSession convention.
 
-Verified: tsc clean. backups.test.ts 13/13. Full suite 287 passed,
-5 skipped (LDAP). BACKUP.md + UPGRADE.md describe the new maintenance
-window.
+Verified: tsc clean. auth.test.ts 18/18. Full suite 290 passed,
+5 skipped (LDAP).

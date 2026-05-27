@@ -153,6 +153,123 @@ describe('POST /api/auth/refresh', () => {
     });
     expect(replay.statusCode).toBe(401);
   });
+
+  // ── v1.30.5 (S-4): refresh-token family revocation on reuse ──────────
+  //
+  // Until this release, replaying a refresh token after it had been
+  // rotated returned 401 for that one token — but the LIVE sibling that
+  // had been issued at rotation kept working. So an attacker who phished
+  // a refresh cookie could simply hit /refresh first; the legitimate
+  // user's next /refresh would 401, but the attacker now held the only
+  // live token in the chain and rode the session indefinitely.
+  //
+  // Fix: when the DB finds a presented token that's already revoked
+  // (someone is replaying a token rotated away), revoke EVERY sibling
+  // in the family. Both attacker AND victim die; the legitimate user
+  // re-logs-in, which is the right answer when theft is detected.
+  describe('S-4 refresh-token family revocation', () => {
+    async function registerAndGetCookie(email: string): Promise<string> {
+      const reg = await inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: { email, name: 'U', password: VALID_PASSWORD },
+      });
+      const c = reg.cookies.find((x) => x.name === 'th_refresh');
+      if (!c) throw new Error(`register failed for ${email}: ${reg.statusCode} ${reg.body}`);
+      return c.value;
+    }
+
+    async function refreshOnce(cookieValue: string): Promise<{ status: number; nextCookie: string | null }> {
+      const res = await inject({
+        method: 'POST',
+        url: '/api/auth/refresh',
+        cookies: { th_refresh: cookieValue },
+      });
+      const next = res.cookies.find((x) => x.name === 'th_refresh');
+      return { status: res.statusCode, nextCookie: next?.value ?? null };
+    }
+
+    it('happy path — three consecutive rotations all succeed', async () => {
+      let cookie = await registerAndGetCookie('happy@example.com');
+      for (let i = 0; i < 3; i++) {
+        const r = await refreshOnce(cookie);
+        expect(r.status).toBe(200);
+        expect(r.nextCookie).not.toBeNull();
+        cookie = r.nextCookie!;
+      }
+      // The whole chain shares one familyId.
+      const rows = await prisma.refreshToken.findMany({
+        where: { user: { email: 'happy@example.com' } },
+        select: { familyId: true },
+      });
+      const families = new Set(rows.map((r) => r.familyId));
+      expect(families.size).toBe(1);
+    });
+
+    it('reuse — replaying R1 after R2 was issued revokes the whole family', async () => {
+      const R1 = await registerAndGetCookie('reuse@example.com');
+      // Rotate R1 → R2.
+      const rot = await refreshOnce(R1);
+      expect(rot.status).toBe(200);
+      const R2 = rot.nextCookie!;
+
+      // Replay R1. Should 401 AND trip family revocation.
+      const replay = await refreshOnce(R1);
+      expect(replay.status).toBe(401);
+
+      // Critically, R2 — which would otherwise still be valid — must
+      // now also be revoked. Its /refresh attempt 401s. Before this
+      // patch, R2 kept working.
+      const r2Replay = await refreshOnce(R2);
+      expect(r2Replay.status).toBe(401);
+
+      // DB-side check: every row in this family is revokedAt-set.
+      const rows = await prisma.refreshToken.findMany({
+        where: { user: { email: 'reuse@example.com' } },
+      });
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+      for (const row of rows) {
+        expect(row.revokedAt).not.toBeNull();
+      }
+    });
+
+    it('family isolation — two separate logins for the same user create independent families', async () => {
+      // Register once (login #1).
+      const A = await registerAndGetCookie('two@example.com');
+
+      // Login again — same user, brand-new family.
+      const login = await inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'two@example.com', password: VALID_PASSWORD },
+      });
+      expect(login.statusCode).toBe(200);
+      const B = login.cookies.find((x) => x.name === 'th_refresh')!.value;
+
+      // Two distinct families now exist for this user.
+      const beforeRows = await prisma.refreshToken.findMany({
+        where: { user: { email: 'two@example.com' } },
+        select: { familyId: true },
+      });
+      const beforeFamilies = new Set(beforeRows.map((r) => r.familyId));
+      expect(beforeFamilies.size).toBe(2);
+
+      // Force a reuse on family A: rotate A → A2, then replay A.
+      const rotA = await refreshOnce(A);
+      expect(rotA.status).toBe(200);
+      const A2 = rotA.nextCookie!;
+      const replayA = await refreshOnce(A);
+      expect(replayA.status).toBe(401);
+      // Family A is now nuked.
+      const replayA2 = await refreshOnce(A2);
+      expect(replayA2.status).toBe(401);
+
+      // Family B is untouched and still rotates cleanly.
+      const rotB = await refreshOnce(B);
+      expect(rotB.status).toBe(200);
+      expect(rotB.nextCookie).not.toBeNull();
+    });
+  });
 });
 
 describe('GET /api/auth/me', () => {
