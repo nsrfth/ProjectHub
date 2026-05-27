@@ -182,6 +182,8 @@ docker compose up -d --force-recreate backend
 
 ### What the updater actually runs
 
+**Default (no UPDATER_TARGET_REF set):**
+
 ```sh
 cd /repo \
   && git fetch origin --tags \
@@ -189,9 +191,67 @@ cd /repo \
   && docker compose up -d --build
 ```
 
-Pins to `origin/main`. If you want a specific tag, `git checkout vX.Y.Z`
-on the host first, then click Upgrade — the `git pull --ff-only` will be a
-no-op and only the compose rebuild runs.
+Tracks `origin/main`.
+
+**Pinned to a release tag (v1.30.9+):**
+
+Set `UPDATER_TARGET_REF=v1.30.0` in the updater container's environment.
+The updater then runs:
+
+```sh
+cd /repo \
+  && git fetch origin --tags \
+  && git checkout 'v1.30.0' \
+  && docker compose up -d --build
+```
+
+Every upgrade lands on exactly that ref. To move forward, change the
+env var and re-deploy the updater (or bump it via the same compose
+file). Recommended for production — pinning is how you stop chasing
+`main` between explicit upgrades.
+
+**Signed-tag verification (opt-in, v1.30.9+):**
+
+Set `UPDATER_REQUIRE_SIGNED_TAG=true` IN ADDITION to a pinned
+`UPDATER_TARGET_REF`. The updater inserts a `git verify-tag` step
+before the checkout; an unsigned or untrusted tag aborts the upgrade
+before the rebuild. For this to work you need:
+
+- Upstream maintainers signing tags with `git tag -s vX.Y.Z`.
+- The signing GPG public key imported in the updater container
+  (mount the `~/.gnupg` directory into `/root/.gnupg` or bake the
+  pubkey into a custom updater image).
+
+If the verification fails the chain short-circuits — the rebuild
+doesn't run, and the response includes a failure in
+`/status?logTail` so the operator can see what went wrong.
+
+**Concurrent upgrades (v1.30.9+):**
+
+`POST /upgrade` returns **409 Conflict** while a previous upgrade is
+still in flight. The flag is cleared when the spawned shell process
+exits (success OR failure). The updater is a single Node process so
+the mutex is just an in-memory flag — sufficient because there's no
+multi-instance updater to coordinate.
+
+### Phase boundary (S-10)
+
+The two pieces NOT shipped here:
+
+- **Automatic post-upgrade rollback** if `/api/health` doesn't come
+  back within a window. The SPA already polls; the updater could
+  trigger a `git checkout PREVIOUS && docker compose up -d --build`
+  on a health-failure timeout. Deferred — needs a careful design on
+  what "previous" means (the ref before the last checkout? the most
+  recent successful upgrade?) and how to keep it from looping.
+- **Updater self-update**. The updater container itself isn't pulled
+  by `docker compose up -d --build` because that command rebuilds
+  the services declared in compose's run set, not the privileged
+  sidecar gated by the `upgrade` profile. To pick up an updater
+  patch today, operators must explicitly `docker compose --profile
+  upgrade build updater && docker compose --profile upgrade up -d
+  updater`. A "self-upgrade the updater" path would invert the
+  control flow and deserves its own design.
 
 ### Maintenance window during a backup restore (v1.30.4+)
 

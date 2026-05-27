@@ -4,6 +4,107 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.9] — 2026-05-27
+
+**Security patch — S-10: self-upgrade updater had no concurrent-upgrade
+mutex and pinned no git ref. Only matters when the `upgrade` compose
+profile / self-upgrade sidecar is in use.**
+
+### Summary
+
+The updater sidecar's `/upgrade` endpoint would happily fire a second
+`docker compose up -d --build` while a previous one was still rebuilding
+the image — interleaved stdout in the log file, racy compose state, and
+a worst-case window where the second upgrade unintentionally rolled
+back the first. Separately, the upgrade command always ran
+`git pull --ff-only origin main`, so an operator who pushed a release
+tag couldn't pin to it; the updater followed whatever `main` was
+pointing at when the button got clicked.
+
+### Fix
+
+- **Concurrent-upgrade mutex** — in-memory `inFlight` flag in
+  `createServer`. Set the moment we spawn the upgrade shell; cleared
+  when the spawned process emits `close` OR `error`. A second
+  `POST /upgrade` while the flag is set returns **409 Conflict**.
+  Updater is a single Node process, so an in-memory flag suffices —
+  there's no multi-instance updater to coordinate. `GET /status` now
+  also surfaces the flag so the SPA can show "Upgrade in progress…"
+  without having to remember it client-side.
+- **Git-ref pinning** — new optional env `UPDATER_TARGET_REF`. When
+  set, the upgrade runs `git fetch && git checkout <ref> && docker
+  compose up -d --build` against that exact ref (tag / SHA / branch).
+  When unset, legacy `origin/main` behaviour is preserved verbatim.
+  The ref is shell-escaped via the classic `'foo'\''bar'` pattern so
+  an accidentally-quoted value like `v1.0' && rm -rf /` is escaped
+  rather than injected (defence-in-depth; the value comes from the
+  operator's own env, not a request, but cheap to harden).
+- **Signed-tag verification** — new optional env
+  `UPDATER_REQUIRE_SIGNED_TAG=true`. When `true` AND
+  `UPDATER_TARGET_REF` is set, the updater inserts `git verify-tag
+  <ref>` BEFORE the checkout. The `&&`-chained command short-
+  circuits on the first failure — an unsigned / forged tag aborts
+  the upgrade before the rebuild step runs. Documented in UPGRADE.md
+  (operator needs signed upstream tags + the signing public key
+  imported in the updater container).
+- **`buildUpgradeCommand(opts)`** extracted as a pure function +
+  named export so the unit tests can assert on the constructed
+  command string without needing a real git repo or `docker compose`.
+  `createServer(authCheck, opts)` accepts `{ spawn }` for the mutex
+  tests so we can drive the close-then-clear path with a fake
+  EventEmitter.
+
+### Out of scope (documented as remaining S-10 follow-ups)
+
+- **Automatic post-upgrade health-poll rollback.** If `/api/health`
+  doesn't come back within N seconds the updater could roll back to
+  the previous ref. Needs care around what "previous" means; deferred.
+- **Updater self-update.** The updater container itself isn't pulled
+  by `docker compose up -d --build` because that targets the service
+  set, not the `upgrade`-profile sidecar. To pick up an updater patch
+  today operators run `docker compose --profile upgrade build updater
+  && … up -d updater` by hand. Inverting the control flow for a
+  self-bootstrap deserves its own design.
+
+### Regression tests
+
+`tests/unit/updaterUpgrade.test.ts` — 9 cases:
+
+- **buildUpgradeCommand** (5 cases): default tracks origin/main with
+  `git pull --ff-only origin main` (no checkout); a target ref pins
+  via `git checkout 'v1.30.0'` and skips `git pull`; signed-tag mode
+  inserts `git verify-tag 'v1.30.0'` BEFORE the checkout (chain
+  ordering asserted); signed-tag with no target ref is a no-op (no
+  `verify-tag` in the command); shell-escape rejects an injection
+  attempt via a quoted target.
+- **Concurrent-upgrade mutex** (4 cases): real http server + fake
+  spawn — first POST returns 202 + `/status` shows `inFlight: true`;
+  a second POST returns 409; emitting `close` on the fake process
+  clears the flag and the next POST succeeds; emitting `error`
+  (spawn failure) also clears (no stuck mutex); unauthenticated
+  POST returns 401 without acquiring the mutex.
+
+### Verified
+
+- Backend `tsc` ✅. Frontend unaffected (no UI changes).
+- `updaterUpgrade.test.ts` 9/9. `updaterAuth.test.ts` 7/7.
+- Unit suite: **16/16** unit (7 S-1 + 9 S-10).
+- Full integration suite unaffected (no integration-side behaviour
+  change) — the updater lives in its own process / container.
+- UPGRADE.md describes the three new envs + the deferred follow-ups.
+
+### Phase boundary
+
+- The mutex is in-memory only. A docker restart of the updater drops
+  the flag; an upgrade that crashed the updater mid-flight is
+  recoverable by the next compose-restart, which is the intended
+  behaviour.
+- Signed-tag verification requires the operator to mount their
+  pubkey into the updater. The Dockerfile doesn't bake one in;
+  that's an instance-specific operational concern.
+- Automatic rollback and updater self-update remain S-10 work — see
+  UPGRADE.md → "Phase boundary (S-10)".
+
 ## [1.30.8] — 2026-05-27
 
 **Security patch — S-22: `PATCH /api/teams/:teamId` was gated solely

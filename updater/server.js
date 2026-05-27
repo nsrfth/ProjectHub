@@ -10,14 +10,21 @@
 //     against the X-Updater-Token header. v1.30.2 (S-1) hardened: the
 //     server REFUSES TO START when UPDATER_TOKEN is unset or < 24 chars,
 //     and the header comparison is constant-time via crypto.timingSafeEqual.
+//   - v1.30.9 (S-10) hardened further:
+//       - In-memory concurrent-upgrade mutex (409 while in flight).
+//       - Optional UPDATER_TARGET_REF pins the checkout to a specific
+//         git ref (tag / SHA / branch) instead of tracking origin/main.
+//       - Optional UPDATER_REQUIRE_SIGNED_TAG=true runs `git verify-tag`
+//         on the target ref before building; abort if verification fails.
 //   - Listens only on 0.0.0.0 inside the compose network. Caddy never
 //     proxies /upgrade* through to it.
 //   - Opt-in: gated by `profiles: ['upgrade']` in docker-compose.yml.
 //     Stock installs don't run this container.
 //
 // Endpoints:
-//   GET  /status   — last run timestamp + log tail
-//   POST /upgrade  — fire-and-forget upgrade; returns 202 + startedAt
+//   GET  /status   — last run timestamp + log tail + in-flight flag
+//   POST /upgrade  — fire-and-forget upgrade; returns 202 + startedAt,
+//                    or 409 while a previous upgrade is still running.
 'use strict';
 
 const http = require('http');
@@ -64,8 +71,79 @@ function tailLog(maxBytes) {
   }
 }
 
-function createServer(authCheck) {
+// v1.30.9 (S-10): build the shell command for an upgrade. Extracted as a
+// pure function so the unit test can assert on the command string without
+// having to spawn a real shell or hit git.
+//
+//   opts.targetRef         — UPDATER_TARGET_REF (string, optional). When
+//                            set, pin the checkout to this exact ref
+//                            (tag like v1.30.0, SHA, branch). When unset,
+//                            preserve the legacy behaviour of tracking
+//                            origin/main via `git pull --ff-only`.
+//   opts.requireSignedTag  — UPDATER_REQUIRE_SIGNED_TAG === 'true'. When
+//                            on, insert a `git verify-tag` step before
+//                            building. The whole chain short-circuits on
+//                            the first failure (via && between steps), so
+//                            an unsigned / forged tag aborts the upgrade
+//                            without rebuilding.
+//
+// All paths end with `docker compose up -d --build` so the same final
+// step rebuilds the image once the working tree is at the chosen ref.
+function buildUpgradeCommand(opts = {}) {
+  const targetRef = (opts.targetRef || '').trim();
+  const requireSignedTag = opts.requireSignedTag === true;
+
+  if (!targetRef) {
+    // Legacy: track origin/main.
+    return [
+      'cd /repo',
+      'git fetch origin --tags',
+      'git pull --ff-only origin main',
+      'docker compose up -d --build',
+    ].join(' && ');
+  }
+
+  // Pinned ref. We always fetch first so a fresh tag becomes visible;
+  // then checkout to a detached HEAD on the pinned ref so the working
+  // tree shows the exact code we're about to build.
+  const verify = requireSignedTag
+    ? `git verify-tag '${shellEscape(targetRef)}'`
+    : null;
+  const parts = [
+    'cd /repo',
+    'git fetch origin --tags',
+    ...(verify ? [verify] : []),
+    `git checkout '${shellEscape(targetRef)}'`,
+    'docker compose up -d --build',
+  ];
+  return parts.join(' && ');
+}
+
+// Tiny shell-escape for refs we already trust (env-controlled, set by the
+// operator). Wraps in single quotes and escapes embedded single quotes —
+// the classic 'foo'\''bar' pattern. Belt-and-suspenders against an
+// accidentally-quoted ref like `v1.30.0' && rm -rf /`.
+function shellEscape(s) {
+  return String(s).replace(/'/g, "'\\''");
+}
+
+function createServer(authCheck, opts = {}) {
+  const targetRef = opts.targetRef ?? process.env.UPDATER_TARGET_REF ?? '';
+  const requireSignedTag =
+    opts.requireSignedTag ?? process.env.UPDATER_REQUIRE_SIGNED_TAG === 'true';
+
   let lastRun = null;
+  // v1.30.9 (S-10): in-memory concurrent-upgrade mutex. A second POST
+  // /upgrade while one is still running returns 409. Cleared when the
+  // spawned process exits (success or failure). The updater is a single
+  // Node process, so this in-process flag is sufficient — there's no
+  // multi-instance updater to coordinate.
+  let inFlight = false;
+  // Test-only hook to override spawn() — passing a fake spawner lets the
+  // mutex test exercise the close-then-clear path without actually
+  // running `docker compose up`.
+  const spawner = opts.spawn ?? spawn;
+
   const server = http.createServer((req, res) => {
     function send(code, body) {
       res.writeHead(code, { 'Content-Type': 'application/json' });
@@ -73,7 +151,7 @@ function createServer(authCheck) {
     }
 
     if (req.method === 'GET' && req.url === '/status') {
-      send(200, { lastRun, logTail: tailLog(4096) });
+      send(200, { lastRun, logTail: tailLog(4096), inFlight });
       return;
     }
 
@@ -87,25 +165,43 @@ function createServer(authCheck) {
         return;
       }
 
-      // The upgrade command is run via `sh -c` so the chained `git fetch &&
-      // docker compose up -d --build` reads naturally. Detached + unref'd so
-      // the child survives even after the parent process (this Node server)
-      // gets recreated mid-upgrade.
-      //
-      // Why `git pull origin main` instead of checking out a specific tag:
-      // keeps the script tiny + idempotent. Operators who want to pin a tag
-      // can SSH in and `git checkout vX.Y.Z` before clicking "Upgrade".
-      const cmd = 'cd /repo && git fetch origin --tags && git pull --ff-only origin main && docker compose up -d --build';
+      // v1.30.9 (S-10): mutex. Reject a second upgrade while one is in
+      // flight. Avoids interleaved log writes + a race where two `docker
+      // compose up -d --build` invocations both try to rebuild the same
+      // image.
+      if (inFlight) {
+        send(409, { error: 'upgrade already in flight' });
+        return;
+      }
+
+      const cmd = buildUpgradeCommand({ targetRef, requireSignedTag });
       const logFd = fs.openSync(LOG_PATH, 'a');
-      fs.writeSync(logFd, `\n\n=== upgrade started ${new Date().toISOString()} ===\n`);
-      const proc = spawn('sh', ['-c', cmd], {
+      fs.writeSync(
+        logFd,
+        `\n\n=== upgrade started ${new Date().toISOString()} ===\n` +
+          (targetRef ? `target ref: ${targetRef}\n` : '') +
+          (requireSignedTag ? 'requires signed tag\n' : ''),
+      );
+      const proc = spawner('sh', ['-c', cmd], {
         detached: true,
         stdio: ['ignore', logFd, logFd],
       });
+      inFlight = true;
+      const clearFlag = () => {
+        inFlight = false;
+      };
+      proc.once('close', clearFlag);
+      // `error` fires when the binary couldn't even start (rare). Cover
+      // it explicitly so a spawn failure doesn't leave inFlight stuck on.
+      proc.once('error', clearFlag);
       proc.unref();
 
       lastRun = new Date().toISOString();
-      send(202, { status: 'started', startedAt: lastRun });
+      send(202, {
+        status: 'started',
+        startedAt: lastRun,
+        targetRef: targetRef || null,
+      });
       return;
     }
 
@@ -116,7 +212,7 @@ function createServer(authCheck) {
 
 // Exported for unit tests. The CLI entrypoint below only runs when this
 // file is executed directly (require.main === module).
-module.exports = { makeAuthCheck, createServer };
+module.exports = { makeAuthCheck, createServer, buildUpgradeCommand };
 
 if (require.main === module) {
   let authCheck;
