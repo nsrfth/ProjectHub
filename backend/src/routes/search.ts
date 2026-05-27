@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { SearchService } from '../services/searchService.js';
 import { SearchController } from '../controllers/searchController.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import { searchQuery, searchResults } from '../schemas/search.js';
 
 // v1.30: cross-team full-text search. Mounted at /api/search.
@@ -16,6 +17,12 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
   const r = app.withTypeProvider<ZodTypeProvider>();
 
   r.addHook('preHandler', requireAuth);
+  // v1.30.3 (S-2): cross-team search reads tasks, comments, and projects;
+  // any read scope suffices because the per-bucket queries already
+  // tenant-scope to teams the caller belongs to. We require `tasks:read`
+  // as the broadest read scope — a token narrower than that (e.g.
+  // `comments:read` only) shouldn't be poking the cross-entity surface.
+  r.addHook('preHandler', requireScope('tasks:read'));
 
   r.get('/', {
     schema: {

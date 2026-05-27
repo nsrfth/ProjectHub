@@ -17,6 +17,7 @@ import {
   verificationRequestBody,
 } from '../schemas/auth.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireSessionAuth } from '../middleware/requireScope.js';
 import type { Env } from '../config/env.js';
 
 export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Promise<void> {
@@ -121,7 +122,9 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
   });
 
   r.patch('/me/preferences', {
-    preHandler: requireAuth,
+    // v1.30.3 (S-2): identity-affecting; no API token (even `*`-scoped)
+    // should rewrite a user's display preferences.
+    preHandler: [requireAuth, requireSessionAuth],
     schema: {
       tags: ['auth'],
       summary: 'Update per-user preferences (calendar, theme, language)',
@@ -155,7 +158,10 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
   });
 
   r.post('/2fa/setup', {
-    preHandler: requireAuth,
+    // v1.30.3 (S-2): 2FA management is session-only. A wildcard API token
+    // must NEVER be able to disable a user's second factor — that's the
+    // exact attack chain S-3 patched the pending-token side of.
+    preHandler: [requireAuth, requireSessionAuth],
     schema: {
       tags: ['auth'],
       summary: 'Begin 2FA enrolment — returns secret + QR (nothing persisted yet)',
@@ -166,7 +172,7 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
   });
 
   r.post('/2fa/confirm', {
-    preHandler: requireAuth,
+    preHandler: [requireAuth, requireSessionAuth],
     schema: {
       tags: ['auth'],
       summary: 'Finalise 2FA enrolment — verify a code, then persist + return recovery codes once',
@@ -178,7 +184,7 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
   });
 
   r.post('/2fa/disable', {
-    preHandler: requireAuth,
+    preHandler: [requireAuth, requireSessionAuth],
     schema: {
       tags: ['auth'],
       summary: 'Disable 2FA — requires a fresh TOTP / recovery proof',
@@ -190,7 +196,7 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
   });
 
   r.post('/2fa/recovery-codes', {
-    preHandler: requireAuth,
+    preHandler: [requireAuth, requireSessionAuth],
     schema: {
       tags: ['auth'],
       summary: 'Regenerate recovery codes (invalidates the previous set)',

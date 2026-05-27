@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { TasksService } from '../services/tasksService.js';
 import { TasksController } from '../controllers/tasksController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   createTaskBody,
   listTasksQuery,
@@ -27,6 +28,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
 
   r.post('/', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['tasks'],
       summary: 'Create a task in this project',
@@ -39,6 +41,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.get('/', {
+    preHandler: requireScope('tasks:read'),
     schema: {
       tags: ['tasks'],
       summary: 'List tasks in this project (optionally filtered by status)',
@@ -51,6 +54,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.get('/:taskId', {
+    preHandler: requireScope('tasks:read'),
     schema: {
       tags: ['tasks'],
       summary: 'Get a task',
@@ -62,6 +66,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:taskId', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['tasks'],
       summary: 'Update a task (any team member)',
@@ -74,6 +79,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/:taskId/reorder', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['tasks'],
       summary: 'Move a task to a target column at a specific position',
@@ -86,6 +92,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:taskId', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['tasks'],
       summary: 'Delete a task (any team member)',

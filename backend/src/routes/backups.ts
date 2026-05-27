@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { BackupsService } from '../services/backupsService.js';
 import { requireAuth, requireGlobalRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   backupConfig,
   backupConfigPatch,
@@ -25,6 +26,9 @@ export async function backupsRoutes(
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireGlobalRole('ADMIN'));
+  // v1.30.3 (S-2): API tokens must carry the `admin` scope to touch
+  // backup config or stored dumps.
+  r.addHook('preHandler', requireScope('admin'));
 
   r.get('/', {
     schema: {

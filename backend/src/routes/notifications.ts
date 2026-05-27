@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { NotificationsService } from '../services/notificationsService.js';
 import { NotificationsController } from '../controllers/notificationsController.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   listNotificationsQuery,
   notificationResponse,
@@ -20,6 +21,7 @@ export async function notificationsRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireAuth);
 
   r.get('/', {
+    preHandler: requireScope('tasks:read'),
     schema: {
       tags: ['notifications'],
       summary: 'List my notifications (newest first, optionally unread-only)',
@@ -31,6 +33,7 @@ export async function notificationsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.get('/unread-count', {
+    preHandler: requireScope('tasks:read'),
     schema: {
       tags: ['notifications'],
       summary: 'Get my unread notification count (cheap, for the bell badge)',
@@ -41,6 +44,7 @@ export async function notificationsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/:notificationId/read', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['notifications'],
       summary: 'Mark one notification as read',
@@ -51,6 +55,7 @@ export async function notificationsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/read-all', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['notifications'],
       summary: 'Mark every unread notification as read',

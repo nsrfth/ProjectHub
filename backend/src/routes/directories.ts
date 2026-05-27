@@ -6,6 +6,7 @@ import { LdapService } from '../services/ldapService.js';
 import { ScimCredentialsService } from '../services/scimCredentialsService.js';
 import { DirectoriesController } from '../controllers/directoriesController.js';
 import { requireAuth, requireGlobalAdmin } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   directoryCreateBody,
   directoryUpdateBody,
@@ -39,6 +40,9 @@ export async function directoriesRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireGlobalAdmin);
+  // v1.30.3 (S-2): API tokens must carry `admin` scope to manage
+  // directories or SCIM credentials.
+  r.addHook('preHandler', requireScope('admin'));
 
   r.get('/', {
     schema: {

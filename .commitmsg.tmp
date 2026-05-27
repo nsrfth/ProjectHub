@@ -1,33 +1,40 @@
-﻿v1.30.2 - SECURITY: updater refuses to start without a valid token (S-1)
+﻿v1.30.3 - SECURITY: enforce API-token scopes on every route (S-2)
 
-The privileged updater sidecar (mounts the host docker socket + repo
-checkout - owning it = owning the host) used:
-  if (TOKEN && header !== TOKEN) return 401;
-When UPDATER_TOKEN was empty the conditional short-circuited to allow,
-so ANY caller on the compose network could trigger git pull + docker
-compose up -d --build. Startup only logged a console.warn and continued.
-Header compare also used non-constant-time !==.
+API tokens were minted with a scopes:string[] array (UI prompted for
+tasks:read,tasks:write) but the route layer NEVER inspected it. A
+tasks:read token could DELETE any task or mint a *-scoped token via
+POST /api/settings/api-tokens. Patched.
 
 Fix:
-- updater/server.js: makeAuthCheck() throws at construction when token
-  is unset, non-string, or <24 chars. CLI entrypoint catches and
-  process.exit(1) with a FATAL log line - no silent warn-and-proceed.
-- Auth check now uses crypto.timingSafeEqual unconditionally. Length
-  mismatches return false WITHOUT throwing (raw timingSafeEqual raises
-  on unequal-length buffers); a dummy compare keeps the timing of the
-  length-mismatch path comparable to the equal-length-mismatch path.
-- Extracted makeAuthCheck + createServer as named exports so the auth
-  logic is unit-testable.
-- backend/src/config/env.ts: superRefine enforces UPDATER_TOKEN >=24
-  chars when UPDATER_URL is set. loadEnv() now throws instead of
-  letting a half-configured upgrade pipeline ship.
+- New lib/scopes.ts is the single source of truth for the vocabulary:
+  *, tasks:read|write, comments:read|write, projects:read|write,
+  webhooks:manage, admin. Ten strings, intentionally small.
+- New middleware/requireScope(scope) Fastify preHandler. JWT sessions
+  pass implicitly (no apiTokenScopes on request); API tokens must
+  carry * or the exact scope. Composes WITH the existing requireAuth
+  / requirePermission / requireTeamRole / requireGlobalAdmin gates.
+- New requireSessionAuth (defense in depth) rejects ANY API-token
+  request even *-scoped. Wired into POST/DELETE /api/settings/api-tokens
+  (closes the token-laundering chain), PATCH /api/auth/me/preferences,
+  and POST /api/auth/2fa/{setup,confirm,disable,recovery-codes} (a
+  wildcard token must not be able to disable a user's 2FA — pairs with
+  the v1.30.1 S-3 fix on the pending-token side).
+- schemas/apiTokens.ts restricts create-body scopes to z.enum(SCOPES).
+  Existing rows with arbitrary scope strings still load but never
+  match a gate (effectively no-op until rotated).
 
-Scope: does NOT touch upgrade logic itself - concurrent-upgrade mutex
-and git-ref pinning (S-10) are deliberately deferred.
+Route coverage: every routes/*.ts audited. Every write + most reads
+sit behind requireScope or requireSessionAuth. Intentionally unscoped:
+system.ts (public), auth.ts bootstrap routes, notificationsWs (JWT-only
+by construction), SCIM (its own bearer-token auth).
 
-12 new tests: 7 updaterAuth.test.ts (empty/short/non-string/correct/
-wrong-same-length/wrong-different-length-no-throw/missing-header), 5
-envUpdaterValidation.test.ts (URL unset passes; URL set + missing/short
-throws; 24/64 chars pass) using vi.resetModules to bust the env cache.
+8 new S-2 tests in apiTokensAndWebhooks.test.ts:
+  tasks:read 403 on POST + 403 on DELETE; 200 on GET
+  * token 201 on POST + 204 on DELETE
+  JWT session unaffected (201 on POST)
+  comments:write only 403 on task DELETE (no implicit read=write)
+  invented scope rejected at create time (400)
+  * API token cannot mint another API token (403)
+  * API token cannot disable 2FA (403)
 
-Verified: tsc clean. Unit 28/28. Full suite 273 passed, 5 skipped (LDAP).
+Verified: tsc clean. Full suite 281 passed, 5 skipped (LDAP).

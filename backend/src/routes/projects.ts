@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ProjectsService } from '../services/projectsService.js';
 import { ProjectsController } from '../controllers/projectsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   createProjectBody,
   projectResponse,
@@ -24,6 +25,7 @@ export async function projectsRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
 
   r.post('/', {
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['projects'],
       summary: 'Create a project inside this team — caller becomes owner',
@@ -36,6 +38,7 @@ export async function projectsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.get('/', {
+    preHandler: requireScope('projects:read'),
     schema: {
       tags: ['projects'],
       summary: 'List projects in this team',
@@ -47,6 +50,7 @@ export async function projectsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.get('/:projectId', {
+    preHandler: requireScope('projects:read'),
     schema: {
       tags: ['projects'],
       summary: 'Get a project (must belong to this team)',
@@ -58,6 +62,7 @@ export async function projectsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:projectId', {
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['projects'],
       summary: 'Update a project (owner OR team MANAGER)',
@@ -70,6 +75,7 @@ export async function projectsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:projectId', {
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['projects'],
       summary: 'Delete a project (owner OR team MANAGER)',

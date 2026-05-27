@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { SubtasksService } from '../services/subtasksService.js';
 import { SubtasksController } from '../controllers/subtasksController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import { createSubtaskBody, subtaskResponse, updateSubtaskBody } from '../schemas/subtasks.js';
 
 // Subtasks live under /api/teams/:teamId/projects/:projectId/tasks/:taskId/subtasks.
@@ -18,6 +19,7 @@ export async function subtasksRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
 
   r.post('/', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['subtasks'],
       summary: 'Add a subtask (appended to the end)',
@@ -30,6 +32,7 @@ export async function subtasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:subtaskId', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['subtasks'],
       summary: 'Update a subtask title and/or done flag',
@@ -47,6 +50,7 @@ export async function subtasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:subtaskId', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['subtasks'],
       summary: 'Delete a subtask',

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AdminService } from '../services/adminService.js';
 import { AdminController } from '../controllers/adminController.js';
 import { requireAuth, requireGlobalRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import { updateCheckService } from '../services/updateCheckService.js';
 import {
   adminUserResponse,
@@ -24,6 +25,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireGlobalRole('ADMIN'));
+  // v1.30.3 (S-2): admin routes additionally require the `admin` scope on
+  // API tokens. Sessions pass implicitly (no token scopes attached).
+  r.addHook('preHandler', requireScope('admin'));
 
   r.get('/users', {
     schema: {

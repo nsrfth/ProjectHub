@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ApiTokensService } from '../services/apiTokensService.js';
 import { ApiTokensController } from '../controllers/apiTokensController.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireSessionAuth } from '../middleware/requireScope.js';
 import {
   apiTokenCreateBody,
   apiTokenCreatedResponse,
@@ -20,6 +21,12 @@ export async function apiTokensRoutes(app: FastifyInstance): Promise<void> {
   const r = app.withTypeProvider<ZodTypeProvider>();
 
   r.addHook('preHandler', requireAuth);
+  // v1.30.3 (S-2): API tokens must NEVER be reachable from another API
+  // token — not even a `*`-scoped one. This is a defence-in-depth gate
+  // against a leaked wildcard token chaining itself into fresh
+  // persistence tokens. The frontend uses a session-cookie + access
+  // token; both produce a JWT, not an API token.
+  r.addHook('preHandler', requireSessionAuth);
 
   r.get('/', {
     schema: {

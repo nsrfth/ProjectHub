@@ -4,6 +4,7 @@ import type { TeamMembership } from '@prisma/client';
 import { z } from 'zod';
 import { TrashService } from '../services/trashService.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import { Errors } from '../lib/errors.js';
 
 // v1.21: trash routes. Mounted at /api/teams/:teamId/trash. Team membership
@@ -24,6 +25,7 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
 
   r.get('/', {
+    preHandler: requireScope('tasks:read'),
     schema: {
       tags: ['trash'],
       summary: 'List soft-deleted tasks + comments in this team',
@@ -64,6 +66,7 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/tasks/:taskId/restore', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['trash'],
       summary: 'Restore a soft-deleted task',
@@ -81,6 +84,7 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/comments/:commentId/restore', {
+    preHandler: requireScope('comments:write'),
     schema: {
       tags: ['trash'],
       summary: 'Restore a soft-deleted comment',
@@ -99,6 +103,7 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
 
   // Hard delete — gated to admin (or admin + manager) per the instance setting.
   r.delete('/tasks/:taskId', {
+    preHandler: requireScope('admin'),
     schema: {
       tags: ['trash'],
       summary: 'Permanently delete a trashed task (admin-gated)',
@@ -124,6 +129,7 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/comments/:commentId', {
+    preHandler: requireScope('admin'),
     schema: {
       tags: ['trash'],
       summary: 'Permanently delete a trashed comment (admin-gated)',
@@ -151,6 +157,7 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
   // Bulk empty — same gate. Returns the counts of what was purged so the SPA
   // can render a "47 tasks + 12 comments permanently deleted" confirmation.
   r.post('/empty', {
+    preHandler: requireScope('admin'),
     schema: {
       tags: ['trash'],
       summary: 'Permanently delete EVERYTHING in this team\'s trash (admin-gated)',

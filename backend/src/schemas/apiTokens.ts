@@ -1,14 +1,19 @@
 import { z } from 'zod';
+import { SCOPES } from '../lib/scopes.js';
 
-// Per-user API token CRUD. Scopes are free-form strings — convention is
-// `<resource>:<action>` (e.g. "tasks:read") or "*" for full access; Phase
-// 3B doesn't enforce them at the route layer (the auth middleware just
-// attaches the token's owner) so they're advisory until a future phase
-// gates routes on them.
+// Per-user API token CRUD. v1.30.3 (S-2): scopes are now ENFORCED at the
+// route layer via requireScope(). The create body restricts inputs to the
+// known vocabulary in lib/scopes.ts so admins can't accidentally mint a
+// token whose advisory-looking scope string (typo'd or invented) silently
+// matches no gates. Existing rows with arbitrary scope strings keep
+// loading — only future creates are validated.
 
 export const apiTokenCreateBody = z.object({
   name: z.string().min(1).max(120),
-  scopes: z.array(z.string().min(1).max(60)).default(['*']),
+  scopes: z
+    .array(z.enum(SCOPES))
+    .min(1, 'Pick at least one scope (use "*" for full access)')
+    .default(['*']),
   expiresAt: z.string().datetime().nullable().optional(),
 });
 

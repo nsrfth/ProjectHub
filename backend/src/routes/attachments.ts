@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AttachmentsService } from '../services/attachmentsService.js';
 import { AttachmentsController } from '../controllers/attachmentsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import { attachmentResponse } from '../schemas/attachments.js';
 import type { Env } from '../config/env.js';
 
@@ -21,6 +22,7 @@ export async function attachmentsRoutes(app: FastifyInstance, opts: { env: Env }
   // the handler, not via Zod. Same reasoning as why the validator is omitted
   // on the auth refresh endpoint (cookie-based).
   r.post('/', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['attachments'],
       summary: 'Upload a file to a task (multipart/form-data; single file)',
@@ -33,6 +35,7 @@ export async function attachmentsRoutes(app: FastifyInstance, opts: { env: Env }
   });
 
   r.get('/', {
+    preHandler: requireScope('tasks:read'),
     schema: {
       tags: ['attachments'],
       summary: 'List attachments on a task (metadata only — no blob)',
@@ -46,6 +49,7 @@ export async function attachmentsRoutes(app: FastifyInstance, opts: { env: Env }
   // Note: no Zod response schema here — the response is a binary stream, not
   // JSON, so the zod-type-provider serializer would mis-handle it.
   r.get('/:attachmentId/download', {
+    preHandler: requireScope('tasks:read'),
     schema: {
       tags: ['attachments'],
       summary: 'Stream an attachment back to the client (forces download)',
@@ -61,6 +65,7 @@ export async function attachmentsRoutes(app: FastifyInstance, opts: { env: Env }
   });
 
   r.delete('/:attachmentId', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['attachments'],
       summary: 'Delete an attachment (uploader OR team MANAGER)',

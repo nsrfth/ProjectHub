@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ReportsService } from '../services/reportsService.js';
 import { ReportsController } from '../controllers/reportsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   doneReportResponse,
   doneTasksQuery,
@@ -24,6 +25,9 @@ export async function reportsRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.30.3 (S-2): all endpoints in this file are reads — gate on
+  // tasks:read since reports are derived from task activity.
+  r.addHook('preHandler', requireScope('tasks:read'));
 
   r.get('/done', {
     schema: {

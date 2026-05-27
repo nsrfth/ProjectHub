@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { prisma } from '../data/prisma.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import { calendarListResponse, calendarQuery } from '../schemas/calendar.js';
 
 // v1.12: cross-project calendar feed. One endpoint per team — returns
@@ -17,6 +18,7 @@ export async function calendarRoutes(app: FastifyInstance): Promise<void> {
   const r = app.withTypeProvider<ZodTypeProvider>();
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  r.addHook('preHandler', requireScope('tasks:read'));
 
   r.get('/', {
     schema: {

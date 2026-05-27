@@ -4,6 +4,129 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.3] — 2026-05-27
+
+**Security patch — S-2: API-token scopes never enforced.**
+
+### Summary
+
+API tokens were minted with a `scopes: string[]` array (the UI even prompted
+for `tasks:read,tasks:write`), and the auth middleware dutifully attached
+that array to every request. The route layer never looked at it. A token
+created with `scopes: ['tasks:read']` could:
+
+- DELETE any task the owner had reach to.
+- POST a comment, attachment, label, project, team, role, webhook…
+- Mint another API token with `scopes: ['*']` via
+  `POST /api/settings/api-tokens` — turning a narrow-scope token into a
+  durable wildcard credential the original token's owner never saw.
+
+The CI integration token model TaskHub advertised was effectively
+"a long-lived bearer that pretends to be scoped." Patched.
+
+### Fix
+
+- **New `lib/scopes.ts`** is the single source of truth for the scope
+  vocabulary. Ten strings, intentionally small:
+  - `*` (wildcard — explicit "full access")
+  - `tasks:read`, `tasks:write` (Task / subtask / attachment / label-on-
+    task / notifications / trash-restore)
+  - `comments:read`, `comments:write`
+  - `projects:read`, `projects:write` (project CRUD + team-scoped Label
+    CRUD)
+  - `webhooks:manage`
+  - `admin` (anything previously requiring `GlobalRole=ADMIN`: admin
+    endpoints, instance settings, role management, team mutations,
+    audit log, directories, backups)
+- **New `requireScope(scope)` Fastify preHandler** in
+  `middleware/requireScope.ts`. Composition contract:
+  - JWT-authenticated requests have no `apiTokenScopes` on the request —
+    they pass implicitly (session = the user themselves, who is already
+    gated by `requireTeamRole` / `requirePermission` / `requireGlobalAdmin`).
+  - API-token-authenticated requests must carry either `*` or the exact
+    required scope. `read` does NOT imply `write` and vice versa.
+  - 403 with body `"API token missing required scope: <name>"` on a miss.
+- **`requireSessionAuth` (defense-in-depth)** — a sibling middleware
+  that rejects ANY API-token request (even `*`-scoped). Wired into:
+  - `POST/DELETE /api/settings/api-tokens` — a leaked wildcard token
+    cannot mint or revoke another API token (closes the API-token-
+    laundering chain).
+  - `PATCH /api/auth/me/preferences` — identity-affecting.
+  - `POST /api/auth/2fa/setup`, `/2fa/confirm`, `/2fa/disable`,
+    `/2fa/recovery-codes` — a wildcard token cannot disable 2FA on the
+    owning user. Pairs with the v1.30.1 S-3 fix on the pending-token
+    side of the same attack surface.
+- **`schemas/apiTokens.ts`** restricts the create body's `scopes` field
+  to `z.enum(SCOPES)`. Existing token rows with arbitrary scope strings
+  continue to load (the gate just won't match them — they're effectively
+  no-op tokens until rotated, which is the correct user-visible behavior
+  for typo'd or invented scopes that never worked anyway).
+
+### Route coverage
+
+Every route file under `backend/src/routes/*.ts` was audited. Each write
+endpoint (POST / PATCH / PUT / DELETE) and most reads now sit behind
+either `requireScope(...)` or `requireSessionAuth`:
+
+- `tasks.ts`, `subtasks.ts`, `attachments.ts`, `notifications.ts`,
+  `recurrence.ts`, `dependencies.ts` — `tasks:read` / `tasks:write`.
+- `comments.ts` — `comments:read` / `comments:write`.
+- `projects.ts`, `labels.ts` (team-scope), `roles.ts` (reads),
+  `teams.ts` (reads) — `projects:read` / `projects:write`.
+- `labels.ts` (task-label attach/detach), `trash.ts` (restore endpoints) —
+  `tasks:write`.
+- `webhooks.ts` — `webhooks:manage` (plugin-level addHook).
+- `admin.ts`, `settings.ts`, `audit.ts`, `directories.ts`, `backups.ts`,
+  `trash.ts` (purge / empty), `teams.ts` (mutations + create) — `admin`.
+- `apiTokens.ts`, `auth.ts` (2FA management, preferences) —
+  `requireSessionAuth`.
+- `search.ts` — `tasks:read` (read-only, cross-team, scope guards the
+  tokens-with-no-read-scope from hitting the cross-entity surface).
+
+Routes intentionally unscoped: `system.ts` (public read by design);
+`auth.ts` bootstrap routes (`/login`, `/register`, `/refresh`,
+`/logout`, `/password/*`, `/verification/*`, `/2fa/login` — anonymous
+or pending-token entrypoints); `notificationsWs.ts` (uses
+`verifyAccess` directly, JWT-only by construction); SCIM (its own
+bearer-token auth, not the API-token path).
+
+### Verified
+
+- Backend `tsc` ✅.
+- 8 new S-2 regression tests in
+  `tests/integration/apiTokensAndWebhooks.test.ts`:
+  - `tasks:read` token → 403 on POST and 403 on DELETE.
+  - Same `tasks:read` token → 200 on GET.
+  - `*`-scoped token → 201 on POST and 204 on DELETE.
+  - Normal JWT session → 201 on POST (unaffected by scope gates).
+  - `comments:write`-only token → 403 on task DELETE (read does not
+    imply write across resource families).
+  - Invented scope `typo:write` at create time → 400 (vocabulary
+    enforcement).
+  - `*` API token → 403 on minting another API token
+    (`requireSessionAuth`).
+  - `*` API token → 403 on `POST /api/auth/2fa/disable`.
+- Existing 7 apiTokens + webhooks tests still pass.
+- Full integration suite: 281 passed, 5 skipped (LDAP — pre-existing,
+  needs the `ldap` profile). 1 pre-existing flake on `backups.test.ts`
+  (`BACKUP_DIR` env-cache order dependency — passes in isolation).
+- Grep verification: every `r.post|r.patch|r.put|r.delete` across
+  `routes/*.ts` either has a per-route `preHandler` that contains
+  `requireScope` / `requireSessionAuth`, OR sits under a plugin-level
+  `addHook('preHandler', requireScope(...))`.
+
+### Phase boundary
+
+- The frontend `ApiWebhooksPage` still uses a free-form
+  comma-separated scope input. Admins typing an invalid scope now
+  see a 400 from the create endpoint (better than the silent advisory
+  state we shipped before), but the UI should grow a checkbox list
+  driven by `SCOPES` so the vocabulary is discoverable. Tracked as a
+  v1.31 UX polish.
+- Read scope on TEAM list / team detail is conservatively gated on
+  `projects:read` (since teams are the container above projects).
+  A finer `teams:read` could ship later if integration patterns need it.
+
 ## [1.30.2] — 2026-05-27
 
 **Security patch — S-1: updater sidecar accepted anonymous /upgrade

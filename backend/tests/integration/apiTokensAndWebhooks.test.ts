@@ -157,6 +157,166 @@ describe('API tokens', () => {
     });
     expect(me.statusCode).toBe(401);
   });
+
+  // ── v1.30.3 (S-2): scope enforcement on API tokens ────────────────────
+  //
+  // Until this release, an API token's `scopes` array was stored and
+  // attached to the request but never validated. A `tasks:read` token
+  // could DELETE any task — or mint another API token. requireScope is
+  // now installed on every write route + most reads. The tests below
+  // pin the contract:
+  //   1. A `tasks:read` token gets 403 on task POST + 403 on task DELETE.
+  //   2. The same token gets 200 on task GET.
+  //   3. A `*`-scoped token behaves like a session (full access).
+  //   4. A normal JWT session is unaffected (no apiTokenScopes on the
+  //      request → implicit `*`).
+  //   5. API tokens — even `*` ones — cannot mint OTHER API tokens
+  //      (requireSessionAuth on /api/settings/api-tokens).
+  describe('S-2 scope enforcement', () => {
+    async function setup(scopes: string[]): Promise<{
+      jwtToken: string;
+      apiRaw: string;
+      teamId: string;
+      projectId: string;
+      taskId: string;
+    }> {
+      const { token: jwtToken } = await register('admin@example.com');
+      const teamId = await createTeam(jwtToken, 's2-team');
+      const proj = await app.inject({
+        method: 'POST',
+        url: `/api/teams/${teamId}/projects`,
+        headers: { authorization: `Bearer ${jwtToken}` },
+        payload: { name: 'P' },
+      });
+      const projectId = proj.json().id as string;
+      const task = await app.inject({
+        method: 'POST',
+        url: `/api/teams/${teamId}/projects/${projectId}/tasks`,
+        headers: { authorization: `Bearer ${jwtToken}` },
+        payload: { title: 'seed' },
+      });
+      const taskId = task.json().id as string;
+
+      const gen = await app.inject({
+        method: 'POST',
+        url: '/api/settings/api-tokens',
+        headers: { authorization: `Bearer ${jwtToken}` },
+        payload: { name: 's2', scopes },
+      });
+      if (gen.statusCode !== 201) {
+        throw new Error(`token mint failed: ${gen.statusCode} ${gen.body}`);
+      }
+      return { jwtToken, apiRaw: gen.json().rawToken as string, teamId, projectId, taskId };
+    }
+
+    it('rejects POST /tasks with a tasks:read token (403)', async () => {
+      const { apiRaw, teamId, projectId } = await setup(['tasks:read']);
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/teams/${teamId}/projects/${projectId}/tasks`,
+        headers: { authorization: `Bearer ${apiRaw}` },
+        payload: { title: 'should-not-create' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.message).toContain('tasks:write');
+    });
+
+    it('rejects DELETE /tasks/:id with a tasks:read token (403)', async () => {
+      const { apiRaw, teamId, projectId, taskId } = await setup(['tasks:read']);
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/api/teams/${teamId}/projects/${projectId}/tasks/${taskId}`,
+        headers: { authorization: `Bearer ${apiRaw}` },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('allows GET /tasks/:id with the same tasks:read token (200)', async () => {
+      const { apiRaw, teamId, projectId, taskId } = await setup(['tasks:read']);
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/teams/${teamId}/projects/${projectId}/tasks/${taskId}`,
+        headers: { authorization: `Bearer ${apiRaw}` },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().id).toBe(taskId);
+    });
+
+    it('a `*`-scoped token can write (POST returns 201, DELETE returns 204)', async () => {
+      const { apiRaw, teamId, projectId } = await setup(['*']);
+      const create = await app.inject({
+        method: 'POST',
+        url: `/api/teams/${teamId}/projects/${projectId}/tasks`,
+        headers: { authorization: `Bearer ${apiRaw}` },
+        payload: { title: 'wildcard-can-write' },
+      });
+      expect(create.statusCode).toBe(201);
+      const newId = create.json().id as string;
+      const del = await app.inject({
+        method: 'DELETE',
+        url: `/api/teams/${teamId}/projects/${projectId}/tasks/${newId}`,
+        headers: { authorization: `Bearer ${apiRaw}` },
+      });
+      expect(del.statusCode).toBe(204);
+    });
+
+    it('a normal JWT session is unaffected — POST returns 201', async () => {
+      // No API token at all; the requireScope middleware sees no
+      // apiTokenScopes on the request and lets it through.
+      const { jwtToken, teamId, projectId } = await setup(['tasks:read']);
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/teams/${teamId}/projects/${projectId}/tasks`,
+        headers: { authorization: `Bearer ${jwtToken}` },
+        payload: { title: 'session-can-write' },
+      });
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('a comments:write-only token cannot DELETE a task (403)', async () => {
+      const { apiRaw, teamId, projectId, taskId } = await setup(['comments:write']);
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/api/teams/${teamId}/projects/${projectId}/tasks/${taskId}`,
+        headers: { authorization: `Bearer ${apiRaw}` },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('rejects scope strings outside the vocabulary at create time (400)', async () => {
+      const { token } = await register('admin@example.com');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/settings/api-tokens',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: 'bad', scopes: ['typo:write'] },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('a `*`-scoped API token cannot mint another API token (defense-in-depth, 403)', async () => {
+      const { apiRaw } = await setup(['*']);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/settings/api-tokens',
+        headers: { authorization: `Bearer ${apiRaw}` },
+        payload: { name: 'should-not-mint', scopes: ['*'] },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.message).toContain('not callable with an API token');
+    });
+
+    it('a `*`-scoped API token cannot disable 2FA on the owning user (403)', async () => {
+      const { apiRaw } = await setup(['*']);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/2fa/disable',
+        headers: { authorization: `Bearer ${apiRaw}` },
+        payload: { code: '000000' },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+  });
 });
 
 describe('Webhooks', () => {

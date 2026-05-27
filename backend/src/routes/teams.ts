@@ -5,6 +5,7 @@ import { TeamsService } from '../services/teamsService.js';
 import { TeamsController } from '../controllers/teamsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   addMemberBody,
   createTeamBody,
@@ -25,6 +26,7 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireAuth);
 
   r.post('/', {
+    preHandler: requireScope('admin'),
     schema: {
       tags: ['teams'],
       summary: 'Create a new team — caller becomes its MANAGER',
@@ -36,6 +38,7 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.get('/', {
+    preHandler: requireScope('projects:read'),
     schema: {
       tags: ['teams'],
       summary: 'List teams the caller belongs to',
@@ -46,6 +49,7 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.get('/:teamId', {
+    preHandler: requireScope('projects:read'),
     schema: {
       tags: ['teams'],
       summary: 'Get team detail with member list (caller must be a member)',
@@ -57,7 +61,7 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:teamId', {
-    preHandler: requireTeamRole('MANAGER'),
+    preHandler: [requireTeamRole('MANAGER'), requireScope('admin')],
     schema: {
       tags: ['teams'],
       summary: 'Update team name/slug (MANAGER only)',
@@ -73,7 +77,7 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   // requireTeamRole runs first (any member) so the membership is stashed on
   // the request; requirePermission then gates the specific capability.
   r.post('/:teamId/members', {
-    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.invite_member')],
+    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.invite_member'), requireScope('admin')],
     schema: {
       tags: ['teams'],
       summary: 'Add an existing user as a team member (requires team.invite_member)',
@@ -86,7 +90,7 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:teamId/members/:userId', {
-    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.change_role')],
+    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.change_role'), requireScope('admin')],
     schema: {
       tags: ['teams'],
       summary: 'Change a member role (requires team.change_role)',
@@ -99,7 +103,7 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:teamId/members/:userId', {
-    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.remove_member')],
+    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.remove_member'), requireScope('admin')],
     schema: {
       tags: ['teams'],
       summary:

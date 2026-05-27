@@ -256,7 +256,10 @@ describe('TOTP 2FA', () => {
         method: 'POST',
         url: '/api/settings/api-tokens',
         headers: { authorization: `Bearer ${pending}` },
-        payload: { name: 'should-not-work', scopes: ['read'] },
+        // v1.30.3 (S-2): the create body now restricts scopes to the
+        // vocabulary in lib/scopes.ts. Use a valid string so this test
+        // still exercises the auth gate, not the body validator.
+        payload: { name: 'should-not-work', scopes: ['tasks:read'] },
       });
       expect(res.statusCode).toBe(401);
     });

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { InstanceSettingsService } from '../services/instanceSettingsService.js';
 import { SettingsController } from '../controllers/settingsController.js';
 import { requireAuth, requireGlobalAdmin } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   instanceSettingKeyParams,
   instanceSettingResponse,
@@ -22,6 +23,8 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireGlobalAdmin);
+  // v1.30.3 (S-2): admin scope required on API tokens.
+  r.addHook('preHandler', requireScope('admin'));
 
   r.get('/instance', {
     schema: {

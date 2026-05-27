@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { RolesService, type RoleView } from '../services/rolesService.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   createRoleBody,
   rolesListResponse,
@@ -42,6 +43,7 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
   // List: any team member can see the role catalogue (used by the member
   // -role assignment UI). Manage-roles permission only kicks in on writes.
   r.get('/', {
+    preHandler: requireScope('projects:read'),
     schema: {
       tags: ['roles'],
       summary: 'List roles in this team',
@@ -56,6 +58,7 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.get('/:roleId', {
+    preHandler: requireScope('projects:read'),
     schema: {
       tags: ['roles'],
       summary: 'Get a role + its permissions',
@@ -70,7 +73,7 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/', {
-    preHandler: [requirePermission('team.manage_roles')],
+    preHandler: [requirePermission('team.manage_roles'), requireScope('admin')],
     schema: {
       tags: ['roles'],
       summary: 'Create a custom role',
@@ -89,7 +92,7 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:roleId', {
-    preHandler: [requirePermission('team.manage_roles')],
+    preHandler: [requirePermission('team.manage_roles'), requireScope('admin')],
     schema: {
       tags: ['roles'],
       summary: 'Update name/description on a role',
@@ -108,7 +111,7 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.put('/:roleId/permissions', {
-    preHandler: [requirePermission('team.manage_roles')],
+    preHandler: [requirePermission('team.manage_roles'), requireScope('admin')],
     schema: {
       tags: ['roles'],
       summary: 'Replace the permission set on a role (idempotent)',
@@ -131,7 +134,7 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:roleId', {
-    preHandler: [requirePermission('team.manage_roles')],
+    preHandler: [requirePermission('team.manage_roles'), requireScope('admin')],
     schema: {
       tags: ['roles'],
       summary:

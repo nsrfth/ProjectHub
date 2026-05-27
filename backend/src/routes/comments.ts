@@ -5,6 +5,7 @@ import { CommentsService } from '../services/commentsService.js';
 import { TasksService } from '../services/tasksService.js';
 import { CommentsController } from '../controllers/commentsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   commentResponse,
   createCommentBody,
@@ -24,6 +25,7 @@ export async function commentsRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
 
   r.post('/', {
+    preHandler: requireScope('comments:write'),
     schema: {
       tags: ['comments'],
       summary: 'Add a comment to a task',
@@ -36,6 +38,7 @@ export async function commentsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.get('/', {
+    preHandler: requireScope('comments:read'),
     schema: {
       tags: ['comments'],
       summary: 'List comments on a task (oldest first)',
@@ -47,6 +50,7 @@ export async function commentsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:commentId', {
+    preHandler: requireScope('comments:write'),
     schema: {
       tags: ['comments'],
       summary: 'Edit a comment (author only)',
@@ -64,6 +68,7 @@ export async function commentsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:commentId', {
+    preHandler: requireScope('comments:write'),
     schema: {
       tags: ['comments'],
       summary: 'Delete a comment (author OR team MANAGER)',

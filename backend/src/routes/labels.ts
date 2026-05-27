@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { LabelsService } from '../services/labelsService.js';
 import { LabelsController } from '../controllers/labelsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireScope } from '../middleware/requireScope.js';
 import { createLabelBody, labelResponse, updateLabelBody } from '../schemas/labels.js';
 
 // Team-scoped label CRUD. Attach/detach against a specific task live on a
@@ -18,6 +19,7 @@ export async function labelsRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
 
   r.get('/', {
+    preHandler: requireScope('projects:read'),
     schema: {
       tags: ['labels'],
       summary: 'List labels for this team',
@@ -29,6 +31,7 @@ export async function labelsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/', {
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['labels'],
       summary: 'Create a label (name must be unique within the team)',
@@ -41,6 +44,7 @@ export async function labelsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:labelId', {
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['labels'],
       summary: 'Update a label name/color',
@@ -53,6 +57,7 @@ export async function labelsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:labelId', {
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['labels'],
       summary: 'Delete a label (cascade-detaches it from every task)',
@@ -74,6 +79,7 @@ export async function taskLabelsRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
 
   r.post('/', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['labels'],
       summary: 'Attach a label to this task (idempotent)',
@@ -86,6 +92,7 @@ export async function taskLabelsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:labelId', {
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['labels'],
       summary: 'Detach a label from this task (no-op if not attached)',

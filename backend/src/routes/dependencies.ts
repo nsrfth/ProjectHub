@@ -6,6 +6,7 @@ import { TasksService } from '../services/tasksService.js';
 import { DependenciesController } from '../controllers/dependenciesController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   createDependencyBody,
   dependencyIdParams,
@@ -28,6 +29,7 @@ export async function dependenciesRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
 
   r.get('/', {
+    preHandler: requireScope('tasks:read'),
     schema: {
       tags: ['dependencies'],
       summary: 'List dependency edges incident to this task (both directions)',
@@ -39,7 +41,7 @@ export async function dependenciesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/', {
-    preHandler: requirePermission('task.manage_dependencies'),
+    preHandler: [requirePermission('task.manage_dependencies'), requireScope('tasks:write')],
     schema: {
       tags: ['dependencies'],
       summary:
@@ -55,7 +57,7 @@ export async function dependenciesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:dependencyId', {
-    preHandler: requirePermission('task.manage_dependencies'),
+    preHandler: [requirePermission('task.manage_dependencies'), requireScope('tasks:write')],
     schema: {
       tags: ['dependencies'],
       summary: 'Remove a dependency edge by id',

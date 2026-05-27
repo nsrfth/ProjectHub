@@ -5,6 +5,7 @@ import { WebhookService } from '../services/webhookService.js';
 import { WebhooksController } from '../controllers/webhooksController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
+import { requireScope } from '../middleware/requireScope.js';
 import {
   webhookCreateBody,
   webhookCreatedResponse,
@@ -31,6 +32,11 @@ export async function webhooksRoutes(app: FastifyInstance): Promise<void> {
   // so the membership is stashed on the request for the permission lookup.
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requirePermission('webhooks.manage'));
+  // v1.30.3 (S-2): API tokens must carry the webhooks:manage scope. The
+  // permission system gates the human user; the scope gate restricts a
+  // narrow-scope API token from touching this surface even when the
+  // owning user has the permission.
+  r.addHook('preHandler', requireScope('webhooks:manage'));
 
   r.get('/', {
     schema: {
