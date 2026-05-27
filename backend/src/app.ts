@@ -30,6 +30,8 @@ import { calendarRoutes } from './routes/calendar.js';
 import { trashRoutes } from './routes/trash.js';
 import { rolesRoutes } from './routes/roles.js';
 import { backupsRoutes } from './routes/backups.js';
+import { maintenanceGate } from './middleware/maintenance.js';
+import { decorateLifecycle } from './lib/lifecycle.js';
 import { prisma } from './data/prisma.js';
 
 // App factory — separate from server.ts so tests can spin up the app without
@@ -66,7 +68,29 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
 
   app.get('/health', { schema: { tags: ['system'] } }, async () => ({ status: 'ok' }));
 
+  // v1.30.4 (S-5): server-wide maintenance gate. Installed as an
+  // onRequest hook — the earliest in Fastify's lifecycle — so it 503s
+  // before content-type parsing or per-route preHandlers run. The hook
+  // exempts /health and /api/health. The backup-restore flow flips the
+  // InstanceSetting before pg_restore runs; the fresh boot after
+  // restart clears it.
+  app.addHook('onRequest', maintenanceGate);
+
+  // v1.30.4 (S-5): decorate the app with a default no-op lifecycle so
+  // tests / scripts that build the app without spinning up schedulers
+  // don't see a missing-decorator error from the restore route.
+  // server.ts overrides this with real scheduler stoppers + process.exit.
+  decorateLifecycle(app, {
+    stopBackground: () => undefined,
+    processExit: (_code) => undefined,
+  });
+
   await app.register(async (api) => {
+    // Public health endpoint exposed under the /api prefix so Caddy can
+    // proxy it from the public hostname. Same shape as /health. Exempt
+    // from the v1.30.4 maintenance gate so admins can curl it during a
+    // restore window to know when the new backend is up.
+    api.get('/health', { schema: { tags: ['system'] } }, async () => ({ status: 'ok' }));
     await api.register(authRoutes, { prefix: '/auth', env });
     await api.register(teamsRoutes, { prefix: '/teams' });
     // Projects nest under teams so requireTeamRole picks up :teamId from the URL.

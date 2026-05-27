@@ -12,7 +12,9 @@ import {
   runBackupResponse,
 } from '../schemas/backups.js';
 import type { Env } from '../config/env.js';
-import { Errors } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
+import { clearMaintenance, setMaintenance } from '../lib/maintenance.js';
+import { _resetMaintenanceCache } from '../middleware/maintenance.js';
 
 // v1.27: backup admin endpoints. Admin-only, like the rest of /api/admin/*.
 // Mounted at /api/admin/backups in app.ts.
@@ -120,8 +122,54 @@ export async function backupsRoutes(
       req: FastifyRequest<{ Params: z.infer<typeof backupFilenameParam> }>,
       reply: FastifyReply,
     ) => {
-      const result = await svc.restoreBackup(req.params.filename);
-      return reply.send(result);
+      if (!req.user) throw Errors.unauthorized();
+      // v1.30.4 (S-5): orchestrated restore.
+      //
+      // Order:
+      //   1. Set maintenance mode in the DB. The middleware caches for
+      //      1s so a wave of in-flight requests doesn't hammer the
+      //      pool while we're about to disconnect it; bust the cache
+      //      manually so the very next request sees 503.
+      //   2. Stop in-process schedulers. A TASK_DUE / RECURRENCE /
+      //      BACKUP tick mid-restore would race the table drops.
+      //   3. Run pg_restore (the service now uses --exit-on-error +
+      //      strict exit-code handling; S-12).
+      //   4a. On success: respond 200 with duration, then schedule a
+      //       process.exit shortly after the response flushes. Compose
+      //       restarts the container; the fresh boot's server.ts
+      //       clears the maintenance setting.
+      //   4b. On failure: clear maintenance + leave the schedulers off
+      //       (caller can restart the container to recover them, or
+      //       trigger another restore). Surface the pg_restore stderr
+      //       verbatim in the 400 response so the admin can debug.
+      const filename = req.params.filename;
+      await setMaintenance(`restoring backup ${filename}`, req.user.sub);
+      _resetMaintenanceCache();
+      req.server.lifecycle.stopBackground();
+      try {
+        const result = await svc.restoreBackup(filename);
+        // Respond first so the admin sees the success, THEN exit. Using
+        // setImmediate lets the response flush before the listener
+        // closes. A 250ms safety margin makes the test still pass with
+        // a no-op processExit (which means the process keeps running
+        // and the maint-mode flag persists across tests — the test
+        // file resets it in beforeEach).
+        reply.send(result);
+        setTimeout(() => req.server.lifecycle.processExit(0), 250);
+        return reply;
+      } catch (err) {
+        // Failure path — restore did NOT complete. Re-enable the app
+        // for the admin who's about to investigate.
+        await clearMaintenance();
+        _resetMaintenanceCache();
+        // Preserve the original status when the service threw a typed
+        // AppError (e.g. notFound when the file is missing). Anything
+        // else — pg_restore stderr captured by the service — becomes a
+        // 400 so the admin sees the failure body verbatim.
+        if (err instanceof AppError) throw err;
+        const message = err instanceof Error ? err.message : 'pg_restore failed';
+        throw Errors.badRequest(message);
+      }
     },
   });
 

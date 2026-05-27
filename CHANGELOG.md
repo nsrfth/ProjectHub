@@ -4,6 +4,123 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.4] — 2026-05-27
+
+**Security patch — S-5 (restore ran hot against a live DB) + S-12
+(pg_restore exit 1 was treated as success).**
+
+### Summary
+
+The v1.28 restore flow shelled out to `pg_restore --clean --if-exists`
+while the backend was still serving traffic AND the schedulers
+(`TASK_DUE`, `RECURRENCE`, `WEBHOOK`, `BACKUP`) were still ticking.
+Two failure modes:
+
+- **S-5:** an in-flight HTTP request or a scheduler tick could acquire
+  a row lock on a table pg_restore was about to drop. pg_restore would
+  then either deadlock or, with `--exit-on-error` not set, log the
+  failure and press on with a partial restore.
+- **S-12:** the success/failure detection was a regex over stderr —
+  any pg_restore exit code 1 with no `/ERROR:/i` substring was reported
+  as success, even when whole tables had silently failed to load. The
+  admin's "Restore complete" banner could appear over a half-restored
+  database.
+
+### Fix
+
+- **New `lib/maintenance.ts`** — read/set/clear an `InstanceSetting`
+  keyed `system.maintenanceMode`. Persisted because the restore flow
+  terminates the backend process and the fresh boot needs to know it
+  was mid-recovery.
+- **New `middleware/maintenance.ts`** — Fastify `onRequest` hook (the
+  earliest in the lifecycle, before content-type parsing / validation
+  / preHandler). Returns **503 with `Retry-After: 30`** for every
+  route except `/health` and `/api/health`. Reads the InstanceSetting,
+  caches the answer for 1s so a flood of requests doesn't hammer the
+  pool while it's about to be torn down. Exports `_resetMaintenanceCache`
+  for tests + the restore flow itself.
+- **`app.ts`** registers the hook AND adds a new `/api/health` endpoint
+  (the existing `/health` was exempt-but-internal — docker healthcheck
+  only). Both endpoints are now in the exempt set.
+- **`lib/lifecycle.ts`** — a tiny `AppLifecycle` registry decorated
+  onto Fastify with `app.decorate('lifecycle', …)`. Holds
+  `stopBackground()` (stops all in-process schedulers) and
+  `processExit(code)` (calls `process.exit` in prod; no-op in tests).
+  `buildApp` installs safe no-op defaults; `server.ts` swaps them for
+  the real implementations after schedulers boot.
+- **`server.ts`** clears the maintenance flag AFTER `app.listen()`
+  succeeds. Placing the clear post-listen means a backend that crashed
+  mid-boot doesn't accidentally lift the gate before it can serve real
+  traffic.
+- **Restore route handler** (`routes/backups.ts`) now orchestrates:
+  1. `setMaintenance('restoring backup …', actorId)` + reset cache so
+     the very next request 503s.
+  2. `app.lifecycle.stopBackground()` — no scheduler ticks during
+     pg_restore.
+  3. `svc.restoreBackup(filename)` (S-12 hardened — see below).
+  4a. On success: respond 200 first, then `setTimeout(processExit, 250)`
+      so the body flushes before the listener closes. Compose restart
+      brings a fresh container; the new boot clears the flag.
+  4b. On failure: clear the maintenance flag, re-throw. `AppError`
+      instances pass through unchanged (so a `notFound` from a missing
+      dump file still returns 404, not 400).
+- **`backupsService.restoreBackup`** (S-12):
+  - Adds `--exit-on-error` so pg_restore stops on the first SQL error
+    rather than logging and continuing with a partial restore.
+  - Replaces the regex-over-stderr heuristic with strict exit-code
+    handling: ANY non-zero exit is failure. The full stderr is
+    captured and bubbled up in the thrown error (`Errors.badRequest`)
+    so the admin sees pg_restore's complaint verbatim in the 400
+    response body — no more silent partial restores.
+
+### Regression tests
+
+Three new blocks in `tests/integration/backups.test.ts`:
+
+- **S-5 maintenance gate**:
+  - With the flag enabled, `GET /api/health` AND `GET /health` still
+    return 200.
+  - With the flag enabled, `GET /api/admin/backups` returns 503 with
+    `Retry-After: 30` and a structured body containing the `reason` +
+    `since` timestamp.
+  - With the flag absent, the normal API works (verifies the cache
+    isn't pinned-on across tests).
+- **S-5 restore route admin gating**: a non-admin caller still gets
+  403 even with a real backup file present (the admin gate runs before
+  the restore orchestration).
+- **S-12 pg_restore failure surfaces stderr**: a deliberately corrupt
+  dump produces a 400 with `pg_restore exited` / `failed to start` in
+  the message (matches whether pg_restore is on PATH in the test
+  container or not). After the failure, the `system.maintenanceMode`
+  row is gone (the failure path cleared it).
+
+### Verified
+
+- Backend `tsc` ✅.
+- `backups.test.ts` 13/13 (8 existing + 5 new).
+- Full integration suite: **287 passed, 5 skipped** (LDAP — pre-existing,
+  needs the `ldap` profile). +6 from v1.30.3.
+- BACKUP.md + UPGRADE.md describe the new restore window.
+
+### Phase boundary
+
+- After a FAILED restore, the schedulers stay stopped (the failure
+  path doesn't restart them — safer to assume the DB is in unknown
+  shape). Operator recovery: `docker compose restart backend`. A more
+  generous design would restart the schedulers automatically when the
+  restore fails before any irreversible damage; deferred until we have
+  a clear signal for "pg_restore failed before any object was dropped".
+- pg_restore's `--single-transaction` would let a failed restore roll
+  back as a unit. We didn't add it because dumps containing
+  `CREATE EXTENSION` can fail under single-transaction mode (extension
+  creation isn't always transactional). Revisit if dumps drift toward
+  extension-free schemas.
+- We DON'T abort in-flight requests when maintenance flips on. New
+  requests 503; in-flight requests get one last query each (until the
+  backend `process.exit`s after pg_restore completes). For a small
+  instance this is invisible. For larger deployments a forceful
+  `app.close()` before pg_restore would be cleaner — tracked.
+
 ## [1.30.3] — 2026-05-27
 
 **Security patch — S-2: API-token scopes never enforced.**

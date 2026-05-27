@@ -43,7 +43,44 @@ docker exec taskhub-postgres-1 pg_dumpall -U taskhub > "backup\taskhub_$stamp.sq
 
 ### Restore
 
-To a fresh database (e.g. after rebuilding the volume):
+#### Via the admin UI (v1.30.4+, recommended)
+
+Settings → Backups → click "Restore" on a stored dump (or upload one
+first). The restore flow is **orchestrated** so the database isn't being
+written to while pg_restore is running:
+
+1. The backend writes a `system.maintenanceMode` InstanceSetting flag.
+2. The early Fastify hook starts returning **503 (Retry-After: 30)** to
+   every route except `GET /api/health` and `GET /health` (the docker
+   healthcheck endpoint).
+3. The in-process schedulers (TASK_DUE, WEBHOOK, RECURRENCE, BACKUP) are
+   stopped so no tick races the table drops.
+4. `pg_restore --clean --if-exists --no-owner --no-acl --exit-on-error`
+   runs against the live database. `--exit-on-error` means the first
+   SQL error aborts; the backend treats ANY non-zero exit code as
+   failure (v1.30.4 / S-12 fix). Failure: the maintenance flag is
+   cleared, pg_restore's stderr is returned to the admin in the 400
+   response body, and the app keeps serving (schedulers are off — see
+   below).
+5. On success the backend responds 200, then schedules `process.exit(0)`.
+   `docker compose`'s `restart: unless-stopped` brings up a fresh
+   container; the new boot clears the maintenance flag and reopens.
+
+The user-facing maintenance window is typically 5–15 seconds for a
+small instance — most of it is the container restart, not pg_restore
+itself.
+
+**After a failed restore:** the schedulers remain stopped (they were
+stopped in step 3 and the failure path doesn't restart them — the
+safest assumption is the DB is now in an unknown state). Restart the
+backend container with `docker compose restart backend` to bring them
+back, or trigger another restore once you've identified the dump
+problem.
+
+#### Manual fallback (any version, or recovering a hard-broken instance)
+
+If the admin UI is unreachable (or you're restoring into a freshly
+provisioned host), drop to the CLI:
 
 ```powershell
 # 1. Recreate the empty DB if needed.

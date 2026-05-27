@@ -5,6 +5,7 @@ import { createWebhookDispatcher } from './scheduler/webhookDispatcher.js';
 import { createRecurrenceScheduler } from './scheduler/recurrenceScheduler.js';
 import { createBackupScheduler } from './scheduler/backupScheduler.js';
 import { BackupsService } from './services/backupsService.js';
+import { clearMaintenance } from './lib/maintenance.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -52,6 +53,18 @@ async function main(): Promise<void> {
     : null;
   backupScheduler?.start();
 
+  // v1.30.4 (S-5): plug real scheduler-stoppers + process.exit into the
+  // app lifecycle so the backup-restore route can drain cleanly. Defaults
+  // installed inside buildApp are no-ops — fine for tests, replaced here
+  // for the real boot.
+  app.lifecycle.stopBackground = () => {
+    dueScheduler?.stop();
+    webhookDispatcher?.stop();
+    recurrenceScheduler?.stop();
+    backupScheduler?.stop();
+  };
+  app.lifecycle.processExit = (code) => process.exit(code);
+
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'shutting down');
     try {
@@ -71,6 +84,13 @@ async function main(): Promise<void> {
 
   try {
     await app.listen({ host: '0.0.0.0', port: env.PORT });
+    // v1.30.4 (S-5): once the listener is up, clear any persisted
+    // maintenance flag. This is what makes the restore flow's
+    // process.exit safe — the fresh boot lifts the 503 gate. We do it
+    // POST-listen so a backend that crashed mid-boot doesn't
+    // accidentally lift the gate before it can serve real traffic.
+    await clearMaintenance();
+    app.log.info('maintenance mode cleared (post-boot)');
   } catch (err) {
     app.log.error({ err }, 'failed to start');
     process.exit(1);

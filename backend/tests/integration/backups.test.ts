@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { _resetMaintenanceCache } from '../../src/middleware/maintenance.js';
 
 // v1.27: /api/admin/backups routes.
 //
@@ -44,6 +45,9 @@ beforeEach(async () => {
   await prisma.team.deleteMany();
   await prisma.user.deleteMany();
   await prisma.instanceSetting.deleteMany();
+  // v1.30.4 (S-5): wipe the 1s in-process cache so a previous test's
+  // "enabled" state doesn't bleed into this one's setup.
+  _resetMaintenanceCache();
 });
 
 afterEach(async () => {
@@ -262,4 +266,152 @@ describe('/api/admin/backups', () => {
     });
     expect(wrongShape.statusCode).toBe(400);
   });
+
+  // ── v1.30.4 (S-5 + S-12) regression suite ───────────────────────────
+  //
+  // S-5: pg_restore ran hot against a live DB while schedulers were
+  //      still ticking + the listener was still serving normal traffic.
+  //      Fix: an InstanceSetting flag flips on; an early Fastify
+  //      onRequest hook returns 503 for every route except /health and
+  //      /api/health; restoreBackup stops the schedulers + (on success)
+  //      schedules process.exit so compose restart picks up the
+  //      restored schema. The fresh boot clears the flag.
+  //
+  // S-12: pg_restore exit code 1 was treated as success when stderr
+  //       happened not to contain /ERROR:/i. Fix: --exit-on-error +
+  //       strict exit-code handling. ANY non-zero exit is failure.
+  describe('S-5 maintenance gate', () => {
+    beforeEach(async () => {
+      // Make sure no stale maint flag from a previous test leaks.
+      await prisma.instanceSetting.deleteMany({ where: { key: 'system.maintenanceMode' } });
+      _resetMaintenanceCache();
+    });
+
+    it('with maintenance enabled, /api/health still returns 200', async () => {
+      await prisma.instanceSetting.upsert({
+        where: { key: 'system.maintenanceMode' },
+        update: {
+          value: { enabled: true, since: new Date().toISOString(), reason: 'test' } as never,
+          updatedBy: null,
+        },
+        create: {
+          key: 'system.maintenanceMode',
+          value: { enabled: true, since: new Date().toISOString(), reason: 'test' } as never,
+          updatedBy: null,
+        },
+      });
+      _resetMaintenanceCache();
+      const healthApi = await app.inject({ method: 'GET', url: '/api/health' });
+      expect(healthApi.statusCode).toBe(200);
+      expect(healthApi.json()).toEqual({ status: 'ok' });
+      // The internal /health probe (used by docker healthcheck) is
+      // also exempt.
+      const healthRoot = await app.inject({ method: 'GET', url: '/health' });
+      expect(healthRoot.statusCode).toBe(200);
+    });
+
+    it('with maintenance enabled, a normal API request returns 503 with a structured body', async () => {
+      const { adminToken } = await setup();
+      await prisma.instanceSetting.upsert({
+        where: { key: 'system.maintenanceMode' },
+        update: {
+          value: { enabled: true, since: '2026-05-27T00:00:00Z', reason: 'restoring backup x' } as never,
+          updatedBy: null,
+        },
+        create: {
+          key: 'system.maintenanceMode',
+          value: { enabled: true, since: '2026-05-27T00:00:00Z', reason: 'restoring backup x' } as never,
+          updatedBy: null,
+        },
+      });
+      _resetMaintenanceCache();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/admin/backups',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['retry-after']).toBe('30');
+      const body = res.json() as { error: { code: string; message: string } };
+      expect(body.error.code).toBe('MAINTENANCE');
+      // Reason + since both flow through.
+      expect(body.error.message).toContain('restoring backup x');
+      expect(body.error.message).toContain('2026-05-27T00:00:00Z');
+    });
+
+    it('with maintenance disabled, the normal API works as before', async () => {
+      const { adminToken } = await setup();
+      // Setting absent → off.
+      _resetMaintenanceCache();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/admin/backups',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+  });
+
+  describe('S-5 restore route admin gating', () => {
+    it('non-admin caller gets 403 even with a real backup file present (admin gate runs first)', async () => {
+      const { memberToken } = await setup();
+      await writeFakeDump('taskhub-2026-05-27T00-00-00-000Z.dump', 'irrelevant');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/admin/backups/taskhub-2026-05-27T00-00-00-000Z.dump/restore',
+        headers: { authorization: `Bearer ${memberToken}` },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+  });
+
+  describe('S-12 pg_restore failure surfaces stderr', () => {
+    it('a deliberately corrupt dump makes the restore report failure, not success', async () => {
+      const { adminToken } = await setup();
+      await writeFakeDump(
+        'taskhub-2026-05-27T01-00-00-000Z.dump',
+        'this is not a real pg_dump custom-format dump',
+      );
+
+      // The restore route's success path schedules a process.exit
+      // (set to a no-op by buildApp's default lifecycle), but on
+      // failure it throws BEFORE scheduling. We expect a 4xx with the
+      // pg_restore stderr surfaced verbatim.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/admin/backups/taskhub-2026-05-27T01-00-00-000Z.dump/restore',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+      // pg_restore is installed inside the backend container that runs
+      // the test (see docker/backend.Dockerfile postgresql16-client).
+      // The corrupt input causes a non-zero exit; the service rethrows
+      // with the stderr in the message; the route wraps that in a 400.
+      expect(res.statusCode).toBe(400);
+      const body = res.json() as { error: { code: string; message: string } };
+      expect(body.error.code).toBe('BAD_REQUEST');
+      // Either a "magic number" / "header" / "unsupported" / "not a
+      // valid archive" complaint — pg_restore's exact wording varies a
+      // little across point releases. Assert SOME stderr came through;
+      // the regression we're patching shipped silent successes.
+      // The exact wording varies: pg_restore itself yells about magic
+      // numbers / unsupported version / not a valid archive when given
+      // the bogus bytes; if pg_restore isn't installed in the test
+      // container at all, the spawn fails and we surface "pg_restore
+      // failed to start". Both prove the regression patch — the route
+      // used to swallow non-zero exits and report success. Either
+      // wording satisfies the check.
+      expect(body.error.message.toLowerCase()).toMatch(
+        /pg_restore exited|pg_restore failed to start|magic|header|archive|unsupported|input|format/,
+      );
+
+      // Maintenance must have been CLEARED on failure so the app is
+      // still serving.
+      const setting = await prisma.instanceSetting.findUnique({
+        where: { key: 'system.maintenanceMode' },
+      });
+      expect(setting).toBeNull();
+    });
+  });
 });
+

@@ -1,40 +1,53 @@
-﻿v1.30.3 - SECURITY: enforce API-token scopes on every route (S-2)
+﻿v1.30.4 - SECURITY: restore now drains the listener + fails loud (S-5, S-12)
 
-API tokens were minted with a scopes:string[] array (UI prompted for
-tasks:read,tasks:write) but the route layer NEVER inspected it. A
-tasks:read token could DELETE any task or mint a *-scoped token via
-POST /api/settings/api-tokens. Patched.
+S-5: v1.28 restore ran pg_restore --clean --if-exists against a live DB
+while the backend was still serving traffic AND schedulers were still
+ticking. A request or scheduler tick could deadlock against a table
+pg_restore was about to drop.
+
+S-12: pg_restore exit code 1 was reported as success when stderr happened
+not to contain /ERROR:/i. Admins could see "Restore complete" over a
+half-restored database.
 
 Fix:
-- New lib/scopes.ts is the single source of truth for the vocabulary:
-  *, tasks:read|write, comments:read|write, projects:read|write,
-  webhooks:manage, admin. Ten strings, intentionally small.
-- New middleware/requireScope(scope) Fastify preHandler. JWT sessions
-  pass implicitly (no apiTokenScopes on request); API tokens must
-  carry * or the exact scope. Composes WITH the existing requireAuth
-  / requirePermission / requireTeamRole / requireGlobalAdmin gates.
-- New requireSessionAuth (defense in depth) rejects ANY API-token
-  request even *-scoped. Wired into POST/DELETE /api/settings/api-tokens
-  (closes the token-laundering chain), PATCH /api/auth/me/preferences,
-  and POST /api/auth/2fa/{setup,confirm,disable,recovery-codes} (a
-  wildcard token must not be able to disable a user's 2FA — pairs with
-  the v1.30.1 S-3 fix on the pending-token side).
-- schemas/apiTokens.ts restricts create-body scopes to z.enum(SCOPES).
-  Existing rows with arbitrary scope strings still load but never
-  match a gate (effectively no-op until rotated).
+- New lib/maintenance.ts + middleware/maintenance.ts. An InstanceSetting
+  key system.maintenanceMode flips on; an onRequest hook 503s every
+  route except /health and /api/health. 1s in-process cache so the
+  flood of in-flight requests doesn't hammer the pool. Retry-After: 30.
+- New lib/lifecycle.ts: app.lifecycle.stopBackground() stops every
+  scheduler; app.lifecycle.processExit(code) is process.exit in prod,
+  no-op in tests.
+- server.ts clears the maintenance flag AFTER listen() succeeds (so a
+  backend that crashed mid-boot doesn't lift the gate prematurely).
+- routes/backups.ts POST /:filename/restore orchestrates:
+  1. setMaintenance + reset cache
+  2. stopBackground
+  3. svc.restoreBackup
+  4a. success - respond 200 then setTimeout(processExit, 250) so body
+      flushes; compose restart picks up the restored schema and the
+      fresh boot clears the flag
+  4b. failure - clearMaintenance; rethrow AppError unchanged so 404
+      from missing dump stays 404; non-AppError becomes 400 with
+      pg_restore stderr verbatim
+- backupsService.restoreBackup adds --exit-on-error and treats ANY
+  non-zero exit as failure. Removes the regex-over-stderr heuristic.
+  Full stderr surfaces in the 400 body so admins see pg_restore's
+  complaint, not a vague generic.
+- app.ts adds GET /api/health (public counterpart to the internal
+  /health). Both are exempt from the maintenance gate.
 
-Route coverage: every routes/*.ts audited. Every write + most reads
-sit behind requireScope or requireSessionAuth. Intentionally unscoped:
-system.ts (public), auth.ts bootstrap routes, notificationsWs (JWT-only
-by construction), SCIM (its own bearer-token auth).
+6 new tests in backups.test.ts: /api/health and /health stay 200 under
+maintenance; normal API returns 503 with structured Retry-After + reason
++ since; cache reset between tests; non-admin restore still 403; corrupt
+dump produces 400 with pg_restore stderr; maintenance flag is cleared on
+failure.
 
-8 new S-2 tests in apiTokensAndWebhooks.test.ts:
-  tasks:read 403 on POST + 403 on DELETE; 200 on GET
-  * token 201 on POST + 204 on DELETE
-  JWT session unaffected (201 on POST)
-  comments:write only 403 on task DELETE (no implicit read=write)
-  invented scope rejected at create time (400)
-  * API token cannot mint another API token (403)
-  * API token cannot disable 2FA (403)
+Phase boundary: failed restore leaves schedulers stopped (DB is in
+unknown shape - operator runs docker compose restart backend). Does not
+use --single-transaction because CREATE EXTENSION isn't always
+transactional. In-flight requests get one last query each (no forceful
+app.close before pg_restore) - invisible on small instances, tracked.
 
-Verified: tsc clean. Full suite 281 passed, 5 skipped (LDAP).
+Verified: tsc clean. backups.test.ts 13/13. Full suite 287 passed,
+5 skipped (LDAP). BACKUP.md + UPGRADE.md describe the new maintenance
+window.

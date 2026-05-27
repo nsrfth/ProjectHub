@@ -185,33 +185,55 @@ export class BackupsService {
     await prisma.$disconnect();
 
     const { connectionUrl, schema } = cleanPrismaUrl(this.databaseUrl);
-    const args = ['--clean', '--if-exists', '--no-owner', '--no-acl', '--dbname', connectionUrl];
+    // v1.30.4 (S-12): --exit-on-error makes pg_restore stop AND exit
+    // non-zero on the first SQL error rather than logging and pressing
+    // on with a partial restore. Combined with the strict exit-code
+    // handler below, it ensures we don't tell an admin "restore
+    // complete" while half the schema is missing.
+    const args = [
+      '--clean',
+      '--if-exists',
+      '--no-owner',
+      '--no-acl',
+      '--exit-on-error',
+      '--dbname',
+      connectionUrl,
+    ];
     // --schema scopes the restore to a single schema; matches what runBackup
     // does with --schema=public on a Prisma-style URL.
     if (schema) args.push('--schema', schema);
     args.push(fullPath);
 
     const startedAt = Date.now();
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn('pg_restore', args, { stdio: ['ignore', 'ignore', 'pipe'] });
-      let stderr = '';
-      child.stderr.on('data', (b) => {
-        stderr += b.toString();
-      });
-      child.on('error', (err) => {
-        reject(new Error(`pg_restore failed to start: ${err.message}`));
-      });
-      child.on('close', (code) => {
-        // pg_restore exits non-zero whenever ANY object failed to restore —
-        // including the harmless "extension already exists" / "schema public
-        // already exists" lines on a clean target. Treat exit 1 with no
-        // ERROR-level lines as success; surface anything else verbatim.
-        if (code === 0) return resolve();
-        const hasFatal = /\bERROR:/i.test(stderr) || /\bFATAL:/i.test(stderr);
-        if (code === 1 && !hasFatal) return resolve();
-        reject(new Error(`pg_restore exited ${code}: ${stderr.trim() || 'unknown error'}`));
-      });
-    });
+    const result = await new Promise<{ ok: true } | { ok: false; code: number | null; stderr: string }>(
+      (resolve) => {
+        const child = spawn('pg_restore', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+        let stderr = '';
+        child.stderr.on('data', (b) => {
+          stderr += b.toString();
+        });
+        child.on('error', (err) => {
+          resolve({ ok: false, code: null, stderr: `pg_restore failed to start: ${err.message}` });
+        });
+        child.on('close', (code) => {
+          // v1.30.4 (S-12): treat ANY non-zero exit as failure. Previously
+          // we tried to be clever and infer success from the absence of
+          // /ERROR:/i in stderr, which let exit code 1 ("non-fatal errors
+          // ignored") report as success even when whole tables had
+          // failed to restore. With --exit-on-error any failure aborts
+          // and exits non-zero, so the exit code IS the truth.
+          if (code === 0) return resolve({ ok: true });
+          resolve({ ok: false, code, stderr: stderr.trim() });
+        });
+      },
+    );
+
+    if (!result.ok) {
+      const msg = result.stderr.length > 0 ? result.stderr : 'unknown error';
+      throw Errors.badRequest(
+        `pg_restore exited ${result.code ?? 'with spawn error'}: ${msg}`,
+      );
+    }
 
     return { filename: safe, durationMs: Date.now() - startedAt };
   }

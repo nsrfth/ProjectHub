@@ -193,6 +193,29 @@ Pins to `origin/main`. If you want a specific tag, `git checkout vX.Y.Z`
 on the host first, then click Upgrade — the `git pull --ff-only` will be a
 no-op and only the compose rebuild runs.
 
+### Maintenance window during a backup restore (v1.30.4+)
+
+Note that the **backup-restore** flow (Settings → Backups → Restore) goes
+through the same kind of maintenance window the self-upgrade above
+relies on:
+
+- The backend writes a `system.maintenanceMode` InstanceSetting and the
+  early Fastify hook starts returning **503 Retry-After: 30** for every
+  route except `GET /api/health` and `GET /health`.
+- In-process schedulers (TASK_DUE, WEBHOOK, RECURRENCE, BACKUP) are
+  stopped so a tick doesn't race the table drops.
+- `pg_restore --exit-on-error` runs; ANY non-zero exit is failure (v1.30.4
+  / S-12). On failure the maintenance flag is cleared and pg_restore's
+  stderr is returned verbatim to the admin in the 400 response.
+- On success the backend responds 200 then schedules `process.exit(0)`.
+  Docker compose's `restart: unless-stopped` brings up a fresh
+  container; the new boot clears the maintenance flag.
+
+The SPA shows the 503 as a generic "TaskHub is temporarily unavailable
+(restoring backup)" banner during the window. Browser tabs that were
+mid-action will surface a friendly error rather than a half-applied
+write. Typical wall-clock cost: 5–15 seconds for a small instance.
+
 ### When it fails
 
 - The SPA polls for 5 minutes. If `/api/health` doesn't come back, you'll
