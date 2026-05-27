@@ -1,26 +1,33 @@
-﻿v1.30.1 - SECURITY: reject pending-2FA tokens in requireAuth (S-3)
+﻿v1.30.2 - SECURITY: updater refuses to start without a valid token (S-1)
 
-A token issued after a correct password but before the second factor was
-accepted by requireAuth as a regular access token. An attacker with a
-phished password against a 2FA-enabled account could skip the second
-factor AND mint a long-lived API token via /settings/api-tokens,
-converting the 5-minute pending window into a persistent takeover.
+The privileged updater sidecar (mounts the host docker socket + repo
+checkout - owning it = owning the host) used:
+  if (TOKEN && header !== TOKEN) return 401;
+When UPDATER_TOKEN was empty the conditional short-circuited to allow,
+so ANY caller on the compose network could trigger git pull + docker
+compose up -d --build. Startup only logged a console.warn and continued.
+Header compare also used non-constant-time !==.
 
-Fix: verifyAccess now rejects any token carrying a kind claim. Real
-access tokens have no kind; pending tokens set kind:'2fa-pending'.
-verifyPending is unchanged (the /auth/2fa/login flow still consumes
-pending tokens correctly).
+Fix:
+- updater/server.js: makeAuthCheck() throws at construction when token
+  is unset, non-string, or <24 chars. CLI entrypoint catches and
+  process.exit(1) with a FATAL log line - no silent warn-and-proceed.
+- Auth check now uses crypto.timingSafeEqual unconditionally. Length
+  mismatches return false WITHOUT throwing (raw timingSafeEqual raises
+  on unequal-length buffers); a dummy compare keeps the timing of the
+  length-mismatch path comparable to the equal-length-mismatch path.
+- Extracted makeAuthCheck + createServer as named exports so the auth
+  logic is unit-testable.
+- backend/src/config/env.ts: superRefine enforces UPDATER_TOKEN >=24
+  chars when UPDATER_URL is set. loadEnv() now throws instead of
+  letting a half-configured upgrade pipeline ship.
 
-Kept the shared access secret + added the verify-time guard rather than
-introducing a dedicated JWT_PENDING_SECRET — the guard closes the
-vulnerability without forcing operators to rotate .env. Cryptographic
-secret separation tracked as a v1.32+ follow-up under phase boundary.
+Scope: does NOT touch upgrade logic itself - concurrent-upgrade mutex
+and git-ref pinning (S-10) are deliberately deferred.
 
-Three regression tests under describe('S-3 regression: ...') in
-twoFactor.test.ts: pending token -> 401 on /api/auth/me; pending token
--> 401 on /api/settings/api-tokens (the takeover chain); full happy
-path still works.
+12 new tests: 7 updaterAuth.test.ts (empty/short/non-string/correct/
+wrong-same-length/wrong-different-length-no-throw/missing-header), 5
+envUpdaterValidation.test.ts (URL unset passes; URL set + missing/short
+throws; 24/64 chars pass) using vi.resetModules to bust the env cache.
 
-Verified: tsc clean. twoFactor.test.ts 11/11. Full suite 260 passed,
-5 skipped (LDAP), 1 unrelated pre-existing flake (backups.test.ts
-BACKUP_DIR env-cache order dependency, passes in isolation).
+Verified: tsc clean. Unit 28/28. Full suite 273 passed, 5 skipped (LDAP).

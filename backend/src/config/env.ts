@@ -145,7 +145,25 @@ const envSchema = z.object({
   // because dumps grow unpredictably + the upload endpoint is admin-only.
   // Overrides the global UPLOAD_MAX_BYTES which is sized for task attachments.
   BACKUP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
-});
+})
+  // v1.30.2 (S-1): when the in-app self-upgrade plumbing is wired
+  // (UPDATER_URL set), UPDATER_TOKEN MUST be a >=24-char string. Without
+  // the token, the privileged updater sidecar refuses to start anyway, so
+  // a non-empty UPDATER_URL with a missing/short token is misconfiguration
+  // worth crashing the backend over rather than silently treating every
+  // /upgrade call as 503.
+  .superRefine((env, ctx) => {
+    if (!env.UPDATER_URL) return;
+    if (!env.UPDATER_TOKEN || env.UPDATER_TOKEN.length < 24) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['UPDATER_TOKEN'],
+        message:
+          'UPDATER_TOKEN must be set and at least 24 characters when UPDATER_URL is configured. ' +
+          'Generate one with: openssl rand -base64 48',
+      });
+    }
+  });
 
 export type Env = z.infer<typeof envSchema> & { corsOrigins: string[] };
 

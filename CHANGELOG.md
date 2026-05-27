@@ -4,6 +4,88 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.2] — 2026-05-27
+
+**Security patch — S-1: updater sidecar accepted anonymous /upgrade
+requests when `UPDATER_TOKEN` was empty.**
+
+### Summary
+
+The privileged updater sidecar (mounts the host docker socket + the repo
+checkout → owning it = owning the host) used the auth check:
+
+```js
+if (TOKEN && req.headers['x-updater-token'] !== TOKEN) { send(401, …); return; }
+```
+
+When `UPDATER_TOKEN` was unset, `TOKEN === ''` and the conditional
+short-circuited to the allow branch — **any caller on the compose
+network could trigger `git pull + docker compose up -d --build`**. Startup
+logged a `console.warn` and continued anyway. The header comparison itself
+also used non-constant-time `!==`, leaking timing across requests.
+
+### Fix
+
+- `updater/server.js`:
+  - At startup, refuse to start the listener when `UPDATER_TOKEN` is
+    unset, non-string, or shorter than 24 characters. Log a clear
+    `[updater] FATAL:` line and `process.exit(1)`. No silent
+    warn-and-proceed.
+  - Replace the `if (TOKEN && header !== TOKEN)` check with an
+    unconditional `crypto.timingSafeEqual` comparison via a captured
+    expected-token buffer. Length-mismatch returns false WITHOUT throwing
+    (the raw `crypto.timingSafeEqual` raises on unequal-length buffers
+    + leaks length via the throw timing); we do a dummy
+    `timingSafeEqual(expected, expected)` first so the false branch
+    spends comparable time to the equal-length false branch.
+  - Extract `makeAuthCheck(token)` + `createServer(authCheck)` as named
+    exports so the auth logic is unit-testable.
+- `backend/src/config/env.ts`:
+  - New `superRefine` on the env schema: when `UPDATER_URL` is set,
+    `UPDATER_TOKEN` must be present and ≥ 24 characters. `loadEnv()`
+    throws with a clear message instead of letting a half-configured
+    upgrade pipeline ship.
+
+### Scope
+
+This patch DOES NOT touch the upgrade logic itself — concurrent-upgrade
+mutex and git-ref pinning (S-10 territory) are deliberately deferred to
+a later tier.
+
+### Regression tests
+
+- `tests/unit/updaterAuth.test.ts` — 7 cases covering `makeAuthCheck`:
+  empty / short / non-string / undefined → throws at construction;
+  correct token → true; wrong same-length token → false; wrong
+  different-length header → false **without throwing** (regression
+  against `crypto.timingSafeEqual` raising); missing / empty / non-
+  string headers → false.
+- `tests/unit/envUpdaterValidation.test.ts` — 5 cases on `loadEnv()`:
+  `UPDATER_URL` unset passes; `UPDATER_URL` set + token missing throws;
+  `UPDATER_URL` set + token shorter than 24 throws (8 chars and 23
+  chars both); `UPDATER_URL` set + token exactly 24 / 64 chars passes.
+  Uses `vi.resetModules()` + dynamic re-import to bust env.ts's
+  module-local parse cache between cases.
+
+### Verified
+
+- Backend `tsc` ✅.
+- New unit tests: 12/12 pass (7 updater + 5 env).
+- Full integration suite: 273 passed, 5 skipped (LDAP — pre-existing,
+  needs the `ldap` profile). No regressions.
+
+### Phase boundary
+
+- Concurrent-upgrade safety (the same admin double-clicking "Upgrade
+  now" — or two operators racing) is **not** addressed here. The shell
+  script is idempotent (`git pull --ff-only` is a no-op on second
+  invocation, `docker compose up -d --build` rebuilds idempotently),
+  but the LOG file gets interleaved + spawn-detached children race the
+  prior children's `docker compose` step. Tracked as S-10 for a later
+  tier.
+- Git-ref pinning is also S-10 / later — the script still pulls
+  whatever `origin/main` currently points at.
+
 ## [1.30.1] — 2026-05-27
 
 **Security patch — S-3: pending-2FA token accepted by `requireAuth`.**
