@@ -7,6 +7,7 @@ import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
 import { _resetMaintenanceCache } from '../../src/middleware/maintenance.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // v1.27: /api/admin/backups routes.
 //
@@ -60,19 +61,9 @@ afterEach(async () => {
 const PASSWORD = 'CorrectHorseBattery9';
 
 async function setup() {
-  const admin = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'admin@example.com', name: 'Admin', password: PASSWORD },
-  });
-  const adminToken = admin.json().accessToken as string;
-  const member = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'mem@example.com', name: 'Mem', password: PASSWORD },
-  });
-  const memberToken = member.json().accessToken as string;
-  return { adminToken, memberToken };
+  const admin = await bootstrapUser(app, { email: 'admin@example.com', name: 'Admin', password: PASSWORD });
+  const member = await bootstrapUser(app, { email: 'mem@example.com', name: 'Mem', password: PASSWORD });
+  return { adminToken: admin.token, memberToken: member.token };
 }
 
 async function writeFakeDump(name: string, body = 'fake-dump'): Promise<void> {

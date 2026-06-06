@@ -10,6 +10,9 @@ export interface AdminUser {
   emailVerifiedAt: string | null;
   createdAt: string;
   membershipCount: number;
+  // v1.32.0: surfaced so the UI can hide "Reset password" for directory-
+  // owned (LDAP/SCIM) users — their password lives in the directory.
+  directoryId: string | null;
 }
 
 export interface AdminTeam {
@@ -68,4 +71,21 @@ export async function createUser(input: {
   emailVerified?: boolean;
 }): Promise<CreateUserResult> {
   return (await api.post<CreateUserResult>('/admin/users', input)).data;
+}
+
+// v1.32.0: admin-initiated password reset. Omit `password` for a server-
+// generated value returned once. 409 when the target is directory-owned.
+export interface ResetPasswordResult {
+  generatedPassword: string | null;
+}
+
+export async function resetUserPassword(
+  userId: string,
+  password?: string,
+): Promise<ResetPasswordResult> {
+  return (
+    await api.post<ResetPasswordResult>(`/admin/users/${userId}/password`, {
+      ...(password ? { password } : {}),
+    })
+  ).data;
 }

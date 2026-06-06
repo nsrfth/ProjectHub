@@ -7,6 +7,8 @@ import { requireAuth, requireGlobalRole } from '../middleware/auth.js';
 import { requireScope } from '../middleware/requireScope.js';
 import { updateCheckService } from '../services/updateCheckService.js';
 import {
+  adminResetPasswordBody,
+  adminResetPasswordResponse,
   adminUserResponse,
   createUserBody,
   createUserResponse,
@@ -66,6 +68,23 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.updateUserRole,
+  });
+
+  // v1.32.0: admin-initiated password reset. Caller may supply a password
+  // (validated by passwordSchema) or omit it for a server-generated value
+  // returned once. Directory-owned (LDAP/SCIM) targets are rejected with
+  // 409 — their password lives in the directory.
+  r.post('/users/:userId/password', {
+    schema: {
+      tags: ['admin'],
+      summary:
+        "Reset a user's password (ADMIN only). Generates one when omitted; refuses directory-owned accounts.",
+      params: z.object({ userId: z.string() }),
+      body: adminResetPasswordBody,
+      response: { 200: adminResetPasswordResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.resetUserPassword,
   });
 
   r.get('/teams', {

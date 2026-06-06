@@ -2,9 +2,9 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Env } from '../config/env.js';
 import { AuthService } from '../services/authService.js';
 import type {
+  ChangeOwnPasswordBody,
   LoginBody,
   PerformResetBody,
-  RegisterBody,
   RequestResetBody,
   VerificationPerformBody,
   VerificationRequestBody,
@@ -38,20 +38,11 @@ export class AuthController {
     private readonly svc: AuthService,
   ) {}
 
-  register = async (req: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
-    const session = await this.svc.register(req.body);
-    setRefreshCookie(reply, this.env, session.refreshTokenRaw, session.refreshExpiresAt);
-    const body: Record<string, unknown> = {
-      accessToken: session.accessToken,
-      user: { ...session.user, createdAt: session.user.createdAt.toISOString() },
-    };
-    // Non-prod: surface the verification token so dev/test can call
-    // /verification/perform with it. In prod we'd email it instead.
-    if (this.env.NODE_ENV !== 'production' && session.verificationToken) {
-      body.devVerifyToken = session.verificationToken;
-    }
-    return reply.status(201).send(body);
-  };
+  // v1.30.11 (S-9): `register` handler removed alongside the route.
+  // Public self-registration was an account-enumeration channel
+  // ("Email already registered" 409 vs 201). The bootstrap path is
+  // now the prisma seed (SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD); all
+  // subsequent users come from POST /api/admin/users (v1.26).
 
   login = async (req: FastifyRequest<{ Body: LoginBody }>, reply: FastifyReply) => {
     const outcome = await this.svc.loginOutcome(req.body);
@@ -151,6 +142,18 @@ export class AuthController {
 
   performReset = async (req: FastifyRequest<{ Body: PerformResetBody }>, reply: FastifyReply) => {
     await this.svc.performPasswordReset(req.body);
+    return reply.status(204).send();
+  };
+
+  // v1.32.0: user-initiated password change. Session-only (routed with
+  // requireSessionAuth) — an API token, even `*`-scoped, must not be able
+  // to rotate the owner's password.
+  changeOwnPassword = async (
+    req: FastifyRequest<{ Body: ChangeOwnPasswordBody }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    await this.svc.changeOwnPassword(req.user.sub, req.body);
     return reply.status(204).send();
   };
 

@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 let app: FastifyInstance;
 
@@ -38,13 +39,9 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 const PASSWORD = 'CorrectHorseBattery9';
 
 async function register(email: string): Promise<{ token: string; userId: string; role: 'ADMIN' | 'MEMBER' }> {
-  const res = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email, name: email.split('@')[0], password: PASSWORD },
-  });
-  const body = res.json();
-  return { token: body.accessToken, userId: body.user.id, role: body.user.globalRole };
+  const r = await bootstrapUser(app, { email, name: email.split('@')[0], password: PASSWORD });
+  const user = await prisma.user.findUnique({ where: { id: r.userId } });
+  return { token: r.token, userId: r.userId, role: user!.globalRole as 'ADMIN' | 'MEMBER' };
 }
 
 describe('admin RBAC', () => {

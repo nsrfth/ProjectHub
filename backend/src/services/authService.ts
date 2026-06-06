@@ -111,30 +111,14 @@ export class AuthService {
     return this.issueSession(user);
   }
 
-  async register(input: { email: string; password: string; name: string }): Promise<IssuedSession> {
-    const existing = await prisma.user.findUnique({ where: { email: input.email } });
-    if (existing) throw Errors.conflict('Email already registered');
-
-    const passwordHash = await hashPassword(input.password);
-    const user = await prisma.user.create({
-      data: {
-        email: input.email,
-        name: input.name,
-        passwordHash,
-        // First user becomes ADMIN. Subsequent users default to MEMBER.
-        // Race-tolerant: even with concurrent inserts, at most one wins as admin.
-        globalRole: (await prisma.user.count()) === 0 ? 'ADMIN' : 'MEMBER',
-      },
-    });
-
-    // Auto-issue an email-verification token. Real email delivery isn't wired;
-    // the controller returns this token in the response body in non-prod so
-    // dev/test flows can call /verification/perform with it.
-    const verificationToken = await this.createVerificationToken(user.id);
-
-    const session = await this.issueSession(user);
-    return { ...session, verificationToken };
-  }
+  // v1.30.11 (S-9): `register()` removed alongside the route. The
+  // duplicate-email branch leaked account existence ("Email already
+  // registered" 409 vs the success 201). Bootstrap path is now the
+  // prisma seed (SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD); subsequent
+  // users come from AdminService.createUser (v1.26) via
+  // POST /api/admin/users. The argon2 hashing + first-user-is-ADMIN
+  // logic lives in AdminService + the seed; this service no longer
+  // mints users at all.
 
   async login(input: { email: string; password: string }): Promise<IssuedSession> {
     const user = await prisma.user.findUnique({ where: { email: input.email } });
@@ -449,6 +433,41 @@ export class AuthService {
       prisma.emailVerification.update({
         where: { id: row.id },
         data: { usedAt: new Date() },
+      }),
+    ]);
+  }
+
+  // v1.32.0: user-initiated password change. Verifies the caller's current
+  // password, then atomically rotates the hash and revokes every active
+  // refresh-token row for the user so other devices get booted on next
+  // refresh. The caller's own current refresh cookie is included in that
+  // revocation — the route layer is expected to wire the frontend's
+  // signOut() on success so they re-authenticate cleanly.
+  //
+  // Refuses directory-owned (LDAP/SCIM) accounts: their password is the
+  // directory's responsibility and a local change would be overwritten on
+  // the next sync. Mirroring the existing /me/preferences pattern, the
+  // controller already requires a session (not an API token).
+  async changeOwnPassword(
+    userId: string,
+    input: { currentPassword: string; newPassword: string },
+  ): Promise<void> {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw Errors.unauthorized();
+    if (user.directoryId || !user.passwordHash) {
+      throw Errors.forbidden(
+        'Password is managed by your directory and cannot be changed here',
+      );
+    }
+    const ok = await verifyPassword(user.passwordHash, input.currentPassword);
+    if (!ok) throw Errors.badRequest('Current password is incorrect');
+
+    const passwordHash = await hashPassword(input.newPassword);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
       }),
     ]);
   }

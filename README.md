@@ -72,9 +72,11 @@ Two options:
    `ChangeMe123!`. **Change the password immediately** via
    `POST /api/auth/password/reset-request` (in dev the reset token is returned
    in the response).
-2. **First-registration promotion**: the very first user registered through
-   `POST /api/auth/register` is automatically granted `GlobalRole.ADMIN`. Every
-   subsequent registration defaults to `MEMBER`.
+2. **Admin-only provisioning** (v1.30.11, S-9): public self-registration is
+   removed. The seeded admin is the only bootstrap path; subsequent accounts are
+   created by an admin via **Settings → Admin → New user**
+   (`POST /api/admin/users`), or appear via LDAP/SCIM JIT. There is no
+   `POST /api/auth/register` endpoint.
 
 ## Environment variables
 

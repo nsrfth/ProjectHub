@@ -41,9 +41,8 @@ export function isPending2fa(result: LoginResult): result is PendingTwoFactorRes
   return (result as PendingTwoFactorResponse).pending2fa === true;
 }
 
-export async function register(input: { email: string; name: string; password: string }): Promise<AuthResponse> {
-  return (await api.post<AuthResponse>('/auth/register', input)).data;
-}
+// v1.30.11 (S-9): `register()` client + /auth/register endpoint removed.
+// New accounts are admin-provisioned via Settings → Admin → New user (v1.26).
 
 export async function login(input: { email: string; password: string }): Promise<LoginResult> {
   return (await api.post<LoginResult>('/auth/login', input)).data;
@@ -98,4 +97,14 @@ export async function logout(): Promise<void> {
 
 export async function refresh(): Promise<AuthResponse> {
   return (await api.post<AuthResponse>('/auth/refresh')).data;
+}
+
+// v1.32.0: user-initiated password change. Server verifies currentPassword,
+// rotates to newPassword, and revokes every refresh-token row for the user
+// (including this session's) — caller is expected to signOut() on success.
+export async function changeOwnPassword(input: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<void> {
+  await api.post('/auth/me/password', input);
 }

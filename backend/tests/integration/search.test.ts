@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // v1.30: full-text search.
 //
@@ -51,12 +52,8 @@ interface AuthCtx {
 }
 
 async function register(email: string, name = 'User'): Promise<AuthCtx> {
-  const r = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email, name, password: PASSWORD },
-  });
-  return { token: r.json().accessToken as string, userId: r.json().user.id as string };
+  const r = await bootstrapUser(app, { email, name, password: PASSWORD });
+  return { token: r.token, userId: r.userId };
 }
 
 async function createTeam(token: string, slug: string): Promise<string> {

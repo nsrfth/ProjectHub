@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 let app: FastifyInstance;
 
@@ -38,12 +39,9 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 const PASSWORD = 'CorrectHorseBattery9';
 
 async function setup(email = 'a@example.com') {
-  const reg = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email, name: email.split('@')[0], password: PASSWORD },
-  });
-  const { accessToken: token, user } = reg.json();
+  const reg = await bootstrapUser(app, { email, name: email.split('@')[0], password: PASSWORD });
+  const token = reg.token;
+  const user = { id: reg.userId };
 
   const team = (
     await inject({
@@ -76,21 +74,15 @@ async function setup(email = 'a@example.com') {
 }
 
 async function addMember(managerToken: string, teamId: string, email: string, role: 'MEMBER' | 'MANAGER' = 'MEMBER') {
-  // Add-member by email requires the user to exist — register them first.
-  const reg = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email, name: email.split('@')[0], password: PASSWORD },
-  });
-  if (reg.statusCode !== 201) throw new Error(`pre-register failed: ${reg.statusCode} ${reg.body}`);
+  // Add-member by email requires the user to exist — bootstrap them first.
+  const reg = await bootstrapUser(app, { email, name: email.split('@')[0], password: PASSWORD });
   await inject({
     method: 'POST',
     url: `/api/teams/${teamId}/members`,
     headers: { authorization: `Bearer ${managerToken}` },
     payload: { email, role },
   });
-  // Return the token from the registration (no need for a second login).
-  return reg.json().accessToken as string;
+  return reg.token;
 }
 
 describe('POST /api/.../tasks/:taskId/comments', () => {

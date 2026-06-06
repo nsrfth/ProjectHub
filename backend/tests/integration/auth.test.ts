@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // Integration tests hit a real Postgres (per the user's preference for real
 // dependencies in tests). Run via: DATABASE_URL=... npm test
@@ -45,65 +46,53 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 
 const VALID_PASSWORD = 'CorrectHorseBattery9';
 
-describe('POST /api/auth/register', () => {
-  it('creates a user and returns access token + refresh cookie', async () => {
-    const res = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'Alice', password: VALID_PASSWORD },
+// v1.30.11 (S-9): public self-registration removed. The previous
+// 409 "Email already registered" response on a duplicate email was an
+// account-enumeration channel — an unauthenticated caller could probe
+// any email address and the status code told them whether it existed.
+// New accounts come from `prisma db seed` (bootstrap) and the v1.26
+// POST /api/admin/users endpoint (everyone else). The block below
+// pins the new reality: an unauthenticated probe at the old route
+// receives 404 — the route simply does not exist.
+describe('POST /api/auth/register removed (S-9)', () => {
+  it('returns 404 and CANNOT be used to probe whether an email exists', async () => {
+    // Seed an email straight via Prisma so it's definitely there.
+    const seeded = await bootstrapUser(app, {
+      email: 'definitely-exists@example.com',
+      password: VALID_PASSWORD,
     });
-    expect(res.statusCode).toBe(201);
-    const body = res.json();
-    expect(body.accessToken).toBeTypeOf('string');
-    expect(body.user.email).toBe('a@example.com');
-    expect(body.user.globalRole).toBe('ADMIN'); // first user
-    expect(res.cookies.find((c) => c.name === 'th_refresh')).toBeTruthy();
-  });
+    expect(seeded.userId).toBeTruthy();
 
-  it('second user is MEMBER, not ADMIN', async () => {
-    await inject({
+    const probeExisting = await inject({
       method: 'POST',
       url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'Alice', password: VALID_PASSWORD },
+      payload: {
+        email: 'definitely-exists@example.com',
+        name: 'X',
+        password: VALID_PASSWORD,
+      },
     });
-    const res = await inject({
+    const probeMissing = await inject({
       method: 'POST',
       url: '/api/auth/register',
-      payload: { email: 'b@example.com', name: 'Bob', password: VALID_PASSWORD },
+      payload: { email: 'not-here@example.com', name: 'X', password: VALID_PASSWORD },
     });
-    expect(res.json().user.globalRole).toBe('MEMBER');
-  });
-
-  it('rejects duplicate email', async () => {
-    await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'Alice', password: VALID_PASSWORD },
-    });
-    const res = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'Alice2', password: VALID_PASSWORD },
-    });
-    expect(res.statusCode).toBe(409);
-  });
-
-  it('rejects weak password', async () => {
-    const res = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'Alice', password: 'short' },
-    });
-    expect(res.statusCode).toBe(400);
+    // Both must look identical (404). The whole point: no
+    // information leak between "exists" and "doesn't".
+    expect(probeExisting.statusCode).toBe(404);
+    expect(probeMissing.statusCode).toBe(404);
+    expect(probeExisting.statusCode).toBe(probeMissing.statusCode);
   });
 });
 
 describe('POST /api/auth/login', () => {
   beforeEach(async () => {
-    await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'Alice', password: VALID_PASSWORD },
+    // v1.30.11 (S-9): seed the test user via the helper (Prisma direct
+    // + login) since /api/auth/register no longer exists.
+    await bootstrapUser(app, {
+      email: 'a@example.com',
+      name: 'Alice',
+      password: VALID_PASSWORD,
     });
   });
 
@@ -136,17 +125,17 @@ describe('POST /api/auth/login', () => {
 
 describe('POST /api/auth/refresh', () => {
   it('rotates the refresh token and revokes the old one', async () => {
-    const reg = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'Alice', password: VALID_PASSWORD },
+    const seeded = await bootstrapUser(app, {
+      email: 'a@example.com',
+      name: 'Alice',
+      password: VALID_PASSWORD,
     });
-    const cookie = reg.cookies.find((c) => c.name === 'th_refresh')!;
+    const cookieValue = seeded.refreshCookie!;
 
     const first = await inject({
       method: 'POST',
       url: '/api/auth/refresh',
-      cookies: { th_refresh: cookie.value },
+      cookies: { th_refresh: cookieValue },
     });
     expect(first.statusCode).toBe(200);
 
@@ -154,7 +143,7 @@ describe('POST /api/auth/refresh', () => {
     const replay = await inject({
       method: 'POST',
       url: '/api/auth/refresh',
-      cookies: { th_refresh: cookie.value },
+      cookies: { th_refresh: cookieValue },
     });
     expect(replay.statusCode).toBe(401);
   });
@@ -174,14 +163,13 @@ describe('POST /api/auth/refresh', () => {
   // re-logs-in, which is the right answer when theft is detected.
   describe('S-4 refresh-token family revocation', () => {
     async function registerAndGetCookie(email: string): Promise<string> {
-      const reg = await inject({
-        method: 'POST',
-        url: '/api/auth/register',
-        payload: { email, name: 'U', password: VALID_PASSWORD },
-      });
-      const c = reg.cookies.find((x) => x.name === 'th_refresh');
-      if (!c) throw new Error(`register failed for ${email}: ${reg.statusCode} ${reg.body}`);
-      return c.value;
+      // v1.30.11 (S-9): the public /register endpoint is gone. Bootstrap
+      // via the helper (Prisma direct + /login), then return the
+      // refresh cookie from the login response — the v1.30.5 family
+      // root is established by /login the same way it was by /register.
+      const r = await bootstrapUser(app, { email, name: 'U', password: VALID_PASSWORD });
+      if (!r.refreshCookie) throw new Error(`bootstrap returned no cookie for ${email}`);
+      return r.refreshCookie;
     }
 
     async function refreshOnce(cookieValue: string): Promise<{ status: number; nextCookie: string | null }> {
@@ -337,16 +325,15 @@ describe('GET /api/auth/me', () => {
   });
 
   it('returns the user when authorized', async () => {
-    const reg = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'Alice', password: VALID_PASSWORD },
+    const { token } = await bootstrapUser(app, {
+      email: 'a@example.com',
+      name: 'Alice',
+      password: VALID_PASSWORD,
     });
-    const { accessToken } = reg.json();
     const res = await inject({
       method: 'GET',
       url: '/api/auth/me',
-      headers: { authorization: `Bearer ${accessToken}` },
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().email).toBe('a@example.com');
@@ -355,12 +342,12 @@ describe('GET /api/auth/me', () => {
 
 describe('password reset', () => {
   it('issues a token, accepts it, revokes existing sessions', async () => {
-    const reg = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'Alice', password: VALID_PASSWORD },
+    const seeded = await bootstrapUser(app, {
+      email: 'a@example.com',
+      name: 'Alice',
+      password: VALID_PASSWORD,
     });
-    const cookie = reg.cookies.find((c) => c.name === 'th_refresh')!;
+    const cookie = { value: seeded.refreshCookie! };
 
     const reqReset = await inject({
       method: 'POST',
@@ -408,18 +395,33 @@ describe('password reset', () => {
 });
 
 describe('email verification', () => {
-  it('register surfaces a dev verification token; perform marks user verified', async () => {
-    const reg = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'verify@example.com', name: 'V', password: VALID_PASSWORD },
-    });
-    expect(reg.statusCode).toBe(201);
-    const token = reg.json().devVerifyToken as string;
-    expect(token).toBeTypeOf('string');
+  // v1.30.11 (S-9): /register used to surface a `devVerifyToken` for
+  // tests. Since the route is gone, tests bootstrap-unverified and
+  // pull a fresh token from /verification/request.
 
-    const verified = await prisma.user.findUnique({ where: { email: 'verify@example.com' } });
-    expect(verified?.emailVerifiedAt).toBeNull();
+  async function requestVerifyToken(email: string): Promise<string> {
+    const res = await inject({
+      method: 'POST',
+      url: '/api/auth/verification/request',
+      payload: { email },
+    });
+    expect(res.statusCode).toBe(202);
+    const token = res.json().devVerifyToken as string | undefined;
+    if (!token) throw new Error(`no devVerifyToken returned for ${email}`);
+    return token;
+  }
+
+  it('verification/request surfaces a dev token; perform marks user verified', async () => {
+    await bootstrapUser(app, {
+      email: 'verify@example.com',
+      name: 'V',
+      password: VALID_PASSWORD,
+      preVerify: false,
+    });
+    const token = await requestVerifyToken('verify@example.com');
+
+    const before = await prisma.user.findUnique({ where: { email: 'verify@example.com' } });
+    expect(before?.emailVerifiedAt).toBeNull();
 
     const perform = await inject({
       method: 'POST',
@@ -433,12 +435,13 @@ describe('email verification', () => {
   });
 
   it('rejects an already-used verification token', async () => {
-    const reg = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'verify@example.com', name: 'V', password: VALID_PASSWORD },
+    await bootstrapUser(app, {
+      email: 'verify@example.com',
+      name: 'V',
+      password: VALID_PASSWORD,
+      preVerify: false,
     });
-    const token = reg.json().devVerifyToken as string;
+    const token = await requestVerifyToken('verify@example.com');
     const first = await inject({
       method: 'POST',
       url: '/api/auth/verification/perform',
@@ -464,14 +467,13 @@ describe('email verification', () => {
   });
 
   it('does not re-issue a token for an already-verified account', async () => {
-    const reg = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'verify@example.com', name: 'V', password: VALID_PASSWORD },
+    // Pre-verified by default — and the verification request endpoint
+    // must NOT surface a fresh token for an already-verified address.
+    await bootstrapUser(app, {
+      email: 'verify@example.com',
+      name: 'V',
+      password: VALID_PASSWORD,
     });
-    const t = reg.json().devVerifyToken as string;
-    await inject({ method: 'POST', url: '/api/auth/verification/perform', payload: { token: t } });
-
     const resend = await inject({
       method: 'POST',
       url: '/api/auth/verification/request',

@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // SCIM 2.0 integration coverage. Walks through the IdP-facing happy path:
 // admin generates a token → IdP uses it to create + update + deprovision +
@@ -36,13 +37,8 @@ beforeEach(async () => {
 
   // Recreate an admin user + admin JWT for every test so directory/SCIM CRUD
   // calls always go through fresh.
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: ADMIN_EMAIL, name: 'Admin', password: PASSWORD },
-  });
-  if (res.statusCode !== 201) throw new Error(`register failed: ${res.statusCode} ${res.body}`);
-  adminToken = res.json().accessToken;
+  const res = await bootstrapUser(app, { email: ADMIN_EMAIL, name: 'Admin', password: PASSWORD });
+  adminToken = res.token;
 });
 
 async function createDirectory(): Promise<string> {

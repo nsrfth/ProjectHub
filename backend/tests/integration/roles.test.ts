@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // v1.23: roles CRUD + permission system.
 //  - creating a team auto-creates Manager + Member system roles
@@ -43,21 +44,13 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 }
 
 async function setup() {
-  const admin = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'admin@example.com', name: 'Admin', password: PASSWORD },
-  });
-  const adminToken = admin.json().accessToken as string;
-  const adminId = admin.json().user.id as string;
+  const admin = await bootstrapUser(app, { email: 'admin@example.com', name: 'Admin', password: PASSWORD });
+  const adminToken = admin.token;
+  const adminId = admin.userId;
 
-  const member = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'mem@example.com', name: 'Mem', password: PASSWORD },
-  });
-  const memberToken = member.json().accessToken as string;
-  const memberId = member.json().user.id as string;
+  const member = await bootstrapUser(app, { email: 'mem@example.com', name: 'Mem', password: PASSWORD });
+  const memberToken = member.token;
+  const memberId = member.userId;
 
   const team = await inject({
     method: 'POST',

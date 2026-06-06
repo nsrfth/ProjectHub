@@ -6,6 +6,7 @@ import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
 import { WebhookService } from '../../src/services/webhookService.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // Phase 3B coverage: API token auth round-trip, webhook delivery + HMAC
 // signature, retry/backoff after a 5xx, test-send endpoint.
@@ -79,12 +80,8 @@ beforeEach(async () => {
 });
 
 async function register(email: string): Promise<{ token: string; userId: string }> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email, name: email.split('@')[0], password: 'CorrectHorseBattery9' },
-  });
-  return { token: res.json().accessToken, userId: res.json().user.id };
+  const r = await bootstrapUser(app, { email, name: email.split('@')[0], password: 'CorrectHorseBattery9' });
+  return { token: r.token, userId: r.userId };
 }
 
 async function createTeam(token: string, slug: string): Promise<string> {

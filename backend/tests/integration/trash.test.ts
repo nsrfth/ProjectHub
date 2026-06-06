@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // v1.21: trash subsystem.
 //   - delete = soft (row survives, deletedAt stamped)
@@ -41,19 +42,11 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 }
 
 async function setup() {
-  const admin = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'admin@example.com', name: 'Admin', password: PASSWORD },
-  });
-  const adminToken = admin.json().accessToken as string;
+  const admin = await bootstrapUser(app, { email: 'admin@example.com', name: 'Admin', password: PASSWORD });
+  const adminToken = admin.token;
 
-  const member = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'member@example.com', name: 'Mem', password: PASSWORD },
-  });
-  const memberToken = member.json().accessToken as string;
+  const member = await bootstrapUser(app, { email: 'member@example.com', name: 'Mem', password: PASSWORD });
+  const memberToken = member.token;
 
   const team = await inject({
     method: 'POST',

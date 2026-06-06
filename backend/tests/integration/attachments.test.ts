@@ -6,6 +6,7 @@ import path from 'node:path';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 let app: FastifyInstance;
 let uploadDir: string;
@@ -51,12 +52,8 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 const PASSWORD = 'CorrectHorseBattery9';
 
 async function register(email: string): Promise<{ token: string; userId: string }> {
-  const res = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email, name: email.split('@')[0], password: PASSWORD },
-  });
-  return { token: res.json().accessToken, userId: res.json().user.id };
+  const r = await bootstrapUser(app, { email, name: email.split('@')[0], password: PASSWORD });
+  return { token: r.token, userId: r.userId };
 }
 
 async function setup(slug = 'team-att') {

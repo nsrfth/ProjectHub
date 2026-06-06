@@ -17,6 +17,9 @@ export interface AdminUserView {
   emailVerifiedAt: Date | null;
   createdAt: Date;
   membershipCount: number;
+  // v1.32.0: surfaced so the admin UI can hide local-password actions for
+  // directory-owned users (LDAP/SCIM). Null for local-password accounts.
+  directoryId: string | null;
 }
 
 export interface AdminTeamView {
@@ -55,6 +58,7 @@ export class AdminService {
         emailVerifiedAt: u.emailVerifiedAt,
         createdAt: u.createdAt,
         membershipCount: u._count.memberships,
+        directoryId: u.directoryId,
       })),
       nextCursor: hasMore && last ? last.id : null,
     };
@@ -96,6 +100,7 @@ export class AdminService {
       emailVerifiedAt: updated.emailVerifiedAt,
       createdAt: updated.createdAt,
       membershipCount: updated._count.memberships,
+      directoryId: updated.directoryId,
     };
   }
 
@@ -195,6 +200,7 @@ export class AdminService {
           emailVerifiedAt: created.emailVerifiedAt,
           createdAt: created.createdAt,
           membershipCount: created._count.memberships,
+          directoryId: created.directoryId,
         },
         generatedPassword,
       };
@@ -204,6 +210,43 @@ export class AdminService {
       }
       throw err;
     }
+  }
+
+  // v1.32.0: admin-initiated password reset. Same password handling as
+  // createUser — caller-supplied wins, omit for a 20-char server-generated
+  // value. Rejects directory-owned (LDAP/SCIM) targets with 409: their
+  // password lives in the directory and a local reset would be overwritten
+  // on the next sync.
+  //
+  // Revokes every active refresh-token row for the target so previously
+  // signed-in devices get booted on the next /refresh — the same shape
+  // performPasswordReset uses for the token-based flow.
+  async resetUserPassword(
+    targetUserId: string,
+    suppliedPassword: string | undefined,
+  ): Promise<{ generatedPassword: string | null }> {
+    const target = await prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!target) throw Errors.notFound('User not found');
+    if (target.directoryId) {
+      throw Errors.conflict(
+        'This account is directory-owned; reset the password in the directory instead',
+      );
+    }
+
+    const generatedPassword = suppliedPassword
+      ? null
+      : (randomBytes(15).toString('base64').replace(/[+/=]/g, '').slice(0, 19) + '7');
+    const plaintext = suppliedPassword ?? generatedPassword!;
+    const passwordHash = await hashPassword(plaintext);
+
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: targetUserId }, data: { passwordHash } }),
+      prisma.refreshToken.updateMany({
+        where: { userId: targetUserId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    return { generatedPassword };
   }
 
   async deleteTeam(teamId: string): Promise<void> {

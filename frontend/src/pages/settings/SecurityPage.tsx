@@ -1,8 +1,11 @@
 import { useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useT } from '@/lib/i18n';
 import {
+  changeOwnPassword,
   regenerateRecoveryCodes,
   twoFactorConfirm,
   twoFactorDisable,
@@ -24,6 +27,7 @@ function errorMessage(err: unknown, fallback: string): string {
 
 export default function SecurityPage(): JSX.Element {
   const { user, patchUser } = useAuth();
+  const t = useT();
 
   return (
     <section className="space-y-6">
@@ -33,6 +37,19 @@ export default function SecurityPage(): JSX.Element {
           Two-factor authentication and account-level credentials.
         </p>
       </header>
+
+      {/* v1.32.0: change own password. Hidden for directory-owned accounts —
+          their password lives in the directory and the backend would 403. */}
+      <div className="border rounded p-4">
+        <h3 className="font-medium mb-1">{t('security.password.title')}</h3>
+        {user?.directoryId ? (
+          <p className="text-sm text-slate-600">
+            {t('security.password.directoryOwned')}
+          </p>
+        ) : (
+          <ChangePasswordPanel />
+        )}
+      </div>
 
       <div className="border rounded p-4">
         <h3 className="font-medium mb-1">Two-factor authentication</h3>
@@ -45,6 +62,100 @@ export default function SecurityPage(): JSX.Element {
           : <EnrollPanel onEnrolled={() => patchUser({ totpEnabled: true })} />}
       </div>
     </section>
+  );
+}
+
+// v1.32.0: change-own-password form. On success the backend has revoked
+// every refresh-token row for this user — including the cookie this tab is
+// using — so we explicitly signOut and bounce to /login. The current access
+// token would otherwise stay valid for ~15 minutes and then 401 on the next
+// /refresh; signing out immediately is the predictable path.
+function ChangePasswordPanel(): JSX.Element {
+  const { signOut } = useAuth();
+  const nav = useNavigate();
+  const t = useT();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const mut = useMutation({
+    mutationFn: () =>
+      changeOwnPassword({ currentPassword: current, newPassword: next }),
+    onSuccess: async () => {
+      await signOut().catch(() => undefined);
+      nav('/login', { replace: true });
+    },
+    onError: (err) => setError(errorMessage(err, t('security.password.error'))),
+  });
+
+  function submit(e: FormEvent): void {
+    e.preventDefault();
+    setError(null);
+    if (next !== confirm) {
+      setError(t('security.password.mismatch'));
+      return;
+    }
+    mut.mutate();
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3 max-w-sm">
+      <p className="text-sm text-slate-600">{t('security.password.intro')}</p>
+      <Field
+        label={t('security.password.current')}
+        value={current}
+        onChange={setCurrent}
+        autoComplete="current-password"
+      />
+      <Field
+        label={t('security.password.new')}
+        value={next}
+        onChange={setNext}
+        autoComplete="new-password"
+      />
+      <Field
+        label={t('security.password.confirm')}
+        value={confirm}
+        onChange={setConfirm}
+        autoComplete="new-password"
+      />
+      <p className="text-xs text-slate-500">{t('security.password.policyHint')}</p>
+      {error && <p className="text-red-600 text-xs">{error}</p>}
+      <button
+        type="submit"
+        disabled={mut.isPending || !current || !next || !confirm}
+        className="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+      >
+        {mut.isPending ? t('security.password.submitting') : t('security.password.submit')}
+      </button>
+    </form>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  autoComplete,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete: string;
+}): JSX.Element {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium">{label}</span>
+      <input
+        type="password"
+        required
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        className="mt-1 w-full rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-sm"
+      />
+    </label>
   );
 }
 

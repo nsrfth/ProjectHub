@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // Integration coverage for v1.17 Project.accountableId:
 //  - create accepts accountableId of a team member
@@ -37,20 +38,12 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 }
 
 async function setupTwoUsersOneTeam() {
-  const owner = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'owner@example.com', name: 'Owner', password: PASSWORD },
-  });
-  const ownerToken = owner.json().accessToken as string;
-  const ownerId = owner.json().user.id as string;
+  const owner = await bootstrapUser(app, { email: 'owner@example.com', name: 'Owner', password: PASSWORD });
+  const ownerToken = owner.token;
+  const ownerId = owner.userId;
 
-  const second = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'tech@example.com', name: 'Tech', password: PASSWORD },
-  });
-  const techId = second.json().user.id as string;
+  const second = await bootstrapUser(app, { email: 'tech@example.com', name: 'Tech', password: PASSWORD });
+  const techId = second.userId;
 
   const team = await inject({
     method: 'POST',
@@ -89,12 +82,8 @@ describe('Project.accountableId', () => {
   it('rejects an accountableId that points at someone NOT in the team with 400', async () => {
     const { ownerToken, teamId } = await setupTwoUsersOneTeam();
     // Create a fourth user NOT in the team.
-    const outsider = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'outsider@example.com', name: 'Outsider', password: PASSWORD },
-    });
-    const outsiderId = outsider.json().user.id as string;
+    const outsider = await bootstrapUser(app, { email: 'outsider@example.com', name: 'Outsider', password: PASSWORD });
+    const outsiderId = outsider.userId;
 
     const create = await inject({
       method: 'POST',

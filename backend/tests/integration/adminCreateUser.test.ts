@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // v1.26: POST /api/admin/users — admin-provisioned account.
 //   - admin-only (403 for members)
@@ -38,21 +39,9 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 }
 
 async function setup() {
-  const admin = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'admin@example.com', name: 'Admin', password: PASSWORD },
-  });
-  const adminToken = admin.json().accessToken as string;
-
-  const member = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'mem@example.com', name: 'Mem', password: PASSWORD },
-  });
-  const memberToken = member.json().accessToken as string;
-
-  return { adminToken, memberToken };
+  const admin = await bootstrapUser(app, { email: 'admin@example.com', name: 'Admin', password: PASSWORD });
+  const member = await bootstrapUser(app, { email: 'mem@example.com', name: 'Mem', password: PASSWORD });
+  return { adminToken: admin.token, memberToken: member.token };
 }
 
 describe('POST /api/admin/users', () => {

@@ -86,5 +86,62 @@ export const timelinessResponse = z.object({
   behindPlanCount: z.number().int().nonnegative(),
 });
 
+// v1.31: upcoming-deadlines feed. Per-user (caller's assignee scope) within
+// one team, due in the next N days, excluding DONE + soft-deleted. The
+// `days` cap is intentionally tight — this is a dashboard widget, not a
+// data export. Ordered by dueDate ascending.
+export const upcomingTasksQuery = z.object({
+  days: z.coerce.number().int().positive().max(30).default(7),
+});
+
+export const upcomingTaskRow = z.object({
+  taskId: z.string(),
+  taskTitle: z.string(),
+  projectId: z.string(),
+  projectName: z.string(),
+  status: z.enum(['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE']),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
+  dueDate: z.string(),
+  // Negative when the due date already passed today (caller normally hides
+  // overdue items via /reports/overdue, but the endpoint still returns them
+  // when they fall inside the lookback window — the client decides what to
+  // show).
+  daysUntil: z.number().int(),
+});
+
+export const upcomingResponse = z.object({
+  windowDays: z.number().int().positive(),
+  items: z.array(upcomingTaskRow),
+});
+
+// v1.31: team-scoped activity feed. Reads the existing Activity table (which
+// activityLogger already denormalises teamId onto) ordered newest-first and
+// capped per request — the dashboard widget shows ~10–20 entries, and a
+// real per-team audit log is what /audit is for.
+export const teamActivityQuery = z.object({
+  limit: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const teamActivityRow = z.object({
+  id: z.string(),
+  actorId: z.string().nullable(),
+  // "(deleted user)" when actor was unlinked; "(system)" when no actor (the
+  // scheduler / SCIM auto-provision emits these).
+  actorName: z.string(),
+  action: z.string(),
+  taskId: z.string().nullable(),
+  taskTitle: z.string().nullable(),
+  projectId: z.string().nullable(),
+  projectName: z.string().nullable(),
+  meta: z.record(z.unknown()),
+  createdAt: z.string(),
+});
+
+export const teamActivityResponse = z.object({
+  items: z.array(teamActivityRow),
+});
+
 export type DoneTasksQuery = z.infer<typeof doneTasksQuery>;
 export type TimelinessQuery = z.infer<typeof timelinessQuery>;
+export type UpcomingTasksQuery = z.infer<typeof upcomingTasksQuery>;
+export type TeamActivityQuery = z.infer<typeof teamActivityQuery>;

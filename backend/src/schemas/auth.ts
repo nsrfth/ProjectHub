@@ -10,11 +10,9 @@ export const passwordSchema = z
     message: 'Password must contain letters and digits',
   });
 
-export const registerBody = z.object({
-  email: z.string().email().max(254).toLowerCase(),
-  name: z.string().min(1).max(120).trim(),
-  password: passwordSchema,
-});
+// v1.30.11 (S-9): registerBody removed alongside the public
+// /auth/register route. Admin-driven user creation uses the schemas
+// in schemas/admin.ts (createUserBody).
 
 export const loginBody = z.object({
   email: z.string().email().toLowerCase(),
@@ -28,6 +26,15 @@ export const requestResetBody = z.object({
 export const performResetBody = z.object({
   token: z.string().min(32).max(256),
   password: passwordSchema,
+});
+
+// v1.32.0: user-initiated password change. Verifies `currentPassword`
+// against the user's stored hash, then rotates to `newPassword`. We only
+// validate `currentPassword` length here (full policy doesn't apply — it's
+// whatever they currently have); `newPassword` runs the regular policy.
+export const changeOwnPasswordBody = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: passwordSchema,
 });
 
 export const verificationRequestBody = z.object({
@@ -113,9 +120,9 @@ export const twoFactorPendingResponse = z.object({
   pendingToken: z.string(),
 });
 
-export type RegisterBody = z.infer<typeof registerBody>;
 export type LoginBody = z.infer<typeof loginBody>;
 export type RequestResetBody = z.infer<typeof requestResetBody>;
 export type PerformResetBody = z.infer<typeof performResetBody>;
 export type VerificationRequestBody = z.infer<typeof verificationRequestBody>;
 export type VerificationPerformBody = z.infer<typeof verificationPerformBody>;
+export type ChangeOwnPasswordBody = z.infer<typeof changeOwnPasswordBody>;

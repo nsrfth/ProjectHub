@@ -21,7 +21,7 @@ export default function ProtectedRoute(): JSX.Element | null {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <TopNav />
-      <main className="md:pl-64">
+      <main className="md:ps-64">
         <Outlet />
       </main>
     </div>

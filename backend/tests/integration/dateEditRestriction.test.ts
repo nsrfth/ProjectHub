@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // v1.18: instance-wide `tasks.dateEditRestriction` setting. When "manager-only":
 //   - members can ADD a date to a task that has none (allowed)
@@ -38,21 +39,13 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 }
 
 async function setup() {
-  // First registered user is auto-promoted to ADMIN.
-  const adminReg = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'admin@example.com', name: 'Admin', password: PASSWORD },
-  });
-  const adminToken = adminReg.json().accessToken as string;
+  // First bootstrapped user is auto-promoted to ADMIN.
+  const adminReg = await bootstrapUser(app, { email: 'admin@example.com', name: 'Admin', password: PASSWORD });
+  const adminToken = adminReg.token;
 
   // Second user is a plain MEMBER.
-  const memberReg = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'member@example.com', name: 'Member', password: PASSWORD },
-  });
-  const memberToken = memberReg.json().accessToken as string;
+  const memberReg = await bootstrapUser(app, { email: 'member@example.com', name: 'Member', password: PASSWORD });
+  const memberToken = memberReg.token;
 
   const team = await inject({
     method: 'POST',
@@ -226,12 +219,8 @@ describe('/api/system/info dateEditRestriction', () => {
   });
 
   it('returns "manager-only" once the admin opted in', async () => {
-    const reg = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'a@example.com', name: 'A', password: PASSWORD },
-    });
-    await enableManagerOnly(reg.json().accessToken as string);
+    const reg = await bootstrapUser(app, { email: 'a@example.com', name: 'A', password: PASSWORD });
+    await enableManagerOnly(reg.token);
     const res = await inject({ method: 'GET', url: '/api/system/info' });
     expect(res.json().dateEditRestriction).toBe('manager-only');
   });

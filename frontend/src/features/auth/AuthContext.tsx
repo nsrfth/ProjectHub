@@ -7,7 +7,7 @@ import * as authApi from './api';
 
 // v1.13: shared one-liner — adopt every per-user UI preference the
 // /auth response carries. Called from refresh / signIn / signInWith2fa
-// / signUp so the user's prefs travel across devices.
+// so the user's prefs travel across devices.
 function adoptUserPrefs(u: authApi.AuthUser): void {
   adoptServerCalendar(u.calendarPreference);
   adoptServerTheme(u.themePreference);
@@ -25,7 +25,6 @@ interface AuthState {
     | { kind: 'pending2fa'; pendingToken: string }
   >;
   signInWith2fa: (pendingToken: string, code: string) => Promise<void>;
-  signUp: (email: string, name: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   // Used by Settings → Security after a successful 2FA enrol/disable so the
   // ambient user.totpEnabled flips immediately without a refresh round-trip.
@@ -80,12 +79,6 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       },
       signInWith2fa: async (pendingToken, code) => {
         const res = await authApi.loginTwoFactor({ pendingToken, code });
-        setAccessToken(res.accessToken);
-        setUser(res.user);
-        adoptUserPrefs(res.user);
-      },
-      signUp: async (email, name, password) => {
-        const res = await authApi.register({ email, name, password });
         setAccessToken(res.accessToken);
         setUser(res.user);
         adoptUserPrefs(res.user);

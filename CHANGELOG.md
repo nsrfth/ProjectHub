@@ -4,6 +4,257 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.0] — 2026-06-06
+
+**Password lifecycle: local users change their own, admins reset anyone's.**
+
+The two write-paths into `User.passwordHash` that the product was missing.
+Previously the only way to rotate a password was the email-token reset
+flow (`/auth/password/reset-request` → `/auth/password/reset`), which is
+the right tool for "I forgot" but a poor fit for "I want to rotate" and
+unusable for "this user lost their TOTP and needs their admin to bail
+them out". This release adds the two direct endpoints with the same
+security properties as the reset-token path.
+
+### Backend
+
+- New `POST /api/auth/me/password` — local user changes their own password.
+  Body `{ currentPassword, newPassword }`. Verifies the current password
+  against the stored argon2 hash, rotates to the new one, revokes every
+  active refresh-token row for the user. **Session-only**
+  (`requireAuth + requireSessionAuth`) — an API token, even `*`-scoped,
+  must not be able to rotate the owner's password. Refuses directory-owned
+  (LDAP/SCIM) accounts with **403** because their password lives upstream
+  and a local change would be overwritten on the next sync.
+- New `POST /api/admin/users/:userId/password` — admin resets any user's
+  password. Body `{ password? }` — caller-supplied wins, omit for a
+  server-generated 20-char value returned **once** in the response (same
+  shape as `/admin/users` createUser). Refuses directory-owned targets
+  with **409**. Revokes every active refresh-token row for the target.
+  ADMIN-only via the existing `requireGlobalRole('ADMIN')` chain on
+  `/admin/*`.
+- Both transactions follow the same `prisma.$transaction([user.update,
+  refreshToken.updateMany])` shape as the existing
+  `AuthService.performPasswordReset` so password rotation has one
+  consistent revocation policy regardless of trigger.
+- `AdminUserView` (and `adminUserResponse`) now carries `directoryId:
+  string | null` so the admin UI can hide local-password actions for
+  directory-owned users without a second round-trip. Backward-compatible —
+  default `null`.
+- No migration; both endpoints read existing columns.
+
+### Frontend
+
+- `pages/settings/SecurityPage.tsx` — new "Change password" panel above
+  the 2FA section. Hidden when `user.directoryId !== null`; renders a
+  directory-owned hint in its place. On success the panel calls
+  `signOut()` + navigates to `/login` (every refresh token is revoked
+  server-side, including the current cookie — bouncing to login is the
+  honest UX rather than waiting for the access token to expire ~15 min
+  later).
+- `pages/AdminPage.tsx` — per-row "Reset password" button. Disabled with
+  a "Directory-owned" tooltip when `directoryId !== null`. Opens an
+  inline form; the generated password is revealed once below the row
+  (same one-shot reveal pattern as the v1.26 createUser flow).
+- `features/auth/api.ts` — `changeOwnPassword({ currentPassword,
+  newPassword })`.
+- `features/admin/api.ts` — `resetUserPassword(userId, password?)` and
+  `directoryId` on `AdminUser`.
+- New `security.password.*` + `admin.resetPassword.*` keys in `en.json`
+  + `fa.json`.
+
+### Tests
+
+- New `tests/integration/passwordManagement.test.ts` — 12 cases:
+  - User can rotate (old fails / new works), other refresh tokens
+    revoked.
+  - Wrong current password → 400, no rotation.
+  - New password failing the policy → 400.
+  - Directory-owned user → 403, no rotation.
+  - Unauthenticated → 401.
+  - Admin reset (generated) → 200, password works for login.
+  - Admin reset (supplied) → 200, returns `generatedPassword: null`.
+  - All target refresh tokens revoked.
+  - Directory-owned target → 409, `passwordHash` untouched.
+  - Unknown user → 404.
+  - Non-admin caller → 403.
+  - Admin-supplied weak password → 400.
+
+### Verified
+
+- Backend `tsc` ✅; frontend `tsc --noEmit` ✅.
+- `admin.test.ts` + `adminCreateUser.test.ts` + `auth.test.ts` +
+  `passwordManagement.test.ts` — **47/47 pass.**
+
+### Phase boundary
+
+- The two endpoints don't write to the audit/activity log. Mirrors
+  `performPasswordReset`'s existing convention; if/when we tighten that
+  to audit-grade, all three should move together.
+- Refresh-token revocation is total — including the *current* session
+  on `/me/password`. A nicer UX would preserve the calling cookie and
+  only boot other devices; deferred until we model "this session's
+  refresh-token row" cleanly at the controller layer. The current
+  behaviour is honest and secure; the front-end just signs out.
+- Directory-owned guard is `directoryId !== null` only. If a future
+  Directory becomes optional/local-only (e.g. SAML JIT that *also*
+  permits local passwords), this single condition needs a flag.
+
+## [1.31.0] — 2026-05-27
+
+**Dashboard redesign + two new dashboard feed endpoints.**
+
+The dashboard was reworked to match the new product mockup (RTL-first,
+greeting + period tabs, four KPI cards with the primary "Open tasks"
+metric accented, a wide completion-trend chart, a status breakdown, and
+a three-panel bottom row). The two previously-stubbed panels — Upcoming
+deadlines and Recent activity — are now backed by real endpoints.
+
+### Backend
+
+- New `GET /api/teams/:teamId/reports/upcoming?days=N` (default 7, cap
+  30). Returns tasks **assigned to the calling user** in that team with
+  a `dueDate` between today (UTC start) and today + N days, excluding
+  `DONE` and soft-deleted rows, sorted by `dueDate` asc. Each row carries
+  `taskId`, `taskTitle`, `projectId`, `projectName`, `status`,
+  `priority`, `dueDate`, and a computed `daysUntil`.
+- New `GET /api/teams/:teamId/reports/activity?limit=N` (default 20, cap
+  100). Team-scoped activity feed reading the existing `Activity` table
+  (which `activityLogger` already denormalises `teamId` onto), newest
+  first, with actor + task + project joined into each row. Actor falls
+  back to `(deleted user)` when unlinked and `(system)` for actor-less
+  scheduler/SCIM events.
+- Both endpoints live in `reportsService` / `reportsController` /
+  `routes/reports.ts`, gated by the same `requireAuth` +
+  `requireTeamRole('MEMBER','MANAGER')` + `requireScope('tasks:read')`
+  chain as the other reports. **No migration** — both read existing
+  columns (`Task.dueDate`/`assigneeId`/`status`/`deletedAt`, `Activity`).
+
+### Frontend
+
+- `pages/DashboardPage.tsx` rewritten: greeting + period tabs
+  (week/month/quarter — re-scopes the trend chart), four KPI cards,
+  completion-trend chart, status breakdown, and a workload / upcoming /
+  activity bottom row. Upcoming + activity now render live data via two
+  new react-query hooks.
+- `features/nav/LeftSidebar.tsx`: pinned to the inline-start edge
+  (`start-0` / `border-e`) so it sits on the right under `dir=rtl` and
+  the left under `dir=ltr` with no per-language overrides; new TaskHub
+  brand header + user-profile footer.
+- `features/nav/TopNav.tsx`: logical `ps-*` padding, route-derived page
+  title, and a "+ New Task" button.
+- `features/reports/api.ts`: `fetchUpcoming` + `fetchTeamActivity`
+  clients with `UpcomingTaskRow` / `TeamActivityRow` types.
+- New `dashboard.*` i18n keys in `en.json` + `fa.json`.
+
+### Tests
+
+- New `tests/integration/dashboardFeeds.test.ts` — 12 cases covering:
+  upcoming window/sort/`days` cap, DONE + soft-delete exclusion,
+  per-user assignee scoping, non-member 403; activity newest-first +
+  joins, `limit` cap, cross-team isolation, non-member 403, and the
+  actor-unlinked fallback.
+
+### Verified
+
+- Backend `tsc` ✅; frontend `tsc --noEmit` ✅.
+- Integration suite: **317 passed, 5 skipped** in the standalone runner
+  (the 3 LDAP test files require the compose `test`-profile OpenLDAP
+  service and are environmental, not affected by this change). New
+  `dashboardFeeds.test.ts` — 12/12.
+
+### Phase boundary
+
+- `/reports/upcoming` is per-caller within one team. A cross-team "my
+  deadlines everywhere" feed would be a separate top-level endpoint (cf.
+  how `/search` spans teams) — deferred until the UI asks for it.
+- The activity feed reads `Activity` directly; it is observability-grade,
+  not audit-grade (best-effort writes per `activityLogger`). The
+  audit-grade, role-filtered view remains `/audit`.
+- Period tabs re-scope only the trend chart. The KPI snapshot still comes
+  from `/reports/summary` (fixed 7-day deltas); per-period KPI deltas
+  would need a windowed summary endpoint — a future follow-up.
+
+## [1.30.11] — 2026-05-27
+
+**S-9: public self-registration removed.**
+
+`POST /api/auth/register` was an account-enumeration channel: a fresh
+email returned `201 Created`, an already-registered email returned
+`409 Conflict` with `"Email already registered"`. An attacker could
+mass-probe addresses to build a list of valid TaskHub accounts
+without ever needing a password. The decision (per the S-9 spec) is
+a hard removal rather than an anti-enumeration response shape — a
+deleted route can't leak. New accounts come exclusively from the
+v1.26 admin-provisioning flow (`POST /api/admin/users`,
+Settings → Admin → New user), or from LDAP/SCIM JIT. Bootstrap is
+`prisma db seed` driven by `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
+
+### Backend
+
+- `routes/auth.ts`: `r.post('/register', ...)` removed; the route
+  no longer exists (404 on probe, identical for fresh + existing
+  emails — no enumeration channel).
+- `controllers/authController.ts`: `register` handler removed.
+- `services/authService.ts`: `register()` method removed. The
+  argon2id hashing + first-user-is-ADMIN auto-promotion logic lives
+  in `AdminService.createUser` (v1.26) and the prisma seed; this
+  service no longer mints users.
+- `schemas/auth.ts`: `registerBody` + `RegisterBody` type removed.
+  `passwordSchema` retained (still used by admin create + password
+  reset).
+- LDAP JIT provisioning (v1.4) was audited and confirmed to create
+  users on its own `directoryService` path — it never called
+  `AuthService.register` and is unaffected.
+
+### Frontend
+
+- `pages/RegisterPage.tsx` deleted.
+- `app/router.tsx`: `/register` route removed.
+- `pages/LoginPage.tsx`: "no account → Create one" link removed.
+- `features/auth/api.ts`: `register()` client removed.
+- `features/auth/AuthContext.tsx`: `signUp` method removed from
+  the auth context.
+- `i18n/en.json` + `i18n/fa.json`: `nav.signUp` + `login.noAccount`
+  keys removed.
+
+### Docs
+
+- `INSTALL.md`: bootstrap section now states the seed is the only
+  way to create the first account; subsequent accounts via
+  Settings → Admin → New user.
+- `README.md`: "first-registration promotion" replaced with
+  "admin-only provisioning".
+
+### Tests
+
+- New `auth.test.ts` block — `POST /api/auth/register removed (S-9)`
+  — probes a fresh + an existing email, asserts both return 404 with
+  identical bodies (no enumeration).
+- The pre-existing register-endpoint test fixtures across all 32
+  integration test files were migrated to a new
+  `tests/helpers/bootstrapUser.ts` helper that hashes via argon2id
+  and creates users via prisma directly, then logs them in to mint
+  a real access token. Behaviour is identical from the test's
+  perspective; the helper preserves the first-user-is-ADMIN
+  auto-promotion that `AuthService.register` used to do.
+
+### Verified
+
+- Backend `tsc` ✅.
+- Frontend `tsc --noEmit` ✅.
+- Full integration suite: **324 passed, 5 skipped** (LDAP).
+
+### Phase boundary
+
+- The seed remains the only bootstrap path. Operators who want to
+  bypass the seeded admin (e.g. their first admin should come from
+  LDAP) can still wire that up — LDAP JIT promotes the first user
+  to ADMIN under the same auto-promotion rule.
+- `passwordSchema` is now exercised only by admin-create + password
+  reset. If a future release wants to tighten password policy
+  per-flow, that's a one-place change.
+
 ## [1.30.10] — 2026-05-27
 
 **Quality-pass release in the spirit of v1.2.1 — S-18 (missing index)

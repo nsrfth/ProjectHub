@@ -4,6 +4,7 @@ import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
 import { TaskTemplatesService } from '../../src/services/taskTemplatesService.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // Phase 4 coverage: PUT/GET the rule, spawnDue idempotency, label/subtask
 // copy, WEEKLY byWeekday math, endsOn + maxCount termination.
@@ -32,13 +33,9 @@ beforeEach(async () => {
 const PASSWORD = 'CorrectHorseBattery9';
 
 async function setup(): Promise<{ token: string; userId: string; teamId: string; projectId: string }> {
-  const reg = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'rec@example.com', name: 'Rec', password: PASSWORD },
-  });
-  const token: string = reg.json().accessToken;
-  const userId: string = reg.json().user.id;
+  const reg = await bootstrapUser(app, { email: 'rec@example.com', name: 'Rec', password: PASSWORD });
+  const token: string = reg.token;
+  const userId: string = reg.userId;
   const team = await app.inject({
     method: 'POST', url: '/api/teams',
     headers: { authorization: `Bearer ${token}` },

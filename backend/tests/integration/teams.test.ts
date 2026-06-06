@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 let app: FastifyInstance;
 
@@ -37,13 +38,8 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 const PASSWORD = 'CorrectHorseBattery9';
 
 async function registerUser(email: string, name = 'User'): Promise<string> {
-  const res = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email, name, password: PASSWORD },
-  });
-  if (res.statusCode !== 201) throw new Error(`register failed: ${res.statusCode} ${res.body}`);
-  return res.json().accessToken;
+  const r = await bootstrapUser(app, { email, name, password: PASSWORD });
+  return r.token;
 }
 
 async function createTeam(token: string, slug = 'team-a', name = 'Team A') {

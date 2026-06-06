@@ -4,6 +4,7 @@ import { authenticator } from 'otplib';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // Full TOTP enrolment + 2-step login + recovery-code path. Uses otplib to
 // generate the same TOTP codes the running server expects.
@@ -28,13 +29,8 @@ beforeEach(async () => {
 const PASSWORD = 'CorrectHorseBattery9';
 
 async function register(email = 'tfa@example.com'): Promise<string> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email, name: 'TFA', password: PASSWORD },
-  });
-  if (res.statusCode !== 201) throw new Error(`register failed: ${res.statusCode} ${res.body}`);
-  return res.json().accessToken;
+  const r = await bootstrapUser(app, { email, name: 'TFA', password: PASSWORD });
+  return r.token;
 }
 
 async function enrol(accessToken: string): Promise<{ secret: string; recoveryCodes: string[] }> {

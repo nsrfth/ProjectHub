@@ -1,4 +1,4 @@
-import type { TaskStatus } from '@prisma/client';
+import type { TaskPriority, TaskStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 
 export interface DoneTaskRow {
@@ -51,6 +51,34 @@ export interface TimelinessReport {
   onTimeRate: number; // 0..1
   avgVarianceDays: number;
   behindPlanCount: number;
+}
+
+// v1.31: upcoming-deadlines feed for the dashboard. Scoped to one team +
+// one assignee (the caller); see listUpcomingForUser. Ordered by dueDate
+// ascending so the soonest deadline floats to the top.
+export interface UpcomingTaskRow {
+  taskId: string;
+  taskTitle: string;
+  projectId: string;
+  projectName: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate: Date;
+  daysUntil: number;
+}
+
+// v1.31: team-scoped activity feed. Newest-first, capped per request.
+export interface TeamActivityRow {
+  id: string;
+  actorId: string | null;
+  actorName: string;
+  action: string;
+  taskId: string | null;
+  taskTitle: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  meta: Record<string, unknown>;
+  createdAt: Date;
 }
 
 const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW'];
@@ -219,5 +247,80 @@ export class ReportsService {
         evaluatedCount === 0 ? 0 : totalVarianceMs / evaluatedCount / MS_PER_DAY,
       behindPlanCount,
     };
+  }
+
+  // v1.31: dashboard widget feed. Per-user upcoming deadlines inside one
+  // team, due between today (UTC start) and today + N days inclusive.
+  // Excludes DONE and soft-deleted rows. Caller (route layer) already
+  // verified team membership; we just filter by assignee = userId.
+  async listUpcomingForUser(
+    teamId: string,
+    userId: string,
+    days: number,
+  ): Promise<UpcomingTaskRow[]> {
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const horizon = new Date(todayStart.getTime() + days * MS_PER_DAY);
+    const rows = await prisma.task.findMany({
+      where: {
+        teamId,
+        assigneeId: userId,
+        deletedAt: null,
+        status: { in: OPEN_STATUSES },
+        dueDate: { gte: todayStart, lte: horizon },
+      },
+      include: { project: { select: { id: true, name: true } } },
+      orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+    });
+    return rows
+      .filter((r): r is typeof r & { dueDate: Date } => r.dueDate !== null)
+      .map((r) => ({
+        taskId: r.id,
+        taskTitle: r.title,
+        projectId: r.project.id,
+        projectName: r.project.name,
+        status: r.status,
+        priority: r.priority,
+        dueDate: r.dueDate,
+        daysUntil: Math.floor(
+          (r.dueDate.getTime() - todayStart.getTime()) / MS_PER_DAY,
+        ),
+      }));
+  }
+
+  // v1.31: team activity feed. Uses the existing Activity table (the
+  // activityLogger already denormalises teamId on write — v1.x). Joins on
+  // actor + task + project so the response is self-contained for the
+  // dashboard list without a second round-trip.
+  async listTeamActivity(teamId: string, limit: number): Promise<TeamActivityRow[]> {
+    const rows = await prisma.activity.findMany({
+      where: { teamId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: {
+        actor: { select: { id: true, name: true } },
+        task: {
+          select: {
+            id: true,
+            title: true,
+            project: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    return rows.map((a) => ({
+      id: a.id,
+      actorId: a.actorId,
+      // SetNull on user delete preserves audit rows — mirror the same
+      // placeholder the per-task feed uses so the UI doesn't branch.
+      actorName: a.actor?.name ?? (a.actorId ? '(deleted user)' : '(system)'),
+      action: a.action,
+      taskId: a.taskId,
+      taskTitle: a.task?.title ?? null,
+      projectId: a.task?.project.id ?? null,
+      projectName: a.task?.project.name ?? null,
+      meta: (a.meta as Record<string, unknown>) ?? {},
+      createdAt: a.createdAt,
+    }));
   }
 }

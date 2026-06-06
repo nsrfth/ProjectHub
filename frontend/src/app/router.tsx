@@ -1,6 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import LoginPage from '@/pages/LoginPage';
-import RegisterPage from '@/pages/RegisterPage';
 import DashboardPage from '@/pages/DashboardPage';
 import TeamsPage from '@/pages/TeamsPage';
 import ProjectsPage from '@/pages/ProjectsPage';
@@ -26,7 +25,11 @@ import ProtectedRoute from './ProtectedRoute';
 export const router = createBrowserRouter([
   { path: '/', element: <Navigate to="/dashboard" replace /> },
   { path: '/login', element: <LoginPage /> },
-  { path: '/register', element: <RegisterPage /> },
+  // v1.30.11 (S-9): /register route + RegisterPage removed. Public
+  // self-registration was an account-enumeration channel. New accounts
+  // come from the v1.26 admin-provisioning flow at Settings → Admin →
+  // New user. Bootstrap is `prisma db seed` (SEED_ADMIN_EMAIL +
+  // SEED_ADMIN_PASSWORD), not the frontend.
   {
     element: <ProtectedRoute />,
     children: [

@@ -24,6 +24,10 @@ export const adminUserResponse = z.object({
   emailVerifiedAt: z.string().nullable(),
   createdAt: z.string(),
   membershipCount: z.number().int().nonnegative(),
+  // v1.32.0: surfaced so the admin UI can hide "Reset password" for
+  // directory-owned (LDAP/SCIM) users — their password lives in the
+  // directory, not in TaskHub.
+  directoryId: z.string().nullable().default(null),
 });
 
 // Paginated envelopes — `nextCursor` is null when there's no more data.
@@ -71,3 +75,16 @@ export const createUserResponse = z.object({
   // back exactly once — there's no way to retrieve it later.
   generatedPassword: z.string().nullable(),
 });
+
+// v1.32.0: admin-initiated password reset. Body mirrors createUser's
+// password handling: caller-supplied wins, omit for a server-generated
+// 20-char value returned ONCE.
+export const adminResetPasswordBody = z.object({
+  password: passwordSchema.optional(),
+});
+
+export const adminResetPasswordResponse = z.object({
+  generatedPassword: z.string().nullable(),
+});
+
+export type AdminResetPasswordBody = z.infer<typeof adminResetPasswordBody>;

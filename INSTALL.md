@@ -160,10 +160,12 @@ That creates `admin@taskhub.local` / `admin` plus three demo members and an
 18-task fixture in a "Demo Team". **Change the admin password immediately**
 after first sign-in (Settings → Security, or `POST /api/auth/password/reset-request`).
 
-Alternative if you don't want the demo dataset: skip the seed and use
-**first-registration promotion** — the very first user registered through
-`POST /api/auth/register` is automatically granted `GlobalRole.ADMIN`. Every
-subsequent registration defaults to `MEMBER`.
+v1.30.11 (S-9): public self-registration is **removed**. `POST /api/auth/register`
+no longer exists, and the frontend has no "Sign up" link. The seed above is the
+only way to create the first account; every subsequent user is provisioned by an
+admin via **Settings → Admin → New user** (`POST /api/admin/users`, v1.26), or
+by a Directory (LDAP/SCIM) JIT path. Set `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`
+in the env before seeding to override the default bootstrap credentials.
 
 ### 6. Open the app
 

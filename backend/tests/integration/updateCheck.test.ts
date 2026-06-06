@@ -4,6 +4,7 @@ import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
 import { updateCheckService } from '../../src/services/updateCheckService.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // Integration coverage for GET /api/admin/update-check.
 //  - 401 for unauthenticated callers
@@ -46,27 +47,15 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 }
 
 async function registerAdmin(): Promise<string> {
-  const res = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'a@example.com', name: 'A', password: PASSWORD },
-  });
-  return res.json().accessToken as string;
+  const r = await bootstrapUser(app, { email: 'a@example.com', name: 'A', password: PASSWORD });
+  return r.token;
 }
 
 async function registerMember(): Promise<string> {
-  // First user is auto-promoted to ADMIN; demote to MEMBER for the test.
-  await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'first@example.com', name: 'First', password: PASSWORD },
-  });
-  const res = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'm@example.com', name: 'M', password: PASSWORD },
-  });
-  return res.json().accessToken as string;
+  // First user is auto-promoted to ADMIN; second is MEMBER.
+  await bootstrapUser(app, { email: 'first@example.com', name: 'First', password: PASSWORD });
+  const r = await bootstrapUser(app, { email: 'm@example.com', name: 'M', password: PASSWORD });
+  return r.token;
 }
 
 function stubGithubLatest(tagName: string) {

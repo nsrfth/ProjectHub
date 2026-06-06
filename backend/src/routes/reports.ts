@@ -10,8 +10,12 @@ import {
   doneTasksQuery,
   overdueResponse,
   summaryResponse,
+  teamActivityQuery,
+  teamActivityResponse,
   timelinessQuery,
   timelinessResponse,
+  upcomingResponse,
+  upcomingTasksQuery,
   workloadResponse,
 } from '../schemas/reports.js';
 
@@ -72,6 +76,30 @@ export async function reportsRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.summary,
+  });
+
+  r.get('/upcoming', {
+    schema: {
+      tags: ['reports'],
+      summary: "Tasks assigned to the caller with dueDate in the next N days (default 7, cap 30)",
+      params: z.object({ teamId: z.string() }),
+      querystring: upcomingTasksQuery,
+      response: { 200: upcomingResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.upcoming,
+  });
+
+  r.get('/activity', {
+    schema: {
+      tags: ['reports'],
+      summary: 'Team-wide activity feed (newest first, cap 100)',
+      params: z.object({ teamId: z.string() }),
+      querystring: teamActivityQuery,
+      response: { 200: teamActivityResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.activity,
   });
 
   r.get('/timeliness', {

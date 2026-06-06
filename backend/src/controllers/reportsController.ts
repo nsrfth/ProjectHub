@@ -1,6 +1,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ReportsService } from '../services/reportsService.js';
-import type { DoneTasksQuery, TimelinessQuery } from '../schemas/reports.js';
+import type {
+  DoneTasksQuery,
+  TeamActivityQuery,
+  TimelinessQuery,
+  UpcomingTasksQuery,
+} from '../schemas/reports.js';
+import { Errors } from '../lib/errors.js';
 import { toCsv } from '../lib/csv.js';
 
 type TeamParams = { teamId: string };
@@ -55,6 +61,34 @@ export class ReportsController {
   ) => {
     const r = await this.svc.timeliness(req.params.teamId, req.query.days);
     return reply.send(r);
+  };
+
+  // v1.31: dashboard feeds — upcoming deadlines for the calling user and the
+  // team-wide activity feed. Both are read-only, gated by tasks:read.
+  upcoming = async (
+    req: FastifyRequest<{ Params: TeamParams; Querystring: UpcomingTasksQuery }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    const rows = await this.svc.listUpcomingForUser(
+      req.params.teamId,
+      req.user.sub,
+      req.query.days,
+    );
+    return reply.send({
+      windowDays: req.query.days,
+      items: rows.map((r) => ({ ...r, dueDate: r.dueDate.toISOString() })),
+    });
+  };
+
+  activity = async (
+    req: FastifyRequest<{ Params: TeamParams; Querystring: TeamActivityQuery }>,
+    reply: FastifyReply,
+  ) => {
+    const rows = await this.svc.listTeamActivity(req.params.teamId, req.query.limit);
+    return reply.send({
+      items: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
+    });
   };
 
   // ── CSV exports ─────────────────────────────────────────────────────────

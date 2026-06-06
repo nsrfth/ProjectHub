@@ -67,6 +67,54 @@ export interface TimelinessReport {
   behindPlanCount: number;
 }
 
+// v1.31: dashboard feeds.
+export interface UpcomingTaskRow {
+  taskId: string;
+  taskTitle: string;
+  projectId: string;
+  projectName: string;
+  status: 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  dueDate: string;
+  daysUntil: number;
+}
+
+export async function fetchUpcoming(
+  teamId: string,
+  days = 7,
+): Promise<{ windowDays: number; items: UpcomingTaskRow[] }> {
+  return (
+    await api.get<{ windowDays: number; items: UpcomingTaskRow[] }>(
+      `/teams/${teamId}/reports/upcoming`,
+      { params: { days } },
+    )
+  ).data;
+}
+
+export interface TeamActivityRow {
+  id: string;
+  actorId: string | null;
+  actorName: string;
+  action: string;
+  taskId: string | null;
+  taskTitle: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  meta: Record<string, unknown>;
+  createdAt: string;
+}
+
+export async function fetchTeamActivity(
+  teamId: string,
+  limit = 20,
+): Promise<{ items: TeamActivityRow[] }> {
+  return (
+    await api.get<{ items: TeamActivityRow[] }>(`/teams/${teamId}/reports/activity`, {
+      params: { limit },
+    })
+  ).data;
+}
+
 export async function fetchTimeliness(
   teamId: string,
   days: number,

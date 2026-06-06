@@ -4,6 +4,7 @@ import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
 import { _internal as ssrfInternal } from '../../src/lib/ssrfGuard.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // v1.30.7 (S-11): SSRF regression suite.
 //
@@ -45,13 +46,8 @@ beforeEach(async () => {
 const PASSWORD = 'CorrectHorseBattery9';
 
 async function adminTeam(): Promise<{ token: string; teamId: string }> {
-  const reg = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'admin@example.com', name: 'Admin', password: PASSWORD },
-  });
-  if (reg.statusCode !== 201) throw new Error(`register: ${reg.statusCode} ${reg.body}`);
-  const token = reg.json().accessToken as string;
+  const reg = await bootstrapUser(app, { email: 'admin@example.com', name: 'Admin', password: PASSWORD });
+  const token = reg.token;
   const team = await app.inject({
     method: 'POST',
     url: '/api/teams',

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useT } from '@/lib/i18n';
 
@@ -101,12 +101,9 @@ export default function LoginPage(): JSX.Element {
             {submitting ? t('login.submitting') : t('login.submit')}
           </button>
 
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            {t('login.noAccount')}{' '}
-            <Link to="/register" className="text-slate-900 dark:text-slate-100 underline">
-              {t('nav.signUp')}
-            </Link>
-          </p>
+          {/* v1.30.11 (S-9): public self-registration removed.
+              New accounts are admin-provisioned via Settings → Admin →
+              New user (v1.26). The "no account → sign up" link is gone. */}
         </form>
       ) : (
         <form

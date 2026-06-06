@@ -11,6 +11,7 @@ import { Client } from 'ldapts';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // LDAP integration test. Requires OpenLDAP reachable at LDAP_TEST_URL
 // (default ldap://localhost:1389). In CI it's a service container; locally
@@ -140,14 +141,9 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 
 async function createDirectory(): Promise<string> {
   // Seed an admin so the directory CRUD endpoint accepts the call. The first
-  // registered user gets ADMIN.
-  const reg = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'root@taskhub.local', name: 'Root', password: 'CorrectHorseBattery9' },
-  });
-  expect(reg.statusCode).toBe(201);
-  const token: string = reg.json().accessToken;
+  // bootstrapped user gets ADMIN.
+  const reg = await bootstrapUser(app, { email: 'root@taskhub.local', name: 'Root', password: 'CorrectHorseBattery9' });
+  const token: string = reg.token;
 
   const url = new URL(LDAP_URL);
   const create = await inject({

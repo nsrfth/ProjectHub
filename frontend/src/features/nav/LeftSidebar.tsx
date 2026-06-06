@@ -1,5 +1,6 @@
 import { NavLink, Link } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useTeams } from '@/features/teams/TeamsContext';
 import { useT } from '@/lib/i18n';
 import {
   IconAdmin,
@@ -8,19 +9,18 @@ import {
   IconDashboard,
   IconProjects,
   IconReports,
+  IconSettings,
   IconTeams,
   IconTrash,
 } from './icons';
 
-// v1.24: persistent left sidebar. Primary nav now lives here instead of
-// stretched across the top bar — leaves the top free for user identity +
-// notifications. Width is fixed at 16rem on md+; below md the sidebar
-// becomes a drawer toggled by the hamburger in TopNav (see open/onClose).
+// v1.24: persistent side rail. v1.31: dashboard redesign. The rail is now
+// pinned to the inline-start edge — `start-0` resolves to left in LTR and
+// right in RTL, so the same component lays out correctly under both
+// `<html dir="ltr">` and `<html dir="rtl">` (lib/i18n.ts sets dir from the
+// user's language pref). The drawer transform mirrors the same axis.
 
 interface Props {
-  // Drawer mode: when open=true and on a narrow viewport, the sidebar
-  // overlays the page from the left. On md+ the sidebar is always visible
-  // and these props are ignored.
   open: boolean;
   onClose: () => void;
 }
@@ -32,16 +32,26 @@ interface NavItem {
   adminOnly?: boolean;
 }
 
+function initials(name: string | undefined, email: string | undefined): string {
+  const source = (name || email || '?').trim();
+  if (!source) return '?';
+  const parts = source.split(/[\s.@_-]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
+
 export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
   const { user } = useAuth();
+  const { currentTeam } = useTeams();
   const t = useT();
 
   const items: NavItem[] = [
     { to: '/dashboard', label: t('nav.dashboard'), icon: IconDashboard },
+    { to: '/teams', label: t('nav.teams'), icon: IconTeams },
     { to: '/projects', label: t('nav.projects'), icon: IconProjects },
     { to: '/calendar', label: t('nav.calendar'), icon: IconCalendar },
     { to: '/reports', label: t('nav.reports'), icon: IconReports },
-    { to: '/teams', label: t('nav.teams'), icon: IconTeams },
+    { to: '/settings/preferences', label: t('nav.settings'), icon: IconSettings },
     { to: '/trash', label: 'Trash', icon: IconTrash },
     { to: '/admin', label: t('nav.admin'), icon: IconAdmin, adminOnly: true },
   ];
@@ -49,8 +59,6 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
 
   return (
     <>
-      {/* Drawer overlay — visible only when open on narrow viewports. md+ never
-          shows this (the sidebar is in-flow at those widths). */}
       {open && (
         <button
           type="button"
@@ -62,29 +70,49 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
 
       <aside
         className={[
-          // Layout. md+ : fixed left rail, always visible. Below md : drawer
-          // controlled by `open`; slides in from the left.
-          'fixed top-0 left-0 z-50 w-64 h-screen flex flex-col',
-          'bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800',
+          // Pinned to the inline-start edge so it lives on the left in LTR
+          // and the right in RTL with no per-language overrides.
+          'fixed top-0 start-0 z-50 w-64 h-screen flex flex-col',
+          'bg-slate-900 text-slate-100 border-e border-slate-800',
           'transition-transform duration-200',
-          open ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+          // Drawer (below md): closed = translate to inline-start (off-screen).
+          // rtl:translate-x-full slides off the right edge; ltr:-translate-x-full
+          // slides off the left. md+ always shows the rail.
+          open
+            ? 'translate-x-0'
+            : 'rtl:translate-x-full ltr:-translate-x-full md:translate-x-0',
         ].join(' ')}
         aria-label="Primary navigation"
       >
-        <div className="h-14 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800">
+        {/* Brand header — TaskHub with a small checkmark mark. */}
+        <div className="h-14 flex items-center justify-between px-4 border-b border-slate-800">
           <Link
             to="/dashboard"
-            className="text-base font-semibold text-slate-900 dark:text-slate-100"
+            className="flex items-center gap-2 text-base font-semibold text-white"
             onClick={onClose}
           >
+            <span className="w-7 h-7 rounded-md bg-indigo-500 flex items-center justify-center">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </span>
             {t('app.name')}
           </Link>
-          {/* Close button only visible in drawer mode. */}
           <button
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="md:hidden p-1 rounded text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="md:hidden p-1 rounded text-slate-400 hover:bg-slate-800"
           >
             <IconClose size={20} />
           </button>
@@ -97,25 +125,19 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
                 <NavLink
                   to={item.to}
                   onClick={onClose}
+                  end={item.to === '/dashboard'}
                   className={({ isActive }) =>
                     [
                       'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
                       isActive
-                        ? // Subtle active state — tinted bg + accent left-border, not full invert.
-                          'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium'
-                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200',
+                        ? 'bg-indigo-500/15 text-white font-medium'
+                        : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100',
                     ].join(' ')
                   }
                 >
                   {({ isActive }) => (
                     <>
-                      <span
-                        className={
-                          isActive
-                            ? 'text-blue-600 dark:text-blue-400'
-                            : 'text-slate-400 dark:text-slate-500'
-                        }
-                      >
+                      <span className={isActive ? 'text-indigo-400' : 'text-slate-500'}>
                         <item.icon size={18} />
                       </span>
                       <span>{item.label}</span>
@@ -127,9 +149,25 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
           </ul>
         </nav>
 
-        <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500">
-          v1.24 · {user?.email}
-        </div>
+        {/* User profile footer — avatar + name + current team. Click goes
+            to Settings → Preferences (closest "your profile" page today). */}
+        <Link
+          to="/settings/preferences"
+          onClick={onClose}
+          className="flex items-center gap-3 px-4 py-3 border-t border-slate-800 hover:bg-slate-800/60"
+        >
+          <span className="w-9 h-9 rounded-full bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center">
+            {initials(user?.name, user?.email)}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm text-slate-100 truncate">
+              {user?.name || user?.email}
+            </span>
+            <span className="block text-xs text-slate-400 truncate">
+              {currentTeam?.name ?? ''}
+            </span>
+          </span>
+        </Link>
       </aside>
     </>
   );

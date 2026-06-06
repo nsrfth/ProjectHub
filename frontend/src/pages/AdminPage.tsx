@@ -93,6 +93,38 @@ export default function AdminPage(): JSX.Element {
     },
   });
 
+  // v1.32.0: reset-password modal state. Lives on the page so the one-time
+  // generated password reveals inline below the form, mirroring the
+  // createUser pattern above.
+  const [resetTarget, setResetTarget] = useState<adminApi.AdminUser | null>(null);
+  const [resetCustom, setResetCustom] = useState('');
+  const [resetResult, setResetResult] = useState<adminApi.ResetPasswordResult | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  const resetPasswordMut = useMutation({
+    mutationFn: () =>
+      adminApi.resetUserPassword(resetTarget!.id, resetCustom || undefined),
+    onSuccess: (r) => {
+      setResetResult(r);
+      setResetError(null);
+      setResetCustom('');
+    },
+    onError: (err) => setResetError(errorMessage(err, 'Could not reset password')),
+  });
+
+  function openReset(u: adminApi.AdminUser): void {
+    setResetTarget(u);
+    setResetResult(null);
+    setResetError(null);
+    setResetCustom('');
+  }
+  function closeReset(): void {
+    setResetTarget(null);
+    setResetResult(null);
+    setResetError(null);
+    setResetCustom('');
+  }
+
   // v1.26: admin-provisioned new user. Form state lives here so we can
   // surface the one-time generated password without a modal — show it
   // inline after a successful create, then dismiss on the next action.
@@ -299,6 +331,14 @@ export default function AdminPage(): JSX.Element {
                       {u.globalRole === 'ADMIN' ? 'Demote' : 'Promote'}
                     </button>
                     <button
+                      disabled={u.directoryId !== null}
+                      onClick={() => openReset(u)}
+                      className="text-xs underline disabled:opacity-40 mr-3"
+                      title={u.directoryId ? 'Directory-owned' : undefined}
+                    >
+                      Reset password
+                    </button>
+                    <button
                       disabled={isSelf || deleteUserMut.isPending}
                       onClick={() => {
                         if (
@@ -328,6 +368,71 @@ export default function AdminPage(): JSX.Element {
           >
             {usersLoading ? 'Loading…' : 'Load more'}
           </button>
+        )}
+
+        {/* v1.32.0: reset-password panel. Reveals the generated password
+            once when the admin lets the server pick. */}
+        {resetTarget && (
+          <div className="mt-4 rounded border border-slate-300 dark:border-slate-600 p-3 text-sm bg-slate-50 dark:bg-slate-800/40">
+            <p className="font-medium mb-2">Reset password for {resetTarget.email}</p>
+            {resetResult ? (
+              <div className="space-y-2">
+                {resetResult.generatedPassword ? (
+                  <>
+                    <p className="text-xs">New password — copy now (shown once):</p>
+                    <code className="block bg-white dark:bg-slate-900 px-2 py-1 rounded select-all font-mono">
+                      {resetResult.generatedPassword}
+                    </code>
+                  </>
+                ) : (
+                  <p className="text-emerald-700 dark:text-emerald-400">
+                    Password updated.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={closeReset}
+                  className="text-xs underline mt-1"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  resetPasswordMut.mutate();
+                }}
+                className="flex flex-wrap gap-2 items-center"
+              >
+                <input
+                  type="text"
+                  value={resetCustom}
+                  onChange={(e) => setResetCustom(e.target.value)}
+                  placeholder="Leave blank to auto-generate"
+                  autoComplete="new-password"
+                  className="flex-1 min-w-[16rem] rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-sm font-mono"
+                />
+                <button
+                  type="submit"
+                  disabled={resetPasswordMut.isPending}
+                  className="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
+                >
+                  {resetPasswordMut.isPending ? 'Resetting…' : 'Reset'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeReset}
+                  className="text-xs underline"
+                >
+                  Cancel
+                </button>
+                {resetError && (
+                  <p className="basis-full text-xs text-red-600">{resetError}</p>
+                )}
+              </form>
+            )}
+          </div>
         )}
       </section>
 

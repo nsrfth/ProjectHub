@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // Integration coverage for the CSV exports. Asserts on the headers
 // (Content-Type, Content-Disposition) and on the body shape: BOM + CRLF
@@ -35,13 +36,9 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 }
 
 async function setupTeam(): Promise<{ token: string; teamId: string; projectId: string; userId: string }> {
-  const reg = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'owner@example.com', name: 'Owner', password: PASSWORD },
-  });
-  const token = reg.json().accessToken as string;
-  const userId = reg.json().user.id as string;
+  const reg = await bootstrapUser(app, { email: 'owner@example.com', name: 'Owner', password: PASSWORD });
+  const token = reg.token;
+  const userId = reg.userId;
   const team = (
     await inject({
       method: 'POST',

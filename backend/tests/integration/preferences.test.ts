@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // v1.10 per-user preferences. Covers the default value, the PATCH path,
 // and that the value survives a logout/login round-trip (i.e. it's
@@ -25,12 +26,8 @@ beforeEach(async () => {
 });
 
 async function register(): Promise<{ token: string; userId: string }> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'pref@example.com', name: 'Pref', password: 'CorrectHorseBattery9' },
-  });
-  return { token: res.json().accessToken, userId: res.json().user.id };
+  const r = await bootstrapUser(app, { email: 'pref@example.com', name: 'Pref', password: 'CorrectHorseBattery9' });
+  return { token: r.token, userId: r.userId };
 }
 
 describe('PATCH /api/auth/me/preferences', () => {

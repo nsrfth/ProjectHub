@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // Integration coverage for GET /reports/timeliness. Asserts on-time rate,
 // avg variance, evaluated count, and behind-plan count under five
@@ -35,13 +36,8 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 }
 
 async function registerUser(email: string): Promise<string> {
-  const res = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email, name: email.split('@')[0], password: PASSWORD },
-  });
-  if (res.statusCode !== 201) throw new Error(`register failed: ${res.statusCode}`);
-  return res.json().accessToken;
+  const r = await bootstrapUser(app, { email, name: email.split('@')[0], password: PASSWORD });
+  return r.token;
 }
 
 async function setupTeam(): Promise<{ token: string; teamId: string; projectId: string }> {

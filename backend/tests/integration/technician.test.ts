@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
+import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 // v1.19: Task.technicianId + Subtask.technicianId.
 //  - create defaults technicianId to creator
@@ -40,31 +41,19 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
 
 async function setup() {
   // First reg = global ADMIN.
-  const adminReg = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'admin@example.com', name: 'Admin', password: PASSWORD },
-  });
-  const adminToken = adminReg.json().accessToken as string;
-  const adminId = adminReg.json().user.id as string;
+  const adminReg = await bootstrapUser(app, { email: 'admin@example.com', name: 'Admin', password: PASSWORD });
+  const adminToken = adminReg.token;
+  const adminId = adminReg.userId;
 
-  // Member: registered, then promoted out of admin-bystander to a real member.
-  const memReg = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'member@example.com', name: 'Mem', password: PASSWORD },
-  });
-  const memberToken = memReg.json().accessToken as string;
-  const memberId = memReg.json().user.id as string;
+  // Member: bootstrapped, then promoted out of admin-bystander to a real member.
+  const memReg = await bootstrapUser(app, { email: 'member@example.com', name: 'Mem', password: PASSWORD });
+  const memberToken = memReg.token;
+  const memberId = memReg.userId;
 
   // Manager: third user, added as team MANAGER.
-  const mgrReg = await inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    payload: { email: 'mgr@example.com', name: 'Mgr', password: PASSWORD },
-  });
-  const mgrToken = mgrReg.json().accessToken as string;
-  const mgrId = mgrReg.json().user.id as string;
+  const mgrReg = await bootstrapUser(app, { email: 'mgr@example.com', name: 'Mgr', password: PASSWORD });
+  const mgrToken = mgrReg.token;
+  const mgrId = mgrReg.userId;
 
   const team = await inject({
     method: 'POST',
@@ -158,12 +147,8 @@ describe('Task.technicianId', () => {
   it('rejects technicianId pointing at a non-team-member (400)', async () => {
     const { adminToken, mgrToken, teamId, projectId } = await setup();
     // Make a fourth user NOT in the team.
-    const outsider = await inject({
-      method: 'POST',
-      url: '/api/auth/register',
-      payload: { email: 'out@example.com', name: 'Out', password: PASSWORD },
-    });
-    const outsiderId = outsider.json().user.id as string;
+    const outsider = await bootstrapUser(app, { email: 'out@example.com', name: 'Out', password: PASSWORD });
+    const outsiderId = outsider.userId;
 
     const created = await inject({
       method: 'POST',

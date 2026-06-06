@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AdminService, AdminUserView, AdminTeamView } from '../services/adminService.js';
-import type { CreateUserBody, ListQuery } from '../schemas/admin.js';
+import type { AdminResetPasswordBody, CreateUserBody, ListQuery } from '../schemas/admin.js';
 import { Errors } from '../lib/errors.js';
 
 type UserParams = { userId: string };
@@ -66,5 +66,19 @@ export class AdminController {
   deleteTeam = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
     await this.svc.deleteTeam(req.params.teamId);
     return reply.status(204).send();
+  };
+
+  // v1.32.0: admin-initiated password reset. Returns the generated password
+  // exactly once when the caller omits one; otherwise echoes back a null so
+  // the admin UI knows it was caller-supplied.
+  resetUserPassword = async (
+    req: FastifyRequest<{ Params: UserParams; Body: AdminResetPasswordBody }>,
+    reply: FastifyReply,
+  ) => {
+    const { generatedPassword } = await this.svc.resetUserPassword(
+      req.params.userId,
+      req.body.password,
+    );
+    return reply.send({ generatedPassword });
   };
 }

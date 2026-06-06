@@ -4,9 +4,9 @@ import { z } from 'zod';
 import { AuthController } from '../controllers/authController.js';
 import { AuthService } from '../services/authService.js';
 import {
+  changeOwnPasswordBody,
   loginBody,
   performResetBody,
-  registerBody,
   requestResetBody,
   twoFactorConfirmBody,
   twoFactorDisableBody,
@@ -16,6 +16,11 @@ import {
   verificationPerformBody,
   verificationRequestBody,
 } from '../schemas/auth.js';
+// v1.30.11 (S-9): public self-registration was removed because the
+// "Email already registered" 409 was an account-enumeration channel.
+// New accounts come from `prisma db seed` (first admin) and the v1.26
+// POST /api/admin/users endpoint (everyone else). `registerBody` is
+// no longer imported here because the route is gone.
 import { requireAuth } from '../middleware/auth.js';
 import { requireSessionAuth } from '../middleware/requireScope.js';
 import type { Env } from '../config/env.js';
@@ -39,24 +44,11 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
 
   const r = app.withTypeProvider<ZodTypeProvider>();
 
-  r.post('/register', {
-    config: RL_TAG,
-    schema: {
-      tags: ['auth'],
-      summary: 'Create a new account',
-      body: registerBody,
-      // devVerifyToken: non-prod only, used by tests + dev flows. Listed in
-      // the schema so the fastify-type-provider-zod serializer doesn't strip it.
-      response: {
-        201: z.object({
-          accessToken: z.string(),
-          user: z.any(),
-          devVerifyToken: z.string().optional(),
-        }),
-      },
-    },
-    handler: ctrl.register,
-  });
+  // v1.30.11 (S-9): POST /register removed — public self-registration
+  // leaked whether an email was registered ("Email already registered"
+  // 409 vs "OK" 201). Bootstrap is now exclusively the prisma seed
+  // (SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD); subsequent users come
+  // through POST /api/admin/users (v1.26).
 
   r.post('/login', {
     config: RL_TAG,
@@ -119,6 +111,23 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
     preHandler: requireAuth,
     schema: { tags: ['auth'], summary: 'Get the current user', security: [{ bearerAuth: [] }] },
     handler: ctrl.me,
+  });
+
+  r.post('/me/password', {
+    // v1.32.0: session-only — rotating your own password via a long-lived
+    // API token would let a stolen `*`-scoped token quietly lock the
+    // legitimate owner out. Same shape as 2FA management.
+    preHandler: [requireAuth, requireSessionAuth],
+    config: RL_TAG,
+    schema: {
+      tags: ['auth'],
+      summary:
+        'Change own password (verifies current password; revokes other-device refresh tokens)',
+      body: changeOwnPasswordBody,
+      response: { 204: z.null() },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.changeOwnPassword,
   });
 
   r.patch('/me/preferences', {
