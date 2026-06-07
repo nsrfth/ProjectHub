@@ -32,6 +32,10 @@ export interface Task {
   // change it post-create.
   technicianId: string | null;
   technicianName: string | null;
+  // v1.34: optional bucket reference. Null = unbucketed. Validated
+  // server-side to belong to the same project; cross-project → 400,
+  // cross-team → 404.
+  bucketId: string | null;
   title: string;
   description: string | null;
   status: TaskStatus;
@@ -95,6 +99,9 @@ export async function updateTask(
     dueDate: string | null;
     plannedDate: string | null;
     completedAt: string | null;
+    // v1.34: bucket assignment. Null unbuckets, string moves, omitted = no
+    // change. Service validates target bucket belongs to the same project.
+    bucketId: string | null;
   }>,
 ): Promise<Task> {
   return (

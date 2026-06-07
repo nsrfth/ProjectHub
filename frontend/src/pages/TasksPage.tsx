@@ -22,6 +22,7 @@ import * as tasksApi from '@/features/tasks/api';
 import { formatShamsiDate } from '@/lib/shamsi';
 import { LabelChip } from '@/features/labels/LabelChip';
 import { useT } from '@/lib/i18n';
+import BucketBoard from '@/features/buckets/BucketBoard';
 
 const STATUS_ORDER: tasksApi.TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const STATUS_LABEL: Record<tasksApi.TaskStatus, string> = {
@@ -289,11 +290,13 @@ export default function TasksPage(): JSX.Element {
   //     role-gated reassignment that MEMBERs can't perform).
   //   - list       — v1.33: dense sortable table. Same data; better for users
   //     who want to scan dozens of tasks without flipping between columns.
-  type ViewMode = 'status' | 'technician' | 'list';
+  //   - buckets    — v1.34.1: project-defined bucket columns (independent of
+  //     status). Cross-bucket drag → PATCH /tasks/:taskId { bucketId }.
+  type ViewMode = 'status' | 'technician' | 'list' | 'buckets';
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === 'undefined') return 'status';
     const stored = window.localStorage.getItem('kanban.viewMode');
-    if (stored === 'technician' || stored === 'list') return stored;
+    if (stored === 'technician' || stored === 'list' || stored === 'buckets') return stored;
     return 'status';
   });
   useEffect(() => {
@@ -422,6 +425,7 @@ export default function TasksPage(): JSX.Element {
             {([
               { key: 'status', label: t('tasks.view.status') },
               { key: 'list', label: t('tasks.view.list') },
+              { key: 'buckets', label: t('tasks.view.buckets') },
               { key: 'technician', label: t('tasks.view.technician') },
             ] as const).map((v) => (
               <button
@@ -485,6 +489,14 @@ export default function TasksPage(): JSX.Element {
           onDelete={(task) => {
             if (window.confirm(`Delete task "${task.title}"?`)) deleteMut.mutate(task.id);
           }}
+        />
+      )}
+
+      {viewMode === 'buckets' && teamId && projectId && (
+        <BucketBoard
+          teamId={teamId}
+          projectId={projectId}
+          onOpenTask={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
         />
       )}
 

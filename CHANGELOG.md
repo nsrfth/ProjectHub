@@ -4,6 +4,74 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.1] — 2026-06-08
+
+**Buckets frontend: board grouping + drag-and-drop reorder.** Follow-up
+to the v1.34.0 backend-only API. No backend or schema changes — the UI
+talks to the existing endpoints.
+
+### Frontend
+
+- `pages/TasksPage.tsx` — `viewMode` gains a fourth option **Buckets**
+  alongside Kanban / List / by Technician. Persists in localStorage
+  under `kanban.viewMode` (existing key — values `'status' |
+  'technician' | 'list' | 'buckets'`).
+- `features/buckets/api.ts` — typed client for the v1.34.0 endpoints
+  (`listBuckets`, `createBucket`, `renameBucket`, `reorderBuckets`,
+  `deleteBucket`).
+- `features/buckets/BucketBoard.tsx` — the new board layout:
+  - Leading **(unbucketed)** column for tasks with `bucketId === null`,
+    followed by one column per `Bucket` ordered by `order` asc.
+  - Drag a task across columns → `PATCH /tasks/:taskId { bucketId }`.
+  - Drag a column header → optimistic reorder + a single
+    `PATCH /buckets/reorder` with the full new permutation (matches the
+    backend's strict-permutation contract). Rolls back on 400 via
+    react-query invalidation.
+  - Inline rename on column header (Enter saves, Esc cancels, blur saves).
+  - Delete button (× with confirmation) — tasks fall back to unbucketed
+    via the FK SET NULL.
+  - Add-bucket affordance appended at the end of the row.
+- `features/tasks/api.ts` — `Task.bucketId` now part of the interface;
+  `updateTask`'s input type accepts `bucketId: string | null`.
+- `i18n/en.json` + `i18n/fa.json` — 9 new keys (`tasks.view.buckets`,
+  `buckets.add`, `buckets.adding`, `buckets.newPlaceholder`,
+  `buckets.unbucketed`, `buckets.deleteConfirm` with `{name}`
+  placeholder, `buckets.empty`, `buckets.rename`, `buckets.delete`,
+  `buckets.dragHandle`). Persian translations included.
+
+### Verified
+
+- Frontend `tsc --noEmit` ✅.
+- Production bundle markers present (`__unbucketed__` sentinel,
+  `/buckets/reorder` path, `tasks.view.buckets` toggle key).
+- Backend untouched — `buckets.test.ts` still 16/16 from v1.34.0.
+
+### Phase boundary
+
+- **Cross-bucket move + reposition is two PATCHes**, not one. The
+  bucketId change fires first, then the position reorder if needed.
+  The backend already supports both fields on `PATCH /tasks/:taskId`;
+  merging into one call is a frontend-only follow-up if the dual
+  round-trip becomes noticeable.
+- **Within-column reorder in Buckets view is intentionally not wired.**
+  The Kanban (Status) view remains the authoritative position-reorder
+  surface. Buckets focuses on cross-bucket moves; the card list within
+  a bucket sorts by server-supplied `position` asc.
+- **Default view-mode stays Status (Kanban).** Existing users see no
+  behavioural change unless they opt into Buckets via the toggle.
+- **No optimistic task move across columns.** The card flickers until
+  the PATCH response lands. Optimistic move can be added later if it
+  feels laggy.
+- **No per-bucket "+ Add task" affordance.** The existing top form
+  still creates the task; cross-form bucket selection ships when the
+  task-create form gains a bucket dropdown (separate PR).
+- **No saved per-user column collapse state.** All columns are always
+  visible.
+- **Affordance gating uses inline 403 fallback**, not a pre-check. We
+  don't yet have a "list my permissions" hook; create/rename/reorder/
+  delete affordances are always shown and a 403 surfaces as an inline
+  toast. Same pattern other gated affordances use today.
+
 ## [1.34.0] — 2026-06-08
 
 **Buckets: per-project task grouping.** Projects can now define ordered
