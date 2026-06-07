@@ -21,6 +21,7 @@ import * as projectsApi from '@/features/projects/api';
 import * as tasksApi from '@/features/tasks/api';
 import { formatShamsiDate } from '@/lib/shamsi';
 import { LabelChip } from '@/features/labels/LabelChip';
+import { useT } from '@/lib/i18n';
 
 const STATUS_ORDER: tasksApi.TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const STATUS_LABEL: Record<tasksApi.TaskStatus, string> = {
@@ -281,14 +282,19 @@ export default function TasksPage(): JSX.Element {
     return g;
   }, [tasks]);
 
-  // v1.20: alternative view mode — swimlanes by Technician instead of by
-  // Status. Persisted in localStorage so the user's preference survives
-  // page reloads. Drag-and-drop stays in status view only; reassigning a
-  // technician via drag would silently fail for members (it's role-gated),
-  // so the UX is "switch view, click into task detail to reassign".
-  const [viewMode, setViewMode] = useState<'status' | 'technician'>(() => {
+  // v1.20: alternative view modes. Persisted in localStorage so the user's
+  // preference survives page reloads.
+  //   - status     — classic kanban (drag-and-drop).
+  //   - technician — read-only per-Technician swimlanes (DnD would attempt a
+  //     role-gated reassignment that MEMBERs can't perform).
+  //   - list       — v1.33: dense sortable table. Same data; better for users
+  //     who want to scan dozens of tasks without flipping between columns.
+  type ViewMode = 'status' | 'technician' | 'list';
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === 'undefined') return 'status';
-    return window.localStorage.getItem('kanban.viewMode') === 'technician' ? 'technician' : 'status';
+    const stored = window.localStorage.getItem('kanban.viewMode');
+    if (stored === 'technician' || stored === 'list') return stored;
+    return 'status';
   });
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -316,6 +322,8 @@ export default function TasksPage(): JSX.Element {
       return a.name.localeCompare(b.name);
     });
   }, [tasks]);
+
+  const t = useT();
 
   if (!currentTeam) {
     return (
@@ -409,27 +417,22 @@ export default function TasksPage(): JSX.Element {
             {createMut.isPending ? 'Adding…' : 'Add task'}
           </button>
 
-          {/* v1.20: view-mode toggle. "by Status" is the classic kanban
-              (drag-and-drop). "by Technician" pivots the same data into
-              per-person swimlanes — read-only (drag would attempt a
-              role-gated reassignment that members can't do). */}
-          <div className="ml-auto inline-flex rounded border border-slate-300 dark:border-slate-600 overflow-hidden text-xs">
-            <button
-              type="button"
-              onClick={() => setViewMode('status')}
-              className={`px-3 py-1 ${viewMode === 'status' ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}
-              title="Show one column per status (with drag-and-drop)"
-            >
-              by Status
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('technician')}
-              className={`px-3 py-1 ${viewMode === 'technician' ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}
-              title="Show one column per Technician (read-only swimlanes)"
-            >
-              by Technician
-            </button>
+          {/* v1.20: view-mode toggle. v1.33: added List. */}
+          <div className="ms-auto inline-flex rounded border border-slate-300 dark:border-slate-600 overflow-hidden text-xs">
+            {([
+              { key: 'status', label: t('tasks.view.status') },
+              { key: 'list', label: t('tasks.view.list') },
+              { key: 'technician', label: t('tasks.view.technician') },
+            ] as const).map((v) => (
+              <button
+                key={v.key}
+                type="button"
+                onClick={() => setViewMode(v.key)}
+                className={`px-3 py-1 ${viewMode === v.key ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}
+              >
+                {v.label}
+              </button>
+            ))}
           </div>
         </form>
         {createError && <p className="text-xs text-red-600 mt-2">{createError}</p>}
@@ -471,6 +474,20 @@ export default function TasksPage(): JSX.Element {
         </DndContext>
       )}
 
+      {viewMode === 'list' && (
+        <TaskList
+          tasks={tasks}
+          t={t}
+          onOpen={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
+          onStatusChange={(task, s) =>
+            updateMut.mutate({ taskId: task.id, patch: { status: s } })
+          }
+          onDelete={(task) => {
+            if (window.confirm(`Delete task "${task.title}"?`)) deleteMut.mutate(task.id);
+          }}
+        />
+      )}
+
       {viewMode === 'technician' && (
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {groupedByTech.length === 0 && (
@@ -487,6 +504,278 @@ export default function TasksPage(): JSX.Element {
         </section>
       )}
     </div>
+  );
+}
+
+// v1.33: dense sortable list view of the same tasks the kanban renders.
+// Reuses the same data source (no extra fetch) and the same mutations
+// (inline status select → updateTask; delete button → deleteTask). Sort
+// state is local; default order is the server-supplied position (matches
+// kanban). Clicking a column header cycles asc → desc → off, mirroring
+// the conventional spreadsheet UX.
+type SortKey =
+  | 'title'
+  | 'status'
+  | 'priority'
+  | 'technician'
+  | 'dueDate'
+  | 'plannedDate'
+  | 'completedAt';
+type SortDir = 'asc' | 'desc';
+const PRIORITY_RANK: Record<tasksApi.TaskPriority, number> = {
+  LOW: 0,
+  MEDIUM: 1,
+  HIGH: 2,
+  URGENT: 3,
+};
+const STATUS_RANK: Record<tasksApi.TaskStatus, number> = {
+  TODO: 0,
+  IN_PROGRESS: 1,
+  REVIEW: 2,
+  DONE: 3,
+};
+const STATUS_BADGE: Record<tasksApi.TaskStatus, string> = {
+  TODO: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+  IN_PROGRESS: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200',
+  REVIEW: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200',
+  DONE: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200',
+};
+
+function TaskList({
+  tasks,
+  t,
+  onOpen,
+  onStatusChange,
+  onDelete,
+}: {
+  tasks: tasksApi.Task[];
+  t: (k: string) => string;
+  onOpen: (taskId: string) => void;
+  onStatusChange: (task: tasksApi.Task, status: tasksApi.TaskStatus) => void;
+  onDelete: (task: tasksApi.Task) => void;
+}): JSX.Element {
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(null);
+
+  const sorted = useMemo(() => {
+    if (!sort) return tasks;
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    // Pull comparable values out per row; nulls always sort to the end.
+    function valueOf(row: tasksApi.Task): string | number | null {
+      switch (sort!.key) {
+        case 'title':
+          return row.title.toLocaleLowerCase();
+        case 'status':
+          return STATUS_RANK[row.status];
+        case 'priority':
+          return PRIORITY_RANK[row.priority];
+        case 'technician':
+          return row.technicianName?.toLocaleLowerCase() ?? null;
+        case 'dueDate':
+          return row.dueDate ?? null;
+        case 'plannedDate':
+          return row.plannedDate ?? null;
+        case 'completedAt':
+          return row.completedAt ?? null;
+      }
+    }
+    return [...tasks].sort((a, b) => {
+      const va = valueOf(a);
+      const vb = valueOf(b);
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }, [tasks, sort]);
+
+  function onHeader(key: SortKey): void {
+    setSort((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return null; // third click clears
+    });
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <p className="text-sm text-slate-500 dark:text-slate-400 italic py-6 text-center">
+        {t('tasks.list.empty')}
+      </p>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded shadow overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 dark:bg-slate-700/50 text-left text-xs text-slate-500 dark:text-slate-400 uppercase">
+          <tr>
+            <Th onClick={() => onHeader('title')} active={sort?.key === 'title'} dir={sort?.dir}>
+              {t('tasks.col.title')}
+            </Th>
+            <Th onClick={() => onHeader('status')} active={sort?.key === 'status'} dir={sort?.dir}>
+              {t('tasks.col.status')}
+            </Th>
+            <Th
+              onClick={() => onHeader('priority')}
+              active={sort?.key === 'priority'}
+              dir={sort?.dir}
+            >
+              {t('tasks.col.priority')}
+            </Th>
+            <Th
+              onClick={() => onHeader('technician')}
+              active={sort?.key === 'technician'}
+              dir={sort?.dir}
+            >
+              {t('tasks.col.technician')}
+            </Th>
+            <Th
+              onClick={() => onHeader('dueDate')}
+              active={sort?.key === 'dueDate'}
+              dir={sort?.dir}
+            >
+              {t('tasks.col.due')}
+            </Th>
+            <Th
+              onClick={() => onHeader('plannedDate')}
+              active={sort?.key === 'plannedDate'}
+              dir={sort?.dir}
+              className="hidden xl:table-cell"
+            >
+              {t('tasks.col.planned')}
+            </Th>
+            <Th
+              onClick={() => onHeader('completedAt')}
+              active={sort?.key === 'completedAt'}
+              dir={sort?.dir}
+              className="hidden xl:table-cell"
+            >
+              {t('tasks.col.completed')}
+            </Th>
+            <th className="px-3 py-2 hidden md:table-cell">{t('tasks.col.labels')}</th>
+            <th className="px-3 py-2 w-8"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((row) => (
+            <tr
+              key={row.id}
+              className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/40"
+            >
+              <td className="px-3 py-2 max-w-[20rem]">
+                <button
+                  type="button"
+                  onClick={() => onOpen(row.id)}
+                  className="text-left hover:underline truncate block w-full font-medium"
+                >
+                  {row.title}
+                </button>
+                {row.incompleteBlockerCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] text-amber-700 mt-0.5"
+                    title={`Blocked by ${row.incompleteBlockerCount} incomplete task${row.incompleteBlockerCount === 1 ? '' : 's'}`}
+                  >
+                    <span aria-hidden>🔒</span>
+                    {row.incompleteBlockerCount}
+                  </span>
+                )}
+              </td>
+              <td className="px-3 py-2">
+                <select
+                  value={row.status}
+                  onChange={(e) =>
+                    onStatusChange(row, e.target.value as tasksApi.TaskStatus)
+                  }
+                  className={`rounded px-2 py-0.5 text-xs border-0 ${STATUS_BADGE[row.status]}`}
+                  aria-label="Status"
+                >
+                  {STATUS_ORDER.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className={`px-3 py-2 ${PRIORITY_CLASS[row.priority]}`}>
+                {PRIORITY_LABEL[row.priority]}
+              </td>
+              <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                {row.technicianName ?? (
+                  <span className="text-slate-400">{t('tasks.list.unassigned')}</span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300" dir="rtl">
+                {row.dueDate ? formatShamsiDate(row.dueDate) : ''}
+              </td>
+              <td
+                className="px-3 py-2 text-xs text-sky-700 dark:text-sky-300 hidden xl:table-cell"
+                dir="rtl"
+              >
+                {row.plannedDate ? formatShamsiDate(row.plannedDate) : ''}
+              </td>
+              <td
+                className="px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300 hidden xl:table-cell"
+                dir="rtl"
+              >
+                {row.completedAt ? formatShamsiDate(row.completedAt) : ''}
+              </td>
+              <td className="px-3 py-2 hidden md:table-cell">
+                {row.labels.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {row.labels.map((l) => (
+                      <LabelChip key={l.id} label={l} />
+                    ))}
+                  </div>
+                )}
+              </td>
+              <td className="px-3 py-2 text-end">
+                <button
+                  type="button"
+                  onClick={() => onDelete(row)}
+                  className="text-xs text-red-600 hover:underline"
+                  aria-label="Delete task"
+                >
+                  ✕
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Th({
+  onClick,
+  active,
+  dir,
+  className,
+  children,
+}: {
+  onClick: () => void;
+  active: boolean;
+  dir: SortDir | undefined;
+  className?: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <th className={`px-3 py-2 font-medium select-none ${className ?? ''}`}>
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex items-center gap-1 hover:text-slate-700 dark:hover:text-slate-200"
+      >
+        {children}
+        {active && (
+          <span aria-hidden className="text-slate-400">
+            {dir === 'asc' ? '▲' : '▼'}
+          </span>
+        )}
+      </button>
+    </th>
   );
 }
 

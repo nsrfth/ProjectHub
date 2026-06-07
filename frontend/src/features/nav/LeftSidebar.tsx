@@ -75,12 +75,18 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
           'fixed top-0 start-0 z-50 w-64 h-screen flex flex-col',
           'bg-slate-900 text-slate-100 border-e border-slate-800',
           'transition-transform duration-200',
-          // Drawer (below md): closed = translate to inline-start (off-screen).
-          // rtl:translate-x-full slides off the right edge; ltr:-translate-x-full
-          // slides off the left. md+ always shows the rail.
+          // Drawer behaviour. v1.32.1: the previous form
+          // `rtl:translate-x-full ltr:-translate-x-full md:translate-x-0`
+          // looked correct but lost in Tailwind's compiled source order —
+          // the rtl:/ltr: rules emit AFTER md:translate-x-0 so they won at
+          // every viewport, hiding the rail entirely on desktop. Flip the
+          // logic: the rail is visible by default (no transform), and only
+          // BELOW md do we slide it off-screen via the inline-aware
+          // -translate. `max-md:` is the dedicated "viewport < md" prefix
+          // and composes cleanly with rtl:/ltr:.
           open
             ? 'translate-x-0'
-            : 'rtl:translate-x-full ltr:-translate-x-full md:translate-x-0',
+            : 'max-md:ltr:-translate-x-full max-md:rtl:translate-x-full',
         ].join(' ')}
         aria-label="Primary navigation"
       >
