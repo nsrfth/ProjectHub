@@ -196,6 +196,72 @@ describe('GET /api/teams/:teamId/projects/:projectId/tasks', () => {
   });
 });
 
+describe('task startDate field (v1.37)', () => {
+  it('accepts startDate on create + surfaces it in the response', async () => {
+    const r = await registerUser('me@example.com');
+    const team = await createTeam(r.token);
+    const project = await createProject(r.token, team.id);
+
+    const startIso = '2026-05-15T00:00:00.000Z';
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks`,
+      headers: { authorization: `Bearer ${r.token}` },
+      payload: { title: 'with start', startDate: startIso },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.startDate).toBe(startIso);
+  });
+
+  it('defaults startDate to null when omitted on create', async () => {
+    const r = await registerUser('me@example.com');
+    const team = await createTeam(r.token);
+    const project = await createProject(r.token, team.id);
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks`,
+      headers: { authorization: `Bearer ${r.token}` },
+      payload: { title: 'no start' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().startDate).toBeNull();
+  });
+
+  it('PATCH sets startDate and PATCH null clears it', async () => {
+    const r = await registerUser('me@example.com');
+    const team = await createTeam(r.token);
+    const project = await createProject(r.token, team.id);
+    const created = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${team.id}/projects/${project.id}/tasks`,
+        headers: { authorization: `Bearer ${r.token}` },
+        payload: { title: 't' },
+      })
+    ).json();
+
+    const setIso = '2026-06-01T00:00:00.000Z';
+    const setRes = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks/${created.id}`,
+      headers: { authorization: `Bearer ${r.token}` },
+      payload: { startDate: setIso },
+    });
+    expect(setRes.statusCode).toBe(200);
+    expect(setRes.json().startDate).toBe(setIso);
+
+    const clear = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks/${created.id}`,
+      headers: { authorization: `Bearer ${r.token}` },
+      payload: { startDate: null },
+    });
+    expect(clear.statusCode).toBe(200);
+    expect(clear.json().startDate).toBeNull();
+  });
+});
+
 describe('task completedAt field', () => {
   it('is null for a new TODO task', async () => {
     const { token } = await registerUser('a@example.com');

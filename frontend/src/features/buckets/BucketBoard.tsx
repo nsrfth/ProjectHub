@@ -644,8 +644,17 @@ function BucketTaskCard({
           </div>
         )}
 
-        {/* Bottom meta row: due-date pill on the left, badges + avatar on the right. */}
-        <div className="flex items-center gap-2 text-[11px]">
+        {/* Bottom meta row: start + due pills on the left, badges + avatar on the right. */}
+        <div className="flex items-center gap-2 text-[11px] flex-wrap">
+          {task.startDate && (
+            <span
+              className="inline-flex items-center gap-1 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5"
+              title="Started on"
+            >
+              <span aria-hidden>🚀</span>
+              <span dir="rtl">{formatShamsiDate(task.startDate)}</span>
+            </span>
+          )}
           {task.dueDate && (
             <span
               className={[

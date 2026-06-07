@@ -102,6 +102,9 @@ export interface TaskView {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  // v1.37: started-on date. Null when not yet marked. No scheduler or
+  // report consumes it today — informational on the UI only.
+  startDate: Date | null;
   dueDate: Date | null;
   plannedDate: Date | null;
   completedAt: Date | null;
@@ -152,6 +155,7 @@ function toView(
     description: row.description,
     status: row.status,
     priority: row.priority,
+    startDate: row.startDate,
     dueDate: row.dueDate,
     plannedDate: row.plannedDate,
     completedAt: row.completedAt,
@@ -191,6 +195,9 @@ export class TasksService {
       status?: TaskStatus;
       priority?: TaskPriority;
       assigneeId?: string | null;
+      // v1.37: started-on date. Same shape as the other date fields.
+      // Auto-set isn't worth the surprise — left as user-supplied only.
+      startDate?: string | null;
       dueDate?: string | null;
       plannedDate?: string | null;
       completedAt?: string | null;
@@ -263,6 +270,7 @@ export class TasksService {
           description: input.description ?? null,
           status,
           priority: input.priority ?? 'MEDIUM',
+          startDate: input.startDate ? new Date(input.startDate) : null,
           dueDate: input.dueDate ? new Date(input.dueDate) : null,
           plannedDate: input.plannedDate ? new Date(input.plannedDate) : null,
           completedAt,
@@ -364,6 +372,9 @@ export class TasksService {
       // v1.19: changing technicianId requires team MANAGER or global ADMIN.
       // Undefined = leave as-is; explicit null = clear (also gated).
       technicianId?: string | null;
+      // v1.37: started-on date. Subject to the same v1.18 manager-only
+      // gate as the other date fields.
+      startDate?: string | null;
       dueDate?: string | null;
       plannedDate?: string | null;
       completedAt?: string | null;
@@ -418,14 +429,27 @@ export class TasksService {
     }
 
     // v1.18: date-edit restriction. Only consulted when the caller is
-    // touching one of the three date fields; the DB read is cheap but
+    // touching one of the date fields; the DB read is cheap but
     // skipping it on no-op patches keeps the hot path quick.
+    // v1.37: startDate joins dueDate / plannedDate / completedAt under
+    // the same gate — same semantics (commitment change).
     if (
+      input.startDate !== undefined ||
       input.dueDate !== undefined ||
       input.plannedDate !== undefined ||
       input.completedAt !== undefined
     ) {
       const restriction = await readDateEditRestriction();
+      if (input.startDate !== undefined) {
+        assertCanEditDate(
+          'startDate',
+          existing.startDate,
+          input.startDate,
+          actorTeamRole,
+          actorGlobalRole,
+          restriction,
+        );
+      }
       if (input.dueDate !== undefined) {
         assertCanEditDate(
           'dueDate',
@@ -504,6 +528,8 @@ export class TasksService {
       'description',
       'priority',
       'assigneeId',
+      // v1.37: started-on date. Same audit treatment as the other dates.
+      'startDate',
       'dueDate',
       'plannedDate',
       'completedAt',
@@ -512,7 +538,7 @@ export class TasksService {
       // a notification-worthy event like assignment.
       'bucketId',
     ] as const;
-    const DATE_FIELDS = new Set(['dueDate', 'plannedDate', 'completedAt']);
+    const DATE_FIELDS = new Set(['startDate', 'dueDate', 'plannedDate', 'completedAt']);
     const changedNonStatusFields = NON_STATUS_FIELDS.filter((f) => {
       const incoming = (input as Record<string, unknown>)[f];
       if (incoming === undefined) return false;
@@ -537,6 +563,9 @@ export class TasksService {
             ...(input.priority !== undefined && { priority: input.priority }),
             ...(input.assigneeId !== undefined && { assigneeId: input.assigneeId }),
             ...(input.technicianId !== undefined && { technicianId: input.technicianId }),
+            ...(input.startDate !== undefined && {
+              startDate: input.startDate === null ? null : new Date(input.startDate),
+            }),
             ...(input.dueDate !== undefined && {
               dueDate: input.dueDate === null ? null : new Date(input.dueDate),
               // Reset the TASK_DUE notification flag whenever dueDate changes

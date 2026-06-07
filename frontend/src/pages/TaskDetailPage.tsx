@@ -146,14 +146,17 @@ export default function TaskDetailPage(): JSX.Element {
 
   // Three date inputs are tracked as ISO strings (or null). The picker takes
   // ISO + emits ISO so equality checks against the stored values are direct.
+  // v1.37: startDate joins the local-input state for the date pickers.
+  const [startDateInput, setStartDateInput] = useState<string | null>(null);
   const [dueDateInput, setDueDateInput] = useState<string | null>(null);
   const [plannedDateInput, setPlannedDateInput] = useState<string | null>(null);
   const [completedAtInput, setCompletedAtInput] = useState<string | null>(null);
   useEffect(() => {
+    setStartDateInput(task?.startDate ?? null);
     setDueDateInput(task?.dueDate ?? null);
     setPlannedDateInput(task?.plannedDate ?? null);
     setCompletedAtInput(task?.completedAt ?? null);
-  }, [task?.dueDate, task?.plannedDate, task?.completedAt]);
+  }, [task?.startDate, task?.dueDate, task?.plannedDate, task?.completedAt]);
 
   const updateTaskMut = useMutation({
     mutationFn: (patch: Partial<tasksApi.Task>) =>
@@ -241,6 +244,11 @@ export default function TaskDetailPage(): JSX.Element {
                 Technician:{' '}
                 {task.technicianName ?? <span className="italic">unassigned</span>}
               </span>
+              {task.startDate && (
+                <span>
+                  Started <span dir="rtl">{formatShamsiCalendarLong(task.startDate)}</span>
+                </span>
+              )}
               {task.dueDate && (
                 <span>
                   Due by <span dir="rtl">{formatShamsiCalendarLong(task.dueDate)}</span>
@@ -345,7 +353,21 @@ export default function TaskDetailPage(): JSX.Element {
 
             <div className="mt-5 pt-4 border-t">
               <h3 className="text-xs font-medium text-slate-600 mb-2">Dates</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* v1.37: 4-column grid to fit the new "Started on" picker
+                  alongside Due / Planned / Completed. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {/* Started on — informational. Subject to the v1.18
+                    date-edit restriction like its siblings. */}
+                <DatePickerField
+                  label="Started on"
+                  helper="When work actually began."
+                  value={startDateInput}
+                  storedValue={task.startDate}
+                  pending={updateTaskMut.isPending}
+                  onSave={() => updateTaskMut.mutate({ startDate: startDateInput })}
+                  onClear={() => updateTaskMut.mutate({ startDate: null })}
+                  onChange={setStartDateInput}
+                />
                 {/* Due by — the hard deadline. Powers TASK_DUE notifications. */}
                 <DatePickerField
                   label="Due by"

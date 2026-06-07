@@ -40,7 +40,10 @@ export interface Task {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
-  // dueDate = hard deadline; plannedDate = team's target; completedAt = actual.
+  // v1.37: started-on date. Informational; no scheduler/report consumes
+  // it yet. dueDate = hard deadline; plannedDate = team's target;
+  // completedAt = actual.
+  startDate: string | null;
   dueDate: string | null;
   plannedDate: string | null;
   completedAt: string | null;
@@ -75,6 +78,9 @@ export async function createTask(
     status?: TaskStatus;
     priority?: TaskPriority;
     assigneeId?: string | null;
+    // v1.37: started-on date. Subject to the same v1.18 manager-only
+    // restriction as the other date fields.
+    startDate?: string | null;
     dueDate?: string | null;
     plannedDate?: string | null;
     completedAt?: string | null;
@@ -99,6 +105,8 @@ export async function updateTask(
     // v1.19: gated server-side (manager/admin only). The mutation surfaces
     // a 403 inline on the calling page if the role check fails.
     technicianId: string | null;
+    // v1.37: started-on date. Same v1.18 date-edit gate as siblings.
+    startDate: string | null;
     dueDate: string | null;
     plannedDate: string | null;
     completedAt: string | null;

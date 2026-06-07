@@ -24,6 +24,8 @@ function callerMembership(req: FastifyRequest): TeamMembership {
 function serialize(t: TaskView) {
   return {
     ...t,
+    // v1.37: startDate joins the date-serialization list.
+    startDate: t.startDate ? t.startDate.toISOString() : null,
     dueDate: t.dueDate ? t.dueDate.toISOString() : null,
     plannedDate: t.plannedDate ? t.plannedDate.toISOString() : null,
     completedAt: t.completedAt ? t.completedAt.toISOString() : null,

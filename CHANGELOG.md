@@ -4,6 +4,111 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.0] — 2026-06-09
+
+**Task.startDate.** Tier-1 sub-feature 4 (Task progress/status + start
+date + reminders) lands as a gap-closer — the other two-thirds of the
+spec (status enum, reminder mechanism) were already in place from
+earlier releases, so all that remained was the start-date field.
+
+### What was already there (and stayed)
+
+- **Status enum** — `Task.status` is 4-state (`TODO` / `IN_PROGRESS` /
+  `REVIEW` / `DONE`). The Tier-1 spec called for a 3-state
+  (`NOT_STARTED` / `IN_PROGRESS` / `COMPLETED`); the existing 4-state
+  is a superset (`NOT_STARTED ≈ TODO`, `COMPLETED ≈ DONE`, plus an
+  explicit `REVIEW`) and is referenced by every kanban, report,
+  webhook, and notification path. Not changing.
+- **Reminder mechanism** — `scheduler/dueDateScheduler.ts` already
+  polls in-process, fires `TASK_DUE` notifications via
+  `notificationsService.onTaskDue` for tasks whose `dueDate` is in
+  the lead window and whose `dueNotifiedAt` is null, then stamps to
+  prevent re-fires. One-shot per `(taskId, dueDate)`. That's exactly
+  the spec's "reminder fires once relative to due date." Reused.
+- **Card progress** — inline `☑ done/total` count from subtasks
+  already on Buckets + Kanban cards (shipped in earlier releases).
+  The spec mentioned "progress ring"; the count is more precise and
+  was kept.
+
+### Backend
+
+- **Migration** `20260609000000_task_start_date` — `ALTER TABLE
+  "Task" ADD COLUMN "startDate" TIMESTAMP(3);`. Purely additive,
+  nullable, no backfill, no index (no scheduler/report consumes it
+  yet).
+- `schemas/tasks.ts` — `startDate` added to `createTaskBody`,
+  `updateTaskBody`, and `taskResponse` as
+  `z.string().datetime().nullable().optional()` (or `.nullable()` on
+  the response).
+- `services/tasksService.ts`:
+  - `TasksService.create` accepts `startDate` and writes it to the
+    new column.
+  - `TasksService.update` accepts `startDate`, applies the same v1.18
+    **manager-only date-edit gate** (`assertCanEditDate`) as
+    `dueDate` / `plannedDate` / `completedAt`, and includes it in the
+    `task.updated` audit-log changed-fields list.
+- `controllers/tasksController.ts` — `serialize()` includes
+  `startDate` in the ISO-conversion list.
+
+### Frontend
+
+- `features/tasks/api.ts` — `Task.startDate: string | null` on the
+  interface; `createTask` and `updateTask` input types accept
+  `startDate?: string | null`.
+- `pages/TaskDetailPage.tsx`:
+  - Inline `Started …` chip in the metadata row alongside
+    Due / Planned / Completed.
+  - **Dates section** grid widens from 3 columns to 4 to fit the new
+    "Started on" picker. Reuses the existing `DatePickerField` /
+    `ShamsiDatePicker` plumbing — same Save/Clear semantics, same
+    v1.18 gate surfaced as a 403 if a non-manager attempts to change
+    a non-null value.
+- `features/buckets/BucketBoard.tsx` — small **🚀 pill** on each
+  Buckets card when `task.startDate` is present, sitting just left of
+  the existing `📅 due` pill. The bottom meta row is wrapped with
+  `flex-wrap` so the extra pill flows cleanly on narrow cards.
+
+### Tests
+
+- `tasks.test.ts` gains 3 new cases:
+  - **Create with startDate** → 201; response surfaces the ISO value.
+  - **Create without startDate** → 201; response carries `null`.
+  - **PATCH startDate → ISO** then **PATCH null** → both 200; values
+    round-trip.
+- Adjacent suite regression check: buckets (20) + subtasks (13) +
+  dateEditRestriction (X) + reportsCsv (X) → **46/46 still pass**.
+- Tasks suite total: **17/17 pass**.
+
+### Verified
+
+- Backend `tsc` ✅; frontend `tsc --noEmit` ✅.
+- Production bundle markers: `Started on` label (2),
+  `startDate` identifier (9). The 🚀 emoji shows in the rendered UI
+  but the regex scan can't easily count non-ASCII via PowerShell.
+
+### Phase boundary
+
+- **No new reminder.** The Tier-1 spec mentioned "reminders" but the
+  existing `dueDateScheduler` already fits the spec's "fires once
+  relative to due date" description exactly. Adding a duplicate or a
+  startDate-relative reminder is feature creep we're not paying for.
+- **No new status enum.** Existing 4-state stays; switching to the
+  spec's 3-state would break every kanban, report, and webhook.
+- **No progress ring.** The inline `☑ done/total` count from subtasks
+  is more precise and already on every card.
+- **No cross-field validation.** `startDate` can be after `dueDate`
+  if a team wants to mark a behind-plan task explicitly. The UI
+  doesn't warn; we trust the user.
+- **No auto-set on status transitions.** Setting `status = IN_PROGRESS`
+  does NOT auto-stamp `startDate`. Surprising automation hurts more
+  than it helps; user-entered only.
+- **Calendar feed unchanged.** `GET /teams/:teamId/calendar` still
+  reads `dueDate` / `plannedDate` only. Adding a fourth field would
+  muddy the grid; deferred.
+- **No `?field=start` for the reports endpoints.** Reports remain on
+  `dueDate` / `plannedDate` / `completedAt`. The startDate field is
+  informational for now.
+
 ## [1.36.0] — 2026-06-08
 
 **Labels: management page + board filter.** Tier-1 sub-feature 3

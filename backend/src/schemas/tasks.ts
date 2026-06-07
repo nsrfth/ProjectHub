@@ -11,10 +11,12 @@ export const createTaskBody = z.object({
   // Empty string from a form field is normalized to null (unassigned).
   assigneeId: z.string().nullable().optional(),
   // ISO 8601; backend converts to Date. Client sends `null` to clear.
-  // Three date concepts the task model tracks:
+  // Four date concepts the task model tracks (v1.37):
+  //   - startDate   — when work began (informational; no scheduler reads it)
   //   - dueDate     — hard deadline (powers TASK_DUE notifications)
   //   - plannedDate — team's target (powers the timeliness report)
   //   - completedAt — when actually done (auto-fills on status→DONE)
+  startDate: z.string().datetime().nullable().optional(),
   dueDate: z.string().datetime().nullable().optional(),
   plannedDate: z.string().datetime().nullable().optional(),
   completedAt: z.string().datetime().nullable().optional(),
@@ -34,6 +36,9 @@ export const updateTaskBody = z
     assigneeId: z.string().nullable().optional(),
     // v1.19: gated server-side to team MANAGER / global ADMIN.
     technicianId: z.string().nullable().optional(),
+    // v1.37: started-on date. Same shape + governance as the other
+    // date fields (subject to the v1.18 manager-only restriction).
+    startDate: z.string().datetime().nullable().optional(),
     dueDate: z.string().datetime().nullable().optional(),
     plannedDate: z.string().datetime().nullable().optional(),
     completedAt: z.string().datetime().nullable().optional(),
@@ -93,6 +98,9 @@ export const taskResponse = z.object({
   description: z.string().nullable(),
   status: taskStatusEnum,
   priority: taskPriorityEnum,
+  // v1.37: started-on date. Null when the task hasn't been marked as
+  // started yet.
+  startDate: z.string().nullable(),
   dueDate: z.string().nullable(),
   plannedDate: z.string().nullable(),
   completedAt: z.string().nullable(),

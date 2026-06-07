@@ -483,6 +483,12 @@ model Task {
   priority    TaskPriority @default(MEDIUM)
   // Hard deadline — "must be done by". Powers the TASK_DUE scheduler.
   dueDate     DateTime?
+  // v1.37: "started on" date. Nullable, UTC midnight (same convention as
+  // dueDate / plannedDate / completedAt). Subject to the v1.18
+  // date-edit-restriction gate. NOT included in the calendar feed —
+  // deferred. NOT used by any reminder or report — informational only
+  // for now.
+  startDate   DateTime?
   // Team's target completion date — "we plan to be done by". Used by the
   // timeliness report; doesn't trigger TASK_DUE notifications (those are for
   // the hard deadline only).
