@@ -4,6 +4,64 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.0] — 2026-06-07
+
+**Two frontend conveniences: a "by team" calendar view and a project-form
+team picker.** No backend changes; both fall out of data the existing
+endpoints already return.
+
+### Frontend — Calendar: team selector
+
+- `pages/CalendarPage.tsx` — the old single-team feed is now selectable
+  via a labelled `<select>` listing every team the caller belongs to,
+  with an "All my teams" entry at the top.
+- Picking a specific team only re-scopes the calendar — the global
+  `currentTeam` (sidebar context) is untouched, so the rest of the app
+  stays where it was.
+- Picking "All my teams" fans out via `useQueries` across every team,
+  merges client-side, and shows a per-team color legend above the grid
+  (using each task's existing `teamColor` field — no new endpoint).
+- Selection persists in `localStorage` under `calendar.selectedTeam`.
+  A stale-storage effect resets the selection if it points at a team
+  the user has since been removed from (avoids 403 queries).
+- Empty-team guard relaxed: with "All my teams" available, the page no
+  longer requires a `currentTeam` selection to render.
+
+### Frontend — Projects: per-form team picker
+
+- `pages/ProjectsPage.tsx` — the **New project** form gains a team
+  picker independent of the page-level `currentTeam`. Only rendered
+  when the user belongs to more than one team (single-team users see
+  the form unchanged).
+- The **Accountable** dropdown reads members from the team selected
+  in the form, not the page's `currentTeam`. Switching the picker
+  re-fetches via the cached `getTeam(teamId)` query and clears the
+  previously-selected accountable (who almost certainly isn't a
+  member of the new team).
+- On successful create in a team other than the page's current team,
+  the page context switches to that team via `setCurrentTeamId(...)`
+  so the freshly-created project appears in the "All projects" list
+  immediately — no extra click.
+
+### Verified
+
+- Backend `tsc` ✅; frontend `tsc --noEmit` ✅.
+- No backend route or schema changes.
+
+### Phase boundary
+
+- **Calendar fan-out scales with team count.** For users in 20+ teams
+  the right next step is a dedicated `GET /api/calendar/me` endpoint
+  with a single server-side join. Trivial follow-up.
+- **Date-field choice (due / planned)** is global across teams in
+  "All my teams" mode — no per-team override.
+- **No multi-team subset filter** in the calendar. Selection is binary:
+  one team OR all teams.
+- **New-project picker** lists every team the user belongs to. The
+  server still enforces the per-team permission to create projects;
+  if a team's role doesn't permit creation, the call returns 403 and
+  the error surfaces inline.
+
 ## [1.32.3] — 2026-06-07
 
 **All-in-one backups (DB + uploads + secrets) + restore-into-seeded fix.**
