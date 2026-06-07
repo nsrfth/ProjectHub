@@ -4,6 +4,111 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.3] — 2026-06-07
+
+**All-in-one backups (DB + uploads + secrets) + restore-into-seeded fix.**
+
+Two operational problems became one release:
+
+1. Cross-server restores silently broke 2FA + LDAP because `MASTER_KEY`
+   only lives in `.env` (not the DB), and attachment downloads 404'd
+   because the `uploads_data` Docker volume wasn't part of the backup.
+2. Restoring a backup onto a freshly-seeded instance failed with
+   `cannot drop constraint Role_pkey on table public."Role" because
+   other objects depend on it` — `pg_restore --clean --exit-on-error`
+   couldn't drop the destination's pre-existing `DirectoryGroupMapping
+   → Role` FK in the right order.
+
+### Backend
+
+- **New bundled backup format** `taskhub-{ts}.tar.gz` containing:
+  - `database.dump` — the existing `pg_dump --format=custom` output.
+  - `uploads/` — copy of `UPLOAD_DIR` (every attachment blob).
+  - `secrets.env` — `MASTER_KEY`, `JWT_ACCESS_SECRET`,
+    `JWT_REFRESH_SECRET`. Written `chmod 0600`. **NOT included:**
+    `POSTGRES_PASSWORD` / `DATABASE_URL` (per-host config).
+  - `manifest.json` — `{version, createdAt, includes: {database,
+    uploads, secrets}}`.
+- **Legacy `.dump` files still restorable** — the restore endpoint
+  auto-detects format by filename suffix. Admin uploads of older `.dump`
+  files round-trip too; uploads of `.tar.gz` preserve the suffix
+  through the on-disk rename.
+- **Schema-wipe before `pg_restore`.** A new private
+  `wipeSchema()` step runs `DROP SCHEMA IF EXISTS public CASCADE;
+  CREATE SCHEMA public;` via `psql -v ON_ERROR_STOP=1` against the
+  cleaned libpq URL. Schema name is whitelisted to `[A-Za-z_]
+  [A-Za-z0-9_]*` before interpolation so a hostile config value can't
+  inject SQL.
+  - Removed `--clean --if-exists` from the `pg_restore` invocation
+    (no-op against the now-empty schema; was the source of the
+    constraint-drop failure).
+- **Restore response** carries new fields: `uploadsRestored: boolean`,
+  `secretsApplied: boolean`, `secretsSidecar: string | null`.
+- **Secrets sidecar.** When the bundle ships secrets, the restore
+  writes them as `restored-secrets.env` next to the backups
+  (chmod 0600). The operator copies the lines into `.env` and lets
+  the post-restore graceful exit recycle the container with the new
+  env. We don't auto-apply because env is read once at boot — there
+  is no honest way to re-read it inside the running process.
+- **Service constructor** gains a `BackupsServiceConfig` third arg
+  (`uploadDir`, `secrets`) — backward-compatible, defaults to
+  database-only when omitted (tests that don't pass it keep working).
+- **Scheduled backups** (`server.ts`) and the admin route
+  (`routes/backups.ts`) both pass the env-derived config now, so the
+  nightly tick produces full restore-anywhere artefacts.
+
+### Frontend
+
+- `BackupsPage.tsx` — the post-restore alert now surfaces what landed
+  (uploads, secrets sidecar path, next-step instructions to apply
+  secrets and restart). Falls back to the original one-line message
+  for legacy `.dump` restores.
+- `features/backups/api.ts` — `RestoreResult` interface gains
+  `uploadsRestored`, `secretsApplied`, `secretsSidecar`.
+
+### Tests
+
+- New cases in `backups.test.ts`:
+  - `list` returns both `.dump` and `.tar.gz` files; unrelated
+    suffixes still ignored.
+  - upload preserves `.tar.gz` suffix when sanitising the on-disk name.
+  - restore of a missing `.tar.gz` returns 404 (not 400).
+- Updated S-12 corrupt-dump regression to also accept "psql failed to
+  start" — the new schema-wipe step runs before pg_restore so a
+  missing-tool environment surfaces psql's error first. Same intent
+  (no silent successes), wider regex.
+- Full backups suite: **16/16 pass.**
+
+### Verified
+
+- Backend `tsc` ✅; frontend `tsc --noEmit` ✅.
+
+### Phase boundary
+
+- **Security trade-off (be aware).** A bundled backup is now a single
+  artefact that, if compromised, lets the holder decrypt every 2FA
+  secret + LDAP bind password on your instance. For the single-server
+  self-hosted target this isn't materially worse than holding the DB
+  itself (which they already have inside the same file) — but the
+  backup directory becomes a higher-value target. Recommendations:
+  filesystem perms on `BACKUP_DIR` (`chmod 700`), encrypted offsite
+  storage (rclone + gpg, restic, etc.), and `0600` on `restored-
+  secrets.env` (we set it; double-check it stuck).
+- **Sidecar, not auto-apply.** We deliberately don't rewrite `.env`
+  from inside the restore. A process can't safely re-read its own
+  startup env, and silently regenerating `.env` would be surprising.
+  The two-step "restore → apply secrets → restart" is honest.
+- **Upload-size cap.** `BACKUP_UPLOAD_MAX_BYTES` default is 2 GB. For
+  instances with substantial attachments the operator may need to
+  bump it before the admin UI accepts a bundle upload.
+- **`POSTGRES_PASSWORD`, `DATABASE_URL`** are intentionally not in
+  the bundle — they're per-host config, not "instance identity"
+  config. Including them would invite restoring a backup to clobber
+  the destination's DB connection.
+- **Legacy `.dump` files** continue to work indefinitely; we have
+  no deprecation timeline. If you want to migrate an older instance
+  to bundled format, run a fresh backup after upgrading.
+
 ## [1.32.0] — 2026-06-06
 
 **Password lifecycle: local users change their own, admins reset anyone's.**

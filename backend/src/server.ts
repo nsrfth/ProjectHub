@@ -46,7 +46,16 @@ async function main(): Promise<void> {
   // also disable backups in Settings → Backups without an env change.
   const backupScheduler = env.BACKUP_ENABLED
     ? createBackupScheduler({
-        service: new BackupsService(env.DATABASE_URL, env.BACKUP_DIR),
+        // v1.32.3: scheduled backups also bundle uploads + secrets so the
+        // nightly dump is a full restore-anywhere artefact.
+        service: new BackupsService(env.DATABASE_URL, env.BACKUP_DIR, {
+          uploadDir: env.UPLOAD_DIR,
+          secrets: {
+            masterKey: env.MASTER_KEY ?? null,
+            jwtAccessSecret: env.JWT_ACCESS_SECRET ?? null,
+            jwtRefreshSecret: env.JWT_REFRESH_SECRET ?? null,
+          },
+        }),
         intervalMin: env.BACKUP_CHECK_INTERVAL_MIN,
         logger: app.log,
       })

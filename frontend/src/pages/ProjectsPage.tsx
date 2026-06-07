@@ -24,7 +24,7 @@ const STATUS_LABEL: Record<projectsApi.ProjectStatus, string> = {
 
 export default function ProjectsPage(): JSX.Element {
   const { user } = useAuth();
-  const { currentTeam } = useTeams();
+  const { teams, currentTeam, setCurrentTeamId } = useTeams();
   const qc = useQueryClient();
   const nav = useNavigate();
 
@@ -37,8 +37,10 @@ export default function ProjectsPage(): JSX.Element {
     enabled: !!teamId,
   });
 
-  // v1.17: team members feed the Accountable dropdown. Re-uses the team
-  // detail endpoint; cached 30 s by React Query so re-renders don't re-fetch.
+  // v1.17: team members feed the inline (per-project-row) Accountable
+  // dropdowns. Re-uses the team detail endpoint; cached 30 s by React
+  // Query so re-renders don't re-fetch. Always queries the currentTeam
+  // because those rows are the current team's projects.
   const { data: teamDetail } = useQuery({
     queryKey: ['teams', 'detail', teamId],
     queryFn: () => getTeam(teamId!),
@@ -47,6 +49,21 @@ export default function ProjectsPage(): JSX.Element {
   });
   const members = teamDetail?.members ?? [];
 
+  // v1.33: the New-project form gets its OWN team picker independent of
+  // the page-level currentTeam. The accountable dropdown there reads
+  // members from the selected team — switching the picker re-fetches
+  // automatically via React Query's cache key. Defaults to currentTeam
+  // on first render.
+  const [formTeamId, setFormTeamId] = useState<string>(() => currentTeam?.id ?? '');
+  const effectiveFormTeamId = formTeamId || currentTeam?.id || '';
+  const { data: formTeamDetail } = useQuery({
+    queryKey: ['teams', 'detail', effectiveFormTeamId],
+    queryFn: () => getTeam(effectiveFormTeamId),
+    enabled: !!effectiveFormTeamId,
+    staleTime: 30_000,
+  });
+  const formMembers = formTeamDetail?.members ?? [];
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [accountableId, setAccountableId] = useState<string>('');
@@ -54,13 +71,24 @@ export default function ProjectsPage(): JSX.Element {
 
   const createMut = useMutation({
     mutationFn: (input: { name: string; description?: string; accountableId?: string | null }) =>
-      projectsApi.createProject(teamId!, input),
+      projectsApi.createProject(effectiveFormTeamId, input),
     onSuccess: async () => {
       setName('');
       setDescription('');
       setAccountableId('');
       setCreateError(null);
-      await qc.invalidateQueries({ queryKey: ['projects', teamId] });
+      // If the new project landed in a team other than the one whose
+      // list this page is showing, switch the page context to that team
+      // so the freshly-created project is visible without a separate
+      // click. Both queries get invalidated so the list refreshes either
+      // way.
+      if (effectiveFormTeamId !== teamId) {
+        setCurrentTeamId(effectiveFormTeamId);
+      }
+      await qc.invalidateQueries({ queryKey: ['projects', effectiveFormTeamId] });
+      if (teamId && teamId !== effectiveFormTeamId) {
+        await qc.invalidateQueries({ queryKey: ['projects', teamId] });
+      }
     },
     onError: (err) => setCreateError(errorMessage(err, 'Could not create project')),
   });
@@ -117,6 +145,30 @@ export default function ProjectsPage(): JSX.Element {
       <section className="bg-white dark:bg-slate-800 rounded shadow p-4 mb-6">
         <h2 className="text-sm font-medium mb-2">New project</h2>
         <form onSubmit={onCreate} className="space-y-2">
+          {/* v1.33: team picker. Only rendered when the user belongs to
+              more than one team — single-team users would just see a
+              read-only field that adds no information. Changing the team
+              clears the accountable selection because the previously-picked
+              user almost certainly isn't a member of the new team. */}
+          {teams.length > 1 && (
+            <label className="block">
+              <span className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Team</span>
+              <select
+                value={effectiveFormTeamId}
+                onChange={(e) => {
+                  setFormTeamId(e.target.value);
+                  setAccountableId('');
+                }}
+                className="w-full rounded border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 border text-sm"
+              >
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.myRole.toLowerCase()})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <input
             type="text"
             required
@@ -139,7 +191,7 @@ export default function ProjectsPage(): JSX.Element {
             title="Accountable (RACI) — the person on the hook for this project's outcomes"
           >
             <option value="">Accountable (optional) — none</option>
-            {members.map((m) => (
+            {formMembers.map((m) => (
               <option key={m.userId} value={m.userId}>
                 {m.name} ({m.role})
               </option>
@@ -148,7 +200,7 @@ export default function ProjectsPage(): JSX.Element {
           {createError && <p className="text-xs text-red-600 dark:text-red-400">{createError}</p>}
           <button
             type="submit"
-            disabled={createMut.isPending}
+            disabled={createMut.isPending || !effectiveFormTeamId}
             className="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
           >
             {createMut.isPending ? 'Creating…' : 'Create project'}

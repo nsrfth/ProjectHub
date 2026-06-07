@@ -23,7 +23,18 @@ export async function backupsRoutes(
   app: FastifyInstance,
   opts: { env: Env },
 ): Promise<void> {
-  const svc = new BackupsService(opts.env.DATABASE_URL, opts.env.BACKUP_DIR);
+  // v1.32.3: bundle uploads + secrets into every scheduled backup so
+  // cross-server restores carry attachment blobs and the encryption keys
+  // for 2FA secrets / LDAP bind passwords. The restore endpoint surfaces
+  // a secrets-sidecar path the operator hand-applies to .env.
+  const svc = new BackupsService(opts.env.DATABASE_URL, opts.env.BACKUP_DIR, {
+    uploadDir: opts.env.UPLOAD_DIR,
+    secrets: {
+      masterKey: opts.env.MASTER_KEY ?? null,
+      jwtAccessSecret: opts.env.JWT_ACCESS_SECRET ?? null,
+      jwtRefreshSecret: opts.env.JWT_REFRESH_SECRET ?? null,
+    },
+  });
   const r = app.withTypeProvider<ZodTypeProvider>();
 
   r.addHook('preHandler', requireAuth);
@@ -114,7 +125,15 @@ export async function backupsRoutes(
       summary: 'Restore a backup dump into the live database (ADMIN only, DESTRUCTIVE)',
       params: backupFilenameParam,
       response: {
-        200: z.object({ filename: z.string(), durationMs: z.number().int().nonnegative() }),
+        // v1.32.3: bundled restores surface what landed (uploads / secrets)
+        // so the UI can show the right "next step" hint to the admin.
+        200: z.object({
+          filename: z.string(),
+          durationMs: z.number().int().nonnegative(),
+          secretsApplied: z.boolean().default(false),
+          secretsSidecar: z.string().nullable().default(null),
+          uploadsRestored: z.boolean().default(false),
+        }),
       },
       security: [{ bearerAuth: [] }],
     },

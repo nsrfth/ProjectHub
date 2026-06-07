@@ -97,10 +97,24 @@ export default function BackupsPage(): JSX.Element {
     mutationFn: (filename: string) => restoreBackup(filename),
     onSuccess: (res) => {
       qc.invalidateQueries();
-      window.alert(
-        `Restore complete: ${res.filename} (${(res.durationMs / 1000).toFixed(1)}s).\n` +
-          'Reload the page so every tab picks up the restored data.',
-      );
+      // v1.32.3: bundled restores can carry uploads + secrets. Tell the
+      // admin what landed so the next-step actions (apply secrets, restart)
+      // are explicit instead of buried in CHANGELOG.
+      const lines: string[] = [
+        `Restore complete: ${res.filename} (${(res.durationMs / 1000).toFixed(1)}s).`,
+      ];
+      if (res.uploadsRestored) {
+        lines.push('Attachment files were restored into the uploads volume.');
+      }
+      if (res.secretsApplied && res.secretsSidecar) {
+        lines.push(
+          `Secrets bundle written to backups/${res.secretsSidecar} (chmod 0600). ` +
+            'Copy MASTER_KEY / JWT_* lines into .env and restart the backend so ' +
+            '2FA secrets, LDAP bind passwords, and existing sessions keep working.',
+        );
+      }
+      lines.push('Reload this page so every tab picks up the restored data.');
+      window.alert(lines.join('\n\n'));
     },
     onError: (e) => window.alert(errorMessage(e, 'Restore failed')),
   });

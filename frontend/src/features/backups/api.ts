@@ -51,11 +51,20 @@ export async function deleteBackup(filename: string): Promise<void> {
 // the page wraps the call in an explicit confirm. After the request returns
 // the browser will see new data on the next refetch; live websockets may
 // surface stale state until the user reloads, which the success toast says.
-export async function restoreBackup(
-  filename: string,
-): Promise<{ filename: string; durationMs: number }> {
+// v1.32.3: response now carries `uploadsRestored` + `secretsApplied` +
+// `secretsSidecar` for the new tarball format. Legacy .dump restores
+// resolve those to false/null so existing callers keep working.
+export interface RestoreResult {
+  filename: string;
+  durationMs: number;
+  uploadsRestored: boolean;
+  secretsApplied: boolean;
+  secretsSidecar: string | null;
+}
+
+export async function restoreBackup(filename: string): Promise<RestoreResult> {
   return (
-    await api.post<{ filename: string; durationMs: number }>(
+    await api.post<RestoreResult>(
       `/admin/backups/${encodeURIComponent(filename)}/restore`,
       {},
     )

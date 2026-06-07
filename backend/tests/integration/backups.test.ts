@@ -70,6 +70,12 @@ async function writeFakeDump(name: string, body = 'fake-dump'): Promise<void> {
   await fs.writeFile(join(backupDir, name), body);
 }
 
+// v1.32.3: opaque bytes pretending to be a .tar.gz so the list/upload paths
+// see the right suffix without us actually shelling out to `tar`.
+async function writeFakeBundle(name: string, body = 'fake-tarball'): Promise<void> {
+  await fs.writeFile(join(backupDir, name), body);
+}
+
 describe('/api/admin/backups', () => {
   it('rejects non-admin callers with 403', async () => {
     const { memberToken } = await setup();
@@ -152,6 +158,60 @@ describe('/api/admin/backups', () => {
     expect(dl.statusCode).toBe(200);
     expect(dl.body).toBe('hello');
     expect(dl.headers['content-disposition']).toContain('taskhub-2026-05-26T10-00-00-000Z.dump');
+  });
+
+  it('v1.32.3: list returns both .dump (legacy) and .tar.gz (bundle) files', async () => {
+    const { adminToken } = await setup();
+    await writeFakeDump('taskhub-2026-05-26T10-00-00-000Z.dump');
+    await writeFakeBundle('taskhub-2026-05-27T10-00-00-000Z.tar.gz');
+    // Stray archive with unknown suffix still ignored.
+    await writeFakeDump('taskhub-2026-05-28T10-00-00-000Z.zip');
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/admin/backups',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const items = list.json().items as Array<{ filename: string }>;
+    const names = items.map((i) => i.filename).sort();
+    expect(names).toEqual([
+      'taskhub-2026-05-26T10-00-00-000Z.dump',
+      'taskhub-2026-05-27T10-00-00-000Z.tar.gz',
+    ]);
+  });
+
+  it('v1.32.3: upload preserves a .tar.gz suffix when sanitising the on-disk name', async () => {
+    const { adminToken } = await setup();
+    const boundary = '----TaskHubBackupTestBoundary132';
+    const body =
+      `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="file"; filename="my bundled backup.tar.gz"\r\n' +
+      'Content-Type: application/gzip\r\n\r\n' +
+      'pretend-this-is-a-tarball\r\n' +
+      `--${boundary}--\r\n`;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/admin/backups/upload',
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: body,
+    });
+    expect(res.statusCode).toBe(201);
+    const saved = res.json() as { filename: string };
+    expect(saved.filename).toMatch(/^upload-.*\.tar\.gz$/);
+    expect(saved.filename).not.toContain(' ');
+  });
+
+  it('v1.32.3: restore of an unknown .tar.gz returns 404 (not 400)', async () => {
+    const { adminToken } = await setup();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/admin/backups/taskhub-1999-01-01T00-00-00-000Z.tar.gz/restore',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(404);
   });
 
   it('DELETE removes a dump + 404 for unknown filename', async () => {
@@ -388,12 +448,13 @@ describe('/api/admin/backups', () => {
       // The exact wording varies: pg_restore itself yells about magic
       // numbers / unsupported version / not a valid archive when given
       // the bogus bytes; if pg_restore isn't installed in the test
-      // container at all, the spawn fails and we surface "pg_restore
-      // failed to start". Both prove the regression patch — the route
-      // used to swallow non-zero exits and report success. Either
-      // wording satisfies the check.
+      // container at all, the spawn fails. v1.32.3 also runs a `psql`
+      // schema-wipe before pg_restore so a missing-tool environment now
+      // surfaces "psql failed to start" first. Any of those proves the
+      // regression patch — the route used to swallow non-zero exits and
+      // report success.
       expect(body.error.message.toLowerCase()).toMatch(
-        /pg_restore exited|pg_restore failed to start|magic|header|archive|unsupported|input|format/,
+        /pg_restore exited|pg_restore failed to start|psql failed to start|psql exited|magic|header|archive|unsupported|input|format/,
       );
 
       // Maintenance must have been CLEARED on failure so the app is
