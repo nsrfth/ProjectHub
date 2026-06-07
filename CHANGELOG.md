@@ -4,6 +4,105 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.0] — 2026-06-08
+
+**Labels: management page + board filter.** Tier-1 sub-feature 3
+(Labels / category tags) lands as a gap-closer — `Label` + `TaskLabel`
++ CRUD endpoints + per-task `LabelPicker` were already shipped in
+earlier releases. This release adds the missing pieces: a standalone
+management UI and a board-level filter.
+
+### What was already there (and stayed)
+
+- `Label` model (**team-scoped**, not project-scoped as the original
+  Tier-1.3 spec suggested) + `TaskLabel` join, both indexed.
+- `GET/POST/PATCH/DELETE /api/teams/:teamId/labels` (full CRUD) +
+  attach/detach endpoints on tasks. Labels exposed inline on every
+  Task response via `TASK_INCLUDE`.
+- `features/labels/LabelChip.tsx` rendering colored chips on Buckets
+  cards (v1.34.3) and Kanban cards.
+- `features/labels/LabelPicker.tsx` for per-task attach/detach +
+  inline label-creation.
+
+### Why team-scoped, not project-scoped
+
+The Tier-1 spec said "project-scoped"; the codebase chose team-scoped
+in v1.x. Team-wide labels (`bug`, `feature`, `customer`, `tech-debt`)
+are typically organisation vocabulary — forcing project scope would
+mean recreating "bug" 50 times across projects. Team-scoped also
+avoids a destructive migration this late in the project. We keep
+team-scoped; documented here for posterity.
+
+### Frontend
+
+- New `features/labels/api.ts` client `updateLabel(teamId, labelId, {
+  name?, color? })` — the backend PATCH was already there; the client
+  wrapper just hadn't been written.
+- New `pages/settings/LabelsPage.tsx` under Settings → **Labels**:
+  - Lists every team label as a row: chip preview · click-to-rename
+    inline (Enter/Esc/blur) · `<input type="color">` for instant
+    recolour · delete with confirm.
+  - Trailing inline create form (name + color picker + Add).
+  - Dark-mode polish.
+- `features/settings/SettingsLayout.tsx` — new sidebar entry visible
+  to every team member (label endpoints have no permission gate
+  today; matches `LabelPicker` semantics).
+- `app/router.tsx` — registers `/settings/labels` under the existing
+  `SettingsLayout`.
+- `pages/TasksPage.tsx` — new label filter strip above the board.
+  Clickable chips toggle inclusion in `?labels=id1,id2` (URL state,
+  shareable). OR semantics: a task is shown if it carries at least
+  one selected label. Affects every view-mode (Kanban / List / by
+  Technician / Buckets) via a single `filteredTasks` derivation —
+  Buckets gets the filter via a new optional `filterLabelIds` prop
+  on `BucketBoard`.
+- `features/buckets/BucketBoard.tsx` — gains `filterLabelIds?:
+  string[] | null` prop. Applies the same OR filter inside before
+  grouping by bucket.
+- `i18n/en.json` + `i18n/fa.json` — new keys: `settings.nav.labels` /
+  `settings.nav.labelsDesc`, `labels.title` / `labels.subtitle` /
+  `labels.empty` / `labels.selectTeam` / `labels.rename` /
+  `labels.recolor` / `labels.delete` / `labels.deleteConfirm` (with
+  `{name}` placeholder) / `labels.newPlaceholder` / `labels.color` /
+  `labels.add` / `labels.adding` / `labels.filterBy` /
+  `labels.clearFilter`. Persian translations included.
+
+### Verified
+
+- Frontend `tsc --noEmit` ✅.
+- Production bundle markers: `/settings/labels` (1),
+  `labels.filterBy` (3 — JSON catalog + render site + key string),
+  `labels.deleteConfirm` (3).
+- Backend untouched. The existing `labels.test.ts` continues to
+  cover every endpoint.
+
+### Phase boundary
+
+- **No model migration.** `Label` stays team-scoped. Project-scoping
+  would mean a destructive migration and recreating shared vocabulary
+  across many projects — not worth the cost.
+- **No `taskCount` on `GET /labels`.** The delete-confirm copy is
+  generic ("removed from every task that uses it") rather than
+  citing a count, so we don't need the backend join. Adding counts
+  to the response is a one-line follow-up if the UI asks for it.
+- **OR-semantic filter only.** A task matches if it has ANY selected
+  label. AND-semantic ("must have all of") can be added later if
+  anyone asks.
+- **No filter affordance for "unlabeled" tasks.** A "no label" pill
+  in the strip would let users find tasks without tags — small
+  follow-up.
+- **No labels in the URL pre-fill via `Label.id` validation.** If
+  a stale URL references a label that's been deleted, the
+  selection is silently dropped on next render — we filter against
+  the live `teamLabels` list before applying.
+- **No bulk label apply.** Multi-select on cards + "Apply label X to
+  all" is a future polish.
+- **`LabelsPage` does not gate on permission.** The backend doesn't
+  yet have a `labels.manage` permission constant — every team
+  member can manage. Add a `labels.manage` perm in a future release
+  if you want manager-only label edits, mirroring the
+  `buckets.manage` pattern from v1.34.0.
+
 ## [1.35.0] — 2026-06-08
 
 **Subtasks: reorder + UI polish.** Tier-1 sub-feature 2 (Checklists /

@@ -19,6 +19,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useTeams } from '@/features/teams/TeamsContext';
 import * as projectsApi from '@/features/projects/api';
 import * as tasksApi from '@/features/tasks/api';
+import * as labelsApi from '@/features/labels/api';
 import { formatShamsiDate } from '@/lib/shamsi';
 import { LabelChip } from '@/features/labels/LabelChip';
 import { useT } from '@/lib/i18n';
@@ -199,6 +200,11 @@ export default function TasksPage(): JSX.Element {
 
   const teamId = currentTeam?.id ?? null;
 
+  // v1.36: hoisted above the label-filter useMemo so the filter logic
+  // can read ?labels=. v1.34.2's `?view=` reader (further down) still
+  // works against this same getter.
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const { data: project } = useQuery({
     queryKey: ['projects', teamId, projectId],
     queryFn: async () => {
@@ -214,6 +220,53 @@ export default function TasksPage(): JSX.Element {
     queryFn: () => tasksApi.listTasks(teamId!, projectId!),
     enabled: !!teamId && !!projectId,
   });
+
+  // v1.36: team labels for the filter strip. Cached briefly so re-renders
+  // don't hammer the API.
+  const { data: teamLabels = [] } = useQuery({
+    queryKey: ['labels', teamId],
+    queryFn: () => labelsApi.listLabels(teamId!),
+    enabled: !!teamId,
+    staleTime: 60_000,
+  });
+
+  // v1.36: parse `?labels=id1,id2` into a Set; if no label has its id
+  // in the team's available labels (stale URL after a label delete),
+  // they're filtered out silently.
+  const selectedLabelIds = useMemo(() => {
+    const raw = searchParams.get('labels');
+    if (!raw) return new Set<string>();
+    const valid = new Set(teamLabels.map((l) => l.id));
+    const out = new Set<string>();
+    for (const id of raw.split(',')) {
+      const trimmed = id.trim();
+      if (trimmed && valid.has(trimmed)) out.add(trimmed);
+    }
+    return out;
+  }, [searchParams, teamLabels]);
+
+  function toggleLabel(labelId: string): void {
+    const next = new Set(selectedLabelIds);
+    if (next.has(labelId)) next.delete(labelId);
+    else next.add(labelId);
+    const newParams = new URLSearchParams(searchParams);
+    if (next.size === 0) newParams.delete('labels');
+    else newParams.set('labels', [...next].join(','));
+    setSearchParams(newParams, { replace: true });
+  }
+  function clearLabels(): void {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete('labels');
+    setSearchParams(newParams, { replace: true });
+  }
+
+  // v1.36: apply the label filter once at the top so every view-mode
+  // path gets the same set. OR semantics: a task matches if it carries
+  // AT LEAST ONE of the selected labels. No selection → show everything.
+  const filteredTasks = useMemo(() => {
+    if (selectedLabelIds.size === 0) return tasks;
+    return tasks.filter((tk) => tk.labels.some((l) => selectedLabelIds.has(l.id)));
+  }, [tasks, selectedLabelIds]);
 
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState<tasksApi.TaskPriority>('MEDIUM');
@@ -272,6 +325,9 @@ export default function TasksPage(): JSX.Element {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   // Group tasks by status, preserving server-supplied position order.
+  // v1.36: groups operate on `filteredTasks` so the label filter strip
+  // affects every view-mode (Kanban, List, by Technician). Buckets view
+  // applies the same filter inside BucketBoard via a prop.
   const grouped = useMemo(() => {
     const g: Record<tasksApi.TaskStatus, tasksApi.Task[]> = {
       TODO: [],
@@ -279,9 +335,9 @@ export default function TasksPage(): JSX.Element {
       REVIEW: [],
       DONE: [],
     };
-    for (const t of tasks) g[t.status].push(t);
+    for (const t of filteredTasks) g[t.status].push(t);
     return g;
-  }, [tasks]);
+  }, [filteredTasks]);
 
   // v1.20: alternative view modes. Persisted in localStorage so the user's
   // preference survives page reloads.
@@ -300,7 +356,7 @@ export default function TasksPage(): JSX.Element {
   // v1.34.3: default view is now Buckets — matches the Planner-style
   // "open a plan, see the board" UX. Users who picked a different
   // view previously keep their stored preference.
-  const [searchParams] = useSearchParams();
+  // v1.36: searchParams is hoisted higher up (above the label filter).
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const fromUrl = searchParams.get('view');
     if (fromUrl === 'status' || fromUrl === 'technician' || fromUrl === 'list' || fromUrl === 'buckets') {
@@ -323,7 +379,7 @@ export default function TasksPage(): JSX.Element {
   // with "Unassigned" pinned last when present.
   const groupedByTech = useMemo(() => {
     const buckets = new Map<string, { id: string | null; name: string; tasks: tasksApi.Task[] }>();
-    for (const t of tasks) {
+    for (const t of filteredTasks) {
       const key = t.technicianId ?? '__unassigned__';
       const name = t.technicianName ?? '(unassigned)';
       let entry = buckets.get(key);
@@ -338,7 +394,7 @@ export default function TasksPage(): JSX.Element {
       if (b.id === null) return -1;
       return a.name.localeCompare(b.name);
     });
-  }, [tasks]);
+  }, [filteredTasks]);
 
   const t = useT();
 
@@ -458,6 +514,43 @@ export default function TasksPage(): JSX.Element {
 
       {isLoading && <p className="text-sm text-slate-500">Loading tasks…</p>}
 
+      {/* v1.36: label filter strip. Renders only when the team has at least
+          one label. Click a chip to toggle inclusion in `?labels=`; OR
+          semantics across selections. */}
+      {teamLabels.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 text-xs">
+          <span className="text-slate-500 dark:text-slate-400">
+            {t('labels.filterBy')}
+          </span>
+          {teamLabels.map((l) => {
+            const active = selectedLabelIds.has(l.id);
+            return (
+              <button
+                key={l.id}
+                type="button"
+                onClick={() => toggleLabel(l.id)}
+                className={[
+                  'transition-opacity',
+                  active ? 'opacity-100' : 'opacity-40 hover:opacity-80',
+                ].join(' ')}
+                aria-pressed={active}
+              >
+                <LabelChip label={l} size="md" />
+              </button>
+            );
+          })}
+          {selectedLabelIds.size > 0 && (
+            <button
+              type="button"
+              onClick={clearLabels}
+              className="ms-2 underline text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+            >
+              {t('labels.clearFilter')}
+            </button>
+          )}
+        </div>
+      )}
+
       {viewMode === 'status' && (
         <DndContext sensors={sensors} onDragEnd={onDragEnd}>
           <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -494,7 +587,7 @@ export default function TasksPage(): JSX.Element {
 
       {viewMode === 'list' && (
         <TaskList
-          tasks={tasks}
+          tasks={filteredTasks}
           t={t}
           onOpen={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
           onStatusChange={(task, s) =>
@@ -511,6 +604,7 @@ export default function TasksPage(): JSX.Element {
           teamId={teamId}
           projectId={projectId}
           onOpenTask={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
+          filterLabelIds={selectedLabelIds.size > 0 ? [...selectedLabelIds] : null}
         />
       )}
 

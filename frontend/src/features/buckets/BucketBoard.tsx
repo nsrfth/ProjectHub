@@ -59,9 +59,18 @@ interface Props {
   teamId: string;
   projectId: string;
   onOpenTask: (taskId: string) => void;
+  // v1.36: optional label filter forwarded from TasksPage's ?labels=
+  // query-param state. Null/empty = no filter. OR semantics: a task is
+  // shown if it carries at least one of the supplied labelIds.
+  filterLabelIds?: string[] | null;
 }
 
-export default function BucketBoard({ teamId, projectId, onOpenTask }: Props): JSX.Element {
+export default function BucketBoard({
+  teamId,
+  projectId,
+  onOpenTask,
+  filterLabelIds,
+}: Props): JSX.Element {
   const t = useT();
   const qc = useQueryClient();
 
@@ -75,7 +84,16 @@ export default function BucketBoard({ teamId, projectId, onOpenTask }: Props): J
   });
 
   const buckets = bucketsQ.data ?? [];
-  const tasks = tasksQ.data ?? [];
+  const allTasks = tasksQ.data ?? [];
+
+  // v1.36: apply the label filter before grouping. OR semantics — task
+  // shown if it carries at least one of the selected labels. Null /
+  // empty filter passes through.
+  const tasks = useMemo(() => {
+    if (!filterLabelIds || filterLabelIds.length === 0) return allTasks;
+    const wanted = new Set(filterLabelIds);
+    return allTasks.filter((tk) => tk.labels.some((l) => wanted.has(l.id)));
+  }, [allTasks, filterLabelIds]);
 
   // Group tasks by bucketId. (unbucketed) is keyed by UNBUCKETED.
   const byBucket = useMemo(() => {

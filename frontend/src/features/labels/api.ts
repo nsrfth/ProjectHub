@@ -26,6 +26,16 @@ export async function createLabel(
   return (await api.post<Label>(`/teams/${teamId}/labels`, input)).data;
 }
 
+// v1.36: rename / recolour a label. Backend already supports this via
+// PATCH; we just needed the client wrapper for the LabelsPage UI.
+export async function updateLabel(
+  teamId: string,
+  labelId: string,
+  input: { name?: string; color?: string },
+): Promise<Label> {
+  return (await api.patch<Label>(`/teams/${teamId}/labels/${labelId}`, input)).data;
+}
+
 export async function deleteLabel(teamId: string, labelId: string): Promise<void> {
   await api.delete(`/teams/${teamId}/labels/${labelId}`);
 }

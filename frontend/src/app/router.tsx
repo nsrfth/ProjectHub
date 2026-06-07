@@ -15,6 +15,7 @@ import ApiWebhooksPage from '@/pages/settings/ApiWebhooksPage';
 import PreferencesPage from '@/pages/settings/PreferencesPage';
 import RolesPage from '@/pages/settings/RolesPage';
 import BackupsPage from '@/pages/settings/BackupsPage';
+import LabelsPage from '@/pages/settings/LabelsPage';
 import SearchPage from '@/pages/SearchPage';
 import HelpPage from '@/pages/HelpPage';
 import AboutPage from '@/pages/AboutPage';
@@ -51,6 +52,7 @@ export const router = createBrowserRouter([
         children: [
           { path: 'preferences', element: <PreferencesPage /> },
           { path: 'roles', element: <RolesPage /> },
+          { path: 'labels', element: <LabelsPage /> },
           { path: 'directories', element: <DirectoriesPage /> },
           { path: 'security', element: <SecurityPage /> },
           { path: 'audit', element: <AuditPage /> },

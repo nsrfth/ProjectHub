@@ -36,6 +36,15 @@ const NAV: NavItem[] = [
     descriptionKey: 'settings.nav.rolesDesc',
     roles: ['ADMIN', 'MANAGER', 'MEMBER'],
   },
+  // v1.36: team-scoped label management (chip preview, rename, recolor,
+  // delete). Backend has no permission gate on label endpoints today,
+  // so every team member sees the entry.
+  {
+    to: '/settings/labels',
+    labelKey: 'settings.nav.labels',
+    descriptionKey: 'settings.nav.labelsDesc',
+    roles: ['ADMIN', 'MANAGER', 'MEMBER'],
+  },
   {
     to: '/settings/directories',
     labelKey: 'settings.nav.directories',
