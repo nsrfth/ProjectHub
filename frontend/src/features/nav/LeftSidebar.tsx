@@ -73,7 +73,12 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
           // Pinned to the inline-start edge so it lives on the left in LTR
           // and the right in RTL with no per-language overrides.
           'fixed top-0 start-0 z-50 w-64 h-screen flex flex-col',
-          'bg-slate-900 text-slate-100 border-e border-slate-800',
+          // v1.32.2: track light/dark mode like the rest of the app. The
+          // original mockup-faithful `bg-slate-900` was always-dark; users
+          // on light theme found the dark rail jarring against the white
+          // content area.
+          'bg-white text-slate-900 border-e border-slate-200',
+          'dark:bg-slate-900 dark:text-slate-100 dark:border-slate-800',
           'transition-transform duration-200',
           // Drawer behaviour. v1.32.1: the previous form
           // `rtl:translate-x-full ltr:-translate-x-full md:translate-x-0`
@@ -91,10 +96,10 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
         aria-label="Primary navigation"
       >
         {/* Brand header — TaskHub with a small checkmark mark. */}
-        <div className="h-14 flex items-center justify-between px-4 border-b border-slate-800">
+        <div className="h-14 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800">
           <Link
             to="/dashboard"
-            className="flex items-center gap-2 text-base font-semibold text-white"
+            className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white"
             onClick={onClose}
           >
             <span className="w-7 h-7 rounded-md bg-indigo-500 flex items-center justify-center">
@@ -118,7 +123,7 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="md:hidden p-1 rounded text-slate-400 hover:bg-slate-800"
+            className="md:hidden p-1 rounded text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
           >
             <IconClose size={20} />
           </button>
@@ -136,14 +141,20 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
                     [
                       'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
                       isActive
-                        ? 'bg-indigo-500/15 text-white font-medium'
-                        : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100',
+                        ? 'bg-indigo-50 text-indigo-700 font-medium dark:bg-indigo-500/15 dark:text-white'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100',
                     ].join(' ')
                   }
                 >
                   {({ isActive }) => (
                     <>
-                      <span className={isActive ? 'text-indigo-400' : 'text-slate-500'}>
+                      <span
+                        className={
+                          isActive
+                            ? 'text-indigo-600 dark:text-indigo-400'
+                            : 'text-slate-400 dark:text-slate-500'
+                        }
+                      >
                         <item.icon size={18} />
                       </span>
                       <span>{item.label}</span>
@@ -160,16 +171,16 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
         <Link
           to="/settings/preferences"
           onClick={onClose}
-          className="flex items-center gap-3 px-4 py-3 border-t border-slate-800 hover:bg-slate-800/60"
+          className="flex items-center gap-3 px-4 py-3 border-t border-slate-200 hover:bg-slate-100 dark:border-slate-800 dark:hover:bg-slate-800/60"
         >
           <span className="w-9 h-9 rounded-full bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center">
             {initials(user?.name, user?.email)}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm text-slate-100 truncate">
+            <span className="block text-sm text-slate-900 dark:text-slate-100 truncate">
               {user?.name || user?.email}
             </span>
-            <span className="block text-xs text-slate-400 truncate">
+            <span className="block text-xs text-slate-500 dark:text-slate-400 truncate">
               {currentTeam?.name ?? ''}
             </span>
           </span>
