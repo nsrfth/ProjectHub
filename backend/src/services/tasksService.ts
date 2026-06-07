@@ -96,6 +96,8 @@ export interface TaskView {
   // can change it after. technicianName is joined for the UI.
   technicianId: string | null;
   technicianName: string | null;
+  // v1.34: bucket reference. Null when the task is unbucketed (default).
+  bucketId: string | null;
   title: string;
   description: string | null;
   status: TaskStatus;
@@ -145,6 +147,7 @@ function toView(
     assigneeId: row.assigneeId,
     technicianId: row.technicianId,
     technicianName: row.technician?.name ?? null,
+    bucketId: row.bucketId,
     title: row.title,
     description: row.description,
     status: row.status,
@@ -343,6 +346,10 @@ export class TasksService {
       dueDate?: string | null;
       plannedDate?: string | null;
       completedAt?: string | null;
+      // v1.34: bucket assignment. Omitted = no change; null = unbucket;
+      // string = move to that bucket (validated to belong to the same
+      // project + team; cross-project → 400, cross-team → 404).
+      bucketId?: string | null;
     },
   ): Promise<TaskView> {
     const existing = await this.get(teamId, projectId, taskId);
@@ -352,6 +359,22 @@ export class TasksService {
         where: { userId_teamId: { userId: input.assigneeId, teamId } },
       });
       if (!membership) throw Errors.badRequest('Assignee is not a member of this team');
+    }
+
+    // v1.34: bucket move validation. Omitted = skip; null = unbucket
+    // (always allowed); string = target bucket must belong to the SAME
+    // project (cross-project → 400) and the SAME team (cross-team → 404).
+    if (typeof input.bucketId === 'string') {
+      const target = await prisma.bucket.findUnique({
+        where: { id: input.bucketId },
+        select: { projectId: true, teamId: true },
+      });
+      if (!target || target.teamId !== teamId) {
+        throw Errors.notFound('Bucket not found');
+      }
+      if (target.projectId !== projectId) {
+        throw Errors.badRequest('Bucket belongs to a different project');
+      }
     }
 
     // v1.19 → v1.23: technician change gate. Now gated by the
@@ -463,6 +486,10 @@ export class TasksService {
       'dueDate',
       'plannedDate',
       'completedAt',
+      // v1.34: bucket moves participate in the audit log alongside other
+      // field changes. No separate activity action — moving a task isn't
+      // a notification-worthy event like assignment.
+      'bucketId',
     ] as const;
     const DATE_FIELDS = new Set(['dueDate', 'plannedDate', 'completedAt']);
     const changedNonStatusFields = NON_STATUS_FIELDS.filter((f) => {
@@ -499,6 +526,7 @@ export class TasksService {
               plannedDate: input.plannedDate === null ? null : new Date(input.plannedDate),
             }),
             ...(resolvedCompletedAt !== undefined && { completedAt: resolvedCompletedAt }),
+            ...(input.bucketId !== undefined && { bucketId: input.bucketId }),
           },
           include: TASK_INCLUDE,
         });

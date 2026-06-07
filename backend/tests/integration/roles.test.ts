@@ -395,17 +395,20 @@ describe('S-22 PATCH /teams/:teamId gated by team.edit_details', () => {
 });
 
 describe('/api/system/permissions catalog', () => {
-  it('returns the 16 permission constants + UI groups', async () => {
+  it('returns the 17 permission constants + UI groups', async () => {
     const res = await inject({ method: 'GET', url: '/api/system/permissions' });
     expect(res.statusCode).toBe(200);
     // v1.29 added `task.manage_dependencies`; v1.30.8 added
-    // `team.edit_details` (migrated off the legacy team-role gate).
-    expect(res.json().permissions).toHaveLength(16);
+    // `team.edit_details` (migrated off the legacy team-role gate);
+    // v1.34 added `buckets.manage`.
+    expect(res.json().permissions).toHaveLength(17);
     expect(res.json().permissions).toContain('task.change_technician');
     expect(res.json().permissions).toContain('task.manage_dependencies');
     expect(res.json().permissions).toContain('team.edit_details');
+    expect(res.json().permissions).toContain('buckets.manage');
     expect(res.json().groups.Tasks).toContain('task.delete');
     expect(res.json().groups.Tasks).toContain('task.manage_dependencies');
     expect(res.json().groups.Team).toContain('team.edit_details');
+    expect(res.json().groups.Projects).toContain('buckets.manage');
   });
 });

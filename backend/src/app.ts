@@ -25,6 +25,7 @@ import { webhooksRoutes } from './routes/webhooks.js';
 import { recurrenceRoutes } from './routes/recurrence.js';
 import { dependenciesRoutes } from './routes/dependencies.js';
 import { searchRoutes } from './routes/search.js';
+import { bucketByIdRoutes, projectBucketsRoutes } from './routes/buckets.js';
 import { systemRoutes } from './routes/system.js';
 import { calendarRoutes } from './routes/calendar.js';
 import { trashRoutes } from './routes/trash.js';
@@ -114,6 +115,14 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     // GlobalRole=ADMIN gate. Separate file so the route module stays small
     // and the BackupsService receives env (DATABASE_URL + BACKUP_DIR).
     await api.register(backupsRoutes, { prefix: '/admin/backups', env });
+    // v1.34: per-project buckets. Two mount points keep URLs self-describing
+    // without writing a "resolve team from bucket id" middleware:
+    //   - project-nested: GET / POST / PATCH /reorder
+    //   - direct-id:      PATCH /:bucketId / DELETE /:bucketId
+    await api.register(projectBucketsRoutes, {
+      prefix: '/teams/:teamId/projects/:projectId/buckets',
+    });
+    await api.register(bucketByIdRoutes, { prefix: '/teams/:teamId/buckets' });
     // Labels live at the team scope; attach/detach lives under the task path.
     await api.register(labelsRoutes, { prefix: '/teams/:teamId/labels' });
     await api.register(taskLabelsRoutes, {

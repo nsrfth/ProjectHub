@@ -4,6 +4,103 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.0] — 2026-06-08
+
+**Buckets: per-project task grouping.** Projects can now define ordered
+buckets (lightweight columns independent of `status`). Tasks carry an
+optional `bucketId`; deleting a bucket leaves its tasks unbucketed
+rather than removing them. Tier 1 sub-feature 1; checklists, labels,
+and start-date/reminders ship in separate releases.
+
+### Backend
+
+- New Prisma model `Bucket` (project-scoped, denormalized `teamId`,
+  `order: Int`). Migration `20260608000000_buckets` adds the table +
+  nullable `Task.bucketId` with `ON DELETE SET NULL`. Purely additive
+  on existing data — no NOT NULL constraint, no backfill, existing
+  tasks default to unbucketed.
+- New `Task @@index([projectId, bucketId, position])` mirrors the
+  existing `(projectId, status, position)` kanban index for
+  bucket-grouped board reads.
+- New permission `buckets.manage` (default-granted to MANAGER and
+  MEMBER — matches Labels parity, any team member can curate the
+  project's column layout). Migration backfills the permission into
+  every existing system Manager + Member role so default behaviour
+  doesn't change.
+- New endpoints:
+  - `GET    /api/teams/:teamId/projects/:projectId/buckets` — list,
+    sorted by `order` asc. Implicit team-member capability.
+  - `POST   /api/teams/:teamId/projects/:projectId/buckets` — create.
+    Server assigns `order = max(order) + 1` within the project.
+  - `PATCH  /api/teams/:teamId/projects/:projectId/buckets/reorder` —
+    full-permutation bulk reorder. Strict mode: rejects duplicate /
+    missing / foreign ids with 400. Two-phase write inside a single
+    transaction (bump everyone to a collision-free range, then settle
+    to `0..n-1`) so no intermediate state has duplicate `order` values.
+  - `PATCH  /api/teams/:teamId/buckets/:bucketId` — rename.
+  - `DELETE /api/teams/:teamId/buckets/:bucketId` — remove. Tasks
+    fall back to `bucketId: null` via the FK SET NULL — they survive
+    in the project, unbucketed.
+- Cross-team scoping: a bucket whose project lives in another team
+  returns **404** (never 403) — matches the projects/labels precedent.
+- `PATCH /api/teams/:teamId/projects/:projectId/tasks/:taskId` accepts
+  `bucketId: string | null`. `null` unbuckets, omission is a no-op,
+  string moves the task. Service validates the target bucket belongs to
+  the same project (cross-project → 400) and the same team
+  (cross-team → 404). The move is recorded under the regular
+  `task.updated` activity action with `bucketId` in the changed-fields
+  list.
+- `Task` response now carries `bucketId: string | null`.
+
+### Tests
+
+- New `backend/tests/integration/buckets.test.ts` — 16 cases covering:
+  - Create with monotonic `order`, list returns sorted, name length
+    validation.
+  - Rename with `updatedAt` advance; cross-tenant 404.
+  - Cross-team URL/project mismatch → 404; non-member → 403.
+  - Reorder happy path (no duplicate `order` values left in DB);
+    missing / duplicate / foreign id → 400.
+  - Delete preserves tasks (`bucketId` becomes null, task survives);
+    cross-tenant DELETE → 404.
+  - Task PATCH `bucketId`: string moves, null unbuckets, cross-project
+    → 400, cross-team → 404.
+  - RBAC: member with a custom role that lacks `buckets.manage` gets
+    403 on every write; reads still 200. Global ADMIN bypasses even
+    when the permission is revoked on the team role.
+- Updated `roles.test.ts` — permission catalog count 16 → 17, added
+  `buckets.manage` assertion under the Projects group.
+
+### Verified
+
+- Backend `tsc` ✅; frontend `tsc --noEmit` ✅.
+- `buckets.test.ts` 16/16. Adjacent suites (tasks + roles + labels +
+  projects) all green: **62/62**.
+
+### Phase boundary
+
+- **`Bucket.order` is a sort key, not unique.** Concurrent reorders
+  use a two-phase update so no intermediate state has duplicates, but
+  the index doesn't enforce uniqueness — matches `Task.position`
+  precedent. A racy "both clients sent valid permutations within
+  milliseconds" still settles to one of the two orderings depending on
+  commit interleaving.
+- **No bucket-specific activity rows.** Bucket create / rename /
+  delete don't write to the `Activity` log; task moves between buckets
+  appear under the existing `task.updated` action with `bucketId` in
+  the changed-fields list. A dedicated `bucket.*` activity stream is
+  the natural follow-up if the audit log grows a "config changes"
+  filter.
+- **No per-user bucket views.** Buckets are project-global; saved
+  per-user collapse state, personal ordering, and personal filters
+  are deferred.
+- **No archived/hidden buckets.** Delete is the only removal.
+- **Drag-and-drop optimistic UI deferred.** The frontend will ship in
+  a separate PR; the API contract (full-permutation reorder) is the
+  one the DnD layer will send.
+- **Frontend untouched in this release.** Backend-only landing so we
+  can review the API shape before the UI lands.
+
 ## [1.33.0] — 2026-06-07
 
 **Two frontend conveniences: a "by team" calendar view and a project-form

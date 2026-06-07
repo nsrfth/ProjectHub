@@ -32,6 +32,10 @@ export const updateTaskBody = z
     dueDate: z.string().datetime().nullable().optional(),
     plannedDate: z.string().datetime().nullable().optional(),
     completedAt: z.string().datetime().nullable().optional(),
+    // v1.34: move the task to a bucket (string), unbucket (null), or
+    // leave alone (omitted). Service validates that the bucket lives in
+    // the same project — cross-project bucketId → 400, cross-team → 404.
+    bucketId: z.string().nullable().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'Provide at least one field to update');
 
@@ -78,6 +82,8 @@ export const taskResponse = z.object({
   // on create; changes gated to team MANAGER / global ADMIN.
   technicianId: z.string().nullable(),
   technicianName: z.string().nullable(),
+  // v1.34: bucket reference. Null when the task is unbucketed.
+  bucketId: z.string().nullable(),
   title: z.string(),
   description: z.string().nullable(),
   status: taskStatusEnum,
