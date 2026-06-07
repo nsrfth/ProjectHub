@@ -23,12 +23,12 @@ import { formatShamsiCalendarDate } from '@/lib/shamsi';
 
 type ViewMode = 'work-week' | 'week' | 'month';
 type DateField = 'due' | 'planned';
-// v1.33: scope toggle. `current` keeps the historical single-team feed;
-// `all` fans out the same /teams/:teamId/calendar call across every team
-// the caller is a member of and merges client-side. The per-task
-// `teamColor` already shipped from the backend, so chips visually
-// disambiguate teams without any new endpoint.
-type Scope = 'current' | 'all';
+// v1.33: team selector. Either a specific team id, or 'all' to fan out
+// the same /teams/:teamId/calendar call across every team the caller
+// belongs to. The per-task `teamColor` already ships from the backend,
+// so chips visually disambiguate teams without any new endpoint.
+const ALL_TEAMS = 'all' as const;
+type TeamSelection = typeof ALL_TEAMS | string;
 
 const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -96,7 +96,7 @@ function shortLabel(d: Date, monthMode: boolean): string {
   return formatted ?? `${d.getUTCDate()}`;
 }
 
-const SCOPE_STORAGE_KEY = 'calendar.scope';
+const TEAM_STORAGE_KEY = 'calendar.selectedTeam';
 
 export default function CalendarPage(): JSX.Element {
   const { teams, currentTeam } = useTeams();
@@ -106,55 +106,71 @@ export default function CalendarPage(): JSX.Element {
   const [view, setView] = useState<ViewMode>('week');
   const [field, setField] = useState<DateField>('due');
   const [cursor, setCursor] = useState<Date>(() => utcDay(new Date()));
-  // v1.33: persist scope choice so a user who picked "All teams" doesn't
-  // get reverted to the single-team view on reload.
-  const [scope, setScope] = useState<Scope>(() => {
-    if (typeof window === 'undefined') return 'current';
-    return window.localStorage.getItem(SCOPE_STORAGE_KEY) === 'all' ? 'all' : 'current';
+  // v1.33: persist the team selection so reloads preserve "All my teams"
+  // or a specific non-current team. Reads the localStorage entry but only
+  // trusts it if it still matches a known team id (or ALL_TEAMS) — handles
+  // the user leaving a team between sessions.
+  const [selectedTeam, setSelectedTeam] = useState<TeamSelection>(() => {
+    if (typeof window === 'undefined') return currentTeam?.id ?? ALL_TEAMS;
+    const stored = window.localStorage.getItem(TEAM_STORAGE_KEY);
+    return stored ?? currentTeam?.id ?? ALL_TEAMS;
   });
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(SCOPE_STORAGE_KEY, scope);
+      window.localStorage.setItem(TEAM_STORAGE_KEY, selectedTeam);
     }
-  }, [scope]);
+  }, [selectedTeam]);
+
+  // If the stored selection points at a team the user is no longer in,
+  // fall back to the current team (or All) so we don't query a 403 team.
+  useEffect(() => {
+    if (selectedTeam === ALL_TEAMS) return;
+    if (teams.length === 0) return;
+    if (!teams.some((t) => t.id === selectedTeam)) {
+      setSelectedTeam(currentTeam?.id ?? ALL_TEAMS);
+    }
+  }, [teams, selectedTeam, currentTeam?.id]);
+
+  const isAllTeams = selectedTeam === ALL_TEAMS;
+  const singleTeamId = isAllTeams ? null : selectedTeam;
 
   const { start, end, cells } = useMemo(() => rangeFor(view, cursor, off), [view, cursor, off]);
 
-  // Single-team query — original behaviour, used when scope === 'current'.
+  // Single-team query — used when one specific team is selected.
   const singleTeamQuery = useQuery({
-    queryKey: ['calendar', currentTeam?.id, start.toISOString(), end.toISOString(), field],
-    queryFn: () => fetchCalendar(currentTeam!.id, {
-      since: start.toISOString(),
-      until: end.toISOString(),
-      field,
-    }),
-    enabled: !!currentTeam && scope === 'current',
+    queryKey: ['calendar', singleTeamId, start.toISOString(), end.toISOString(), field],
+    queryFn: () =>
+      fetchCalendar(singleTeamId!, {
+        since: start.toISOString(),
+        until: end.toISOString(),
+        field,
+      }),
+    enabled: !!singleTeamId,
   });
 
   // v1.33: cross-team fan-out. One query per team (cheap — backend already
   // narrows to the window via `since`/`until`). React Query dedupes + caches
-  // each per-team feed independently, so toggling back to single-team mode
-  // reuses the already-cached page.
+  // each per-team feed independently, so toggling between selections
+  // reuses the already-cached page when the user lands back on it.
   const multiTeamQueries = useQueries({
-    queries:
-      scope === 'all'
-        ? teams.map((t) => ({
-            queryKey: ['calendar', t.id, start.toISOString(), end.toISOString(), field] as const,
-            queryFn: () =>
-              fetchCalendar(t.id, {
-                since: start.toISOString(),
-                until: end.toISOString(),
-                field,
-              }),
-          }))
-        : [],
+    queries: isAllTeams
+      ? teams.map((t) => ({
+          queryKey: ['calendar', t.id, start.toISOString(), end.toISOString(), field] as const,
+          queryFn: () =>
+            fetchCalendar(t.id, {
+              since: start.toISOString(),
+              until: end.toISOString(),
+              field,
+            }),
+        }))
+      : [],
   });
 
   // Merge whichever scope is active into a single task list. Each
   // CalendarTask already carries teamId/teamName/teamColor so the chip
   // markup below doesn't need to do any per-team lookup.
   const tasks: CalendarTask[] = useMemo(() => {
-    if (scope === 'all') {
+    if (isAllTeams) {
       const merged: CalendarTask[] = [];
       for (const q of multiTeamQueries) {
         if (q.data?.items) merged.push(...q.data.items);
@@ -162,12 +178,11 @@ export default function CalendarPage(): JSX.Element {
       return merged;
     }
     return singleTeamQuery.data?.items ?? [];
-  }, [scope, singleTeamQuery.data, multiTeamQueries]);
+  }, [isAllTeams, singleTeamQuery.data, multiTeamQueries]);
 
-  const isFetching =
-    scope === 'all'
-      ? multiTeamQueries.some((q) => q.isFetching)
-      : singleTeamQuery.isFetching;
+  const isFetching = isAllTeams
+    ? multiTeamQueries.some((q) => q.isFetching)
+    : singleTeamQuery.isFetching;
 
   // Bucket tasks into a Map<periodKey, CalendarTask[]> for O(1) per-cell lookup.
   const byDay = useMemo(() => {
@@ -186,7 +201,7 @@ export default function CalendarPage(): JSX.Element {
   // v1.33: per-team legend for the cross-team view — small swatches so a
   // glance at the calendar tells you which color belongs to which team.
   const teamLegend = useMemo(() => {
-    if (scope !== 'all') return [];
+    if (!isAllTeams) return [];
     const seen = new Map<string, { id: string; name: string; color: string }>();
     for (const t of tasks) {
       if (!seen.has(t.teamId)) {
@@ -198,7 +213,13 @@ export default function CalendarPage(): JSX.Element {
       }
     }
     return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [scope, tasks]);
+  }, [isAllTeams, tasks]);
+
+  // Display name of the team currently selected (for the subtitle).
+  const selectedTeamName = useMemo(() => {
+    if (isAllTeams) return null;
+    return teams.find((t) => t.id === selectedTeam)?.name ?? null;
+  }, [isAllTeams, selectedTeam, teams]);
 
   function shift(n: number): void {
     if (view === 'month') {
@@ -212,25 +233,16 @@ export default function CalendarPage(): JSX.Element {
     }
   }
 
-  // v1.33: with the "All teams" scope, we don't need a `currentTeam` to be
-  // selected — the user is reading every team they belong to. Only block
-  // when scope is 'current' and there's no team picked, or when there are
-  // no teams at all.
+  // v1.33: the only hard prerequisite is membership in at least one team.
+  // The team-picker dropdown handles every other case (specific team /
+  // All my teams), and the storage-fallback effect above guarantees the
+  // selection always points at a team the user is still in.
   if (teams.length === 0) {
     return (
       <div className="min-h-screen p-8 max-w-3xl mx-auto">
         <p className="text-sm text-slate-500">
           You aren't in any team yet.{' '}
           <Link to="/teams" className="underline">Create one</Link>.
-        </p>
-      </div>
-    );
-  }
-  if (scope === 'current' && !currentTeam) {
-    return (
-      <div className="min-h-screen p-8 max-w-3xl mx-auto">
-        <p className="text-sm text-slate-500">
-          Select or <Link to="/teams" className="underline">create a team</Link> first.
         </p>
       </div>
     );
@@ -246,37 +258,43 @@ export default function CalendarPage(): JSX.Element {
       <div className="mb-4">
         <h1 className="text-2xl font-semibold">Calendar</h1>
         <p className="text-sm text-slate-500">
-          {scope === 'current' && currentTeam ? (
+          {isAllTeams ? (
             <>
-              in <span className="font-medium">{currentTeam.name}</span> · tasks across every project
+              across <span className="font-medium">{teams.length}</span> team
+              {teams.length === 1 ? '' : 's'} you belong to
+            </>
+          ) : selectedTeamName ? (
+            <>
+              in <span className="font-medium">{selectedTeamName}</span> · tasks across every project
             </>
           ) : (
-            <>
-              across <span className="font-medium">{teams.length}</span> team{teams.length === 1 ? '' : 's'} you belong to
-            </>
+            'pick a team'
           )}
         </p>
       </div>
 
-      {/* v1.33: scope toggle. `current` = the original single-team feed.
-          `all` = fan-out across every team the caller is a member of,
-          merged client-side. */}
-      <div className="flex border rounded overflow-hidden text-sm mb-3 w-fit">
-        <button
-          type="button"
-          onClick={() => setScope('current')}
-          className={`px-3 py-1 ${scope === 'current' ? 'bg-slate-900 text-white' : 'bg-white hover:bg-slate-100'}`}
+      {/* v1.33: team picker. One dropdown with every team the user belongs
+          to + an "All my teams" entry. Selection persists in localStorage
+          and is independent of the global currentTeam (changing it here
+          does not switch the page-context team elsewhere in the app). */}
+      <div className="flex items-center gap-2 mb-3 text-sm">
+        <label htmlFor="calendar-team" className="text-xs text-slate-500">
+          Team
+        </label>
+        <select
+          id="calendar-team"
+          value={selectedTeam}
+          onChange={(e) => setSelectedTeam(e.target.value)}
+          className="border rounded px-2 py-1 bg-white"
         >
-          Current team
-        </button>
-        <button
-          type="button"
-          onClick={() => setScope('all')}
-          className={`px-3 py-1 ${scope === 'all' ? 'bg-slate-900 text-white' : 'bg-white hover:bg-slate-100'}`}
-          title="Tasks from every team you're a member of, color-coded"
-        >
-          All my teams
-        </button>
+          <option value={ALL_TEAMS}>All my teams</option>
+          {teams.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+              {currentTeam?.id === t.id ? ' (current)' : ''}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-3">
@@ -314,7 +332,7 @@ export default function CalendarPage(): JSX.Element {
       </div>
 
       {/* v1.33: per-team legend, only when the cross-team scope is on. */}
-      {scope === 'all' && teamLegend.length > 0 && (
+      {isAllTeams && teamLegend.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 mb-3">
           <span className="text-slate-500">Teams:</span>
           {teamLegend.map((t) => (
