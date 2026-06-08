@@ -439,6 +439,128 @@ describe('v1.41 Subtask optional scheduling window (startDate / endDate)', () =>
   });
 });
 
+// v1.42: subtask assignee. Distinct from technician (RACI / manager-gated).
+// Anyone with project access can change. Validated to be a team member.
+describe('v1.42 Subtask assignee', () => {
+  it('creates a subtask with an assignee (team member) and echoes name', async () => {
+    const s = await setup();
+    // Add a second team member to assign to.
+    const second = await bootstrapUser(app, {
+      email: 'b@example.com',
+      name: 'Bob',
+      password: PASSWORD,
+    });
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/members`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { email: 'b@example.com', role: 'MEMBER' },
+    });
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/subtasks`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { title: 'assigned at create', assigneeId: second.userId },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().assigneeId).toBe(second.userId);
+    expect(res.json().assigneeName).toBe('Bob');
+  });
+
+  it('creates a subtask without an assignee (null by default)', async () => {
+    const s = await setup();
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/subtasks`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { title: 'unassigned' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().assigneeId).toBeNull();
+    expect(res.json().assigneeName).toBeNull();
+  });
+
+  it('rejects assigneeId that is not a team member (400)', async () => {
+    const s = await setup();
+    // Bootstrap another user but DO NOT add to team.
+    const outsider = await bootstrapUser(app, {
+      email: 'outsider@example.com',
+      name: 'Out',
+      password: PASSWORD,
+    });
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/subtasks`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { title: 'bad assignee', assigneeId: outsider.userId },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('PATCH reassigns to another team member', async () => {
+    const s = await setup();
+    const sub = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/subtasks`,
+        headers: { authorization: `Bearer ${s.token}` },
+        payload: { title: 'reassign me' },
+      })
+    ).json();
+    const second = await bootstrapUser(app, {
+      email: 'c@example.com',
+      name: 'Carol',
+      password: PASSWORD,
+    });
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/members`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { email: 'c@example.com', role: 'MEMBER' },
+    });
+    const res = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/subtasks/${sub.id}`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { assigneeId: second.userId },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().assigneeId).toBe(second.userId);
+    expect(res.json().assigneeName).toBe('Carol');
+  });
+
+  it('PATCH clears assignee with explicit null', async () => {
+    const s = await setup();
+    const second = await bootstrapUser(app, {
+      email: 'd@example.com',
+      name: 'Dave',
+      password: PASSWORD,
+    });
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/members`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { email: 'd@example.com', role: 'MEMBER' },
+    });
+    const sub = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/subtasks`,
+        headers: { authorization: `Bearer ${s.token}` },
+        payload: { title: 'clear me', assigneeId: second.userId },
+      })
+    ).json();
+    const res = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/subtasks/${sub.id}`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { assigneeId: null },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().assigneeId).toBeNull();
+  });
+});
+
 describe('DELETE /api/.../subtasks/:subtaskId', () => {
   it('removes the subtask', async () => {
     const s = await setup();

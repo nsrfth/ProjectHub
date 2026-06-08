@@ -18,6 +18,11 @@ export const createSubtaskBody = z
     // would have been ambiguous; we require nullable | omitted instead.
     startDate: z.string().datetime().nullable().optional(),
     endDate: z.string().datetime().nullable().optional(),
+    // v1.42: optional assignee at create time. Service validates that
+    // the user is a member of the parent task's team. Distinct from the
+    // existing v1.19 `technicianId` (which still auto-defaults to creator
+    // and is manager-gated to change).
+    assigneeId: z.string().nullable().optional(),
   })
   .refine(endNotBeforeStart, {
     message: 'endDate must be on or after startDate',
@@ -31,6 +36,9 @@ export const updateSubtaskBody = z
     // v1.19: technician change is gated server-side (manager/admin only).
     // Undefined = leave as-is; null = clear.
     technicianId: z.string().nullable().optional(),
+    // v1.42: assignee — anyone with project access can change. Service
+    // validates the user is a team member of the parent task's team.
+    assigneeId: z.string().nullable().optional(),
     // v1.41: dates — undefined leaves them, null clears.
     startDate: z.string().datetime().nullable().optional(),
     endDate: z.string().datetime().nullable().optional(),
@@ -40,6 +48,7 @@ export const updateSubtaskBody = z
       v.title !== undefined ||
       v.done !== undefined ||
       v.technicianId !== undefined ||
+      v.assigneeId !== undefined ||
       v.startDate !== undefined ||
       v.endDate !== undefined,
     'Provide at least one field',
@@ -60,6 +69,9 @@ export const subtaskResponse = z.object({
   done: z.boolean(),
   technicianId: z.string().nullable(),
   technicianName: z.string().nullable(),
+  // v1.42: assignee joined for the UI.
+  assigneeId: z.string().nullable(),
+  assigneeName: z.string().nullable(),
   startDate: z.string().nullable(),
   endDate: z.string().nullable(),
   position: z.number().int(),

@@ -80,6 +80,12 @@ export interface TaskSubtaskView {
   // v1.19: Subtask technician — same semantics as Task.technicianId.
   technicianId: string | null;
   technicianName: string | null;
+  // v1.42: Subtask assignee — lighter "who's doing this now" field.
+  assigneeId: string | null;
+  assigneeName: string | null;
+  // v1.41: optional scheduling window.
+  startDate: string | null;
+  endDate: string | null;
   position: number;
 }
 
@@ -108,6 +114,10 @@ export interface TaskView {
   dueDate: Date | null;
   plannedDate: Date | null;
   completedAt: Date | null;
+  // v1.42: optional task budget fields. Fixed-2 strings on the wire
+  // (Decimal serializes to string to preserve precision); null when unset.
+  plannedBudget: string | null;
+  actualSpent: string | null;
   position: number;
   createdAt: Date;
   updatedAt: Date;
@@ -127,9 +137,13 @@ const TASK_INCLUDE = {
   labels: { include: { label: true } },
   // v1.19: pull subtask technician name in the same query so the UI doesn't
   // need to look up users separately. Same for the task itself below.
+  // v1.42: also pull subtask assignee name.
   subtasks: {
     orderBy: { position: 'asc' },
-    include: { technician: { select: { name: true } } },
+    include: {
+      technician: { select: { name: true } },
+      assignee: { select: { name: true } },
+    },
   },
   technician: { select: { name: true } },
 } as const;
@@ -159,6 +173,9 @@ function toView(
     dueDate: row.dueDate,
     plannedDate: row.plannedDate,
     completedAt: row.completedAt,
+    // v1.42: Decimal → fixed-2 string. Mirrors v1.41 Project.toView.
+    plannedBudget: row.plannedBudget === null ? null : row.plannedBudget.toFixed(2),
+    actualSpent: row.actualSpent === null ? null : row.actualSpent.toFixed(2),
     position: row.position,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -170,10 +187,25 @@ function toView(
       done: s.done,
       technicianId: s.technicianId,
       technicianName: s.technician?.name ?? null,
+      // v1.42: subtask assignee joined for the UI.
+      assigneeId: s.assigneeId,
+      assigneeName: s.assignee?.name ?? null,
+      // v1.41: subtask scheduling window — ISO strings on the wire.
+      startDate: s.startDate ? s.startDate.toISOString() : null,
+      endDate: s.endDate ? s.endDate.toISOString() : null,
       position: s.position,
     })),
     incompleteBlockerCount,
   };
+}
+
+// v1.42: shared budget normaliser. number | string | null → Prisma.Decimal | null.
+function normaliseBudget(v: number | string | null | undefined): Prisma.Decimal | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  const s = typeof v === 'number' ? String(v) : v.trim();
+  if (s.length === 0) return null;
+  return new Prisma.Decimal(s);
 }
 
 export class TasksService {
@@ -205,6 +237,9 @@ export class TasksService {
       // String = move into that bucket; validated to belong to the
       // same project (cross-project → 400, cross-team → 404).
       bucketId?: string | null;
+      // v1.42: optional budget pair. number | string | null.
+      plannedBudget?: number | string | null;
+      actualSpent?: number | string | null;
     },
   ): Promise<TaskView> {
     await this.ensureProjectInTeam(teamId, projectId);
@@ -278,6 +313,14 @@ export class TasksService {
           // v1.34.3: explicit null and omission both result in NULL
           // (unbucketed); a string ID was validated above.
           bucketId: input.bucketId ?? null,
+          // v1.42: Decimal? — Prisma accepts undefined ("don't write") so
+          // the conditional spread keeps the default NULL when caller omits.
+          ...(normaliseBudget(input.plannedBudget) !== undefined && {
+            plannedBudget: normaliseBudget(input.plannedBudget),
+          }),
+          ...(normaliseBudget(input.actualSpent) !== undefined && {
+            actualSpent: normaliseBudget(input.actualSpent),
+          }),
         },
         include: TASK_INCLUDE,
       });
@@ -382,6 +425,9 @@ export class TasksService {
       // string = move to that bucket (validated to belong to the same
       // project + team; cross-project → 400, cross-team → 404).
       bucketId?: string | null;
+      // v1.42: budget patch — undefined leaves, null clears.
+      plannedBudget?: number | string | null;
+      actualSpent?: number | string | null;
     },
   ): Promise<TaskView> {
     const existing = await this.get(teamId, projectId, taskId);
@@ -577,6 +623,13 @@ export class TasksService {
             }),
             ...(resolvedCompletedAt !== undefined && { completedAt: resolvedCompletedAt }),
             ...(input.bucketId !== undefined && { bucketId: input.bucketId }),
+            // v1.42: budget patch.
+            ...(normaliseBudget(input.plannedBudget) !== undefined && {
+              plannedBudget: normaliseBudget(input.plannedBudget),
+            }),
+            ...(normaliseBudget(input.actualSpent) !== undefined && {
+              actualSpent: normaliseBudget(input.actualSpent),
+            }),
           },
           include: TASK_INCLUDE,
         });

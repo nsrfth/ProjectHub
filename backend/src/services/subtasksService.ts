@@ -20,6 +20,10 @@ export interface SubtaskView {
   done: boolean;
   technicianId: string | null;
   technicianName: string | null;
+  // v1.42: assignee — distinct from technician. Anyone with project
+  // access can change; null when unassigned.
+  assigneeId: string | null;
+  assigneeName: string | null;
   // v1.41: optional scheduling window. Serialized as ISO strings on the
   // wire so the SPA can hand them straight to Date(...) / the picker.
   startDate: string | null;
@@ -29,6 +33,9 @@ export interface SubtaskView {
 
 const SUBTASK_INCLUDE = {
   technician: { select: { name: true } },
+  // v1.42: join assignee in the same query so the UI doesn't need a
+  // separate user lookup.
+  assignee: { select: { name: true } },
 } as const;
 
 function toView(row: Prisma.SubtaskGetPayload<{ include: typeof SUBTASK_INCLUDE }>): SubtaskView {
@@ -39,10 +46,28 @@ function toView(row: Prisma.SubtaskGetPayload<{ include: typeof SUBTASK_INCLUDE 
     done: row.done,
     technicianId: row.technicianId,
     technicianName: row.technician?.name ?? null,
+    assigneeId: row.assigneeId,
+    assigneeName: row.assignee?.name ?? null,
     startDate: row.startDate ? row.startDate.toISOString() : null,
     endDate: row.endDate ? row.endDate.toISOString() : null,
     position: row.position,
   };
+}
+
+// v1.42: shared assignee-must-be-team-member guard. Skip when clearing
+// (null) or when omitted. Throws 400 with a friendly message.
+async function assertAssigneeInTeam(
+  teamId: string,
+  assigneeId: string | null | undefined,
+): Promise<void> {
+  if (assigneeId === undefined || assigneeId === null) return;
+  const membership = await prisma.teamMembership.findUnique({
+    where: { userId_teamId: { userId: assigneeId, teamId } },
+    select: { userId: true },
+  });
+  if (!membership) {
+    throw Errors.badRequest('Assignee is not a member of this team');
+  }
 }
 
 // v1.41: end-on-or-after-start helper. Returns true when the pair is
@@ -78,6 +103,8 @@ export class SubtasksService {
       done?: boolean;
       startDate?: string | null;
       endDate?: string | null;
+      // v1.42: optional assignee at create time.
+      assigneeId?: string | null;
     },
   ): Promise<SubtaskView> {
     await this.ensureTaskInChain(teamId, projectId, taskId);
@@ -87,6 +114,8 @@ export class SubtasksService {
     const startDate = input.startDate ? new Date(input.startDate) : null;
     const endDate = input.endDate ? new Date(input.endDate) : null;
     assertDateRange(startDate, endDate);
+    // v1.42: validate assignee is a team member when provided.
+    await assertAssigneeInTeam(teamId, input.assigneeId);
     // Append to the end with the same sparse-position scheme as Task.
     const last = await prisma.subtask.findFirst({
       where: { taskId },
@@ -101,6 +130,10 @@ export class SubtasksService {
         done: input.done ?? false,
         // v1.19: creator becomes the default technician (same rule as Task).
         technicianId: creatorId,
+        // v1.42: explicit assignee or null. Unlike technician, we do NOT
+        // default to creator — assignee is opt-in (matches Task.assigneeId
+        // semantics, which is null unless set).
+        assigneeId: input.assigneeId ?? null,
         startDate,
         endDate,
         position,
@@ -121,6 +154,10 @@ export class SubtasksService {
       title?: string;
       done?: boolean;
       technicianId?: string | null;
+      // v1.42: assignee — undefined leaves, null clears, string sets.
+      // Anyone with project access can change (unlike technician, which
+      // is manager-gated).
+      assigneeId?: string | null;
       // v1.41: undefined = leave as-is; null = clear; string = set.
       startDate?: string | null;
       endDate?: string | null;
@@ -147,6 +184,11 @@ export class SubtasksService {
           : new Date(input.endDate);
     assertDateRange(mergedStart, mergedEnd);
 
+    // v1.42: validate assignee on change (skip when undefined or null).
+    if (input.assigneeId !== undefined) {
+      await assertAssigneeInTeam(teamId, input.assigneeId);
+    }
+
     // v1.19 → v1.23: technician change gate. Now permission-driven.
     if (input.technicianId !== undefined && input.technicianId !== existing.technicianId) {
       if (
@@ -169,6 +211,7 @@ export class SubtasksService {
           ...(input.title !== undefined && { title: input.title }),
           ...(input.done !== undefined && { done: input.done }),
           ...(input.technicianId !== undefined && { technicianId: input.technicianId }),
+          ...(input.assigneeId !== undefined && { assigneeId: input.assigneeId }),
           ...(input.startDate !== undefined && { startDate: mergedStart }),
           ...(input.endDate !== undefined && { endDate: mergedEnd }),
         },

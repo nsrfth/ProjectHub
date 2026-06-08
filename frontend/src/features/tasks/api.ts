@@ -18,6 +18,10 @@ export interface TaskSubtask {
   // gated to change post-create).
   technicianId: string | null;
   technicianName: string | null;
+  // v1.42: subtask assignee — distinct from technician. Anyone with
+  // project access can change; null when unassigned.
+  assigneeId: string | null;
+  assigneeName: string | null;
   // v1.41: optional scheduling window (ISO datetime, UTC midnight).
   startDate: string | null;
   endDate: string | null;
@@ -50,6 +54,10 @@ export interface Task {
   dueDate: string | null;
   plannedDate: string | null;
   completedAt: string | null;
+  // v1.42: optional task budget fields. Wire shape mirrors v1.41 Project
+  // budgets — fixed-2 string when set, null when unset.
+  plannedBudget: string | null;
+  actualSpent: string | null;
   position: number;
   createdAt: string;
   updatedAt: string;
@@ -90,6 +98,9 @@ export async function createTask(
     // v1.34.3: pre-bucket the new task. Server validates the bucket
     // lives in the same project; omit / null = unbucketed.
     bucketId?: string | null;
+    // v1.42: optional task-level budget pair (number | string | null).
+    plannedBudget?: number | string | null;
+    actualSpent?: number | string | null;
   },
 ): Promise<Task> {
   return (await api.post<Task>(`/teams/${teamId}/projects/${projectId}/tasks`, input)).data;
@@ -116,6 +127,9 @@ export async function updateTask(
     // v1.34: bucket assignment. Null unbuckets, string moves, omitted = no
     // change. Service validates target bucket belongs to the same project.
     bucketId: string | null;
+    // v1.42: budget patch — undefined leaves, null clears, value sets.
+    plannedBudget: number | string | null;
+    actualSpent: number | string | null;
   }>,
 ): Promise<Task> {
   return (

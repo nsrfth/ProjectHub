@@ -387,6 +387,99 @@ describe('task completedAt field', () => {
   });
 });
 
+// v1.42: task budget tracking. Mirrors v1.41 Project budget rules
+// (DECIMAL(18,2), non-negative, up to 2 fractional digits). Wire shape
+// is fixed-2 string when set, null when unset.
+describe('v1.42 Task budget (plannedBudget / actualSpent)', () => {
+  it('creates a task with budgets, returns fixed-2 string echoes', async () => {
+    const { token } = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const project = await createProject(token, team.id);
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { title: 'Budgeted', plannedBudget: '1000', actualSpent: 250.5 },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().plannedBudget).toBe('1000.00');
+    expect(res.json().actualSpent).toBe('250.50');
+  });
+
+  it('creates a task without budgets — both default to null', async () => {
+    const { token } = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const project = await createProject(token, team.id);
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { title: 'NoBudget' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().plannedBudget).toBeNull();
+    expect(res.json().actualSpent).toBeNull();
+  });
+
+  it('PATCH sets, then PATCH null clears', async () => {
+    const { token } = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const project = await createProject(token, team.id);
+    const t = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${team.id}/projects/${project.id}/tasks`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { title: 'patch me' },
+      })
+    ).json();
+    const set = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks/${t.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { plannedBudget: '500.75', actualSpent: '0' },
+    });
+    expect(set.statusCode).toBe(200);
+    expect(set.json().plannedBudget).toBe('500.75');
+    expect(set.json().actualSpent).toBe('0.00');
+    const clear = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks/${t.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { plannedBudget: null, actualSpent: null },
+    });
+    expect(clear.statusCode).toBe(200);
+    expect(clear.json().plannedBudget).toBeNull();
+    expect(clear.json().actualSpent).toBeNull();
+  });
+
+  it('rejects negative budget (400)', async () => {
+    const { token } = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const project = await createProject(token, team.id);
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { title: 'Neg', plannedBudget: '-1' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects more than 2 fractional digits (400)', async () => {
+    const { token } = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const project = await createProject(token, team.id);
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { title: 'TooPrecise', actualSpent: '1.234' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
 describe('PATCH /api/teams/:teamId/projects/:projectId/tasks/:taskId', () => {
   it('moving across columns puts the task at the end of the new column', async () => {
     const { token } = await registerUser('a@example.com');

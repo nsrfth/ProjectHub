@@ -35,6 +35,9 @@ export interface SubtaskItem {
   // v1.41: optional scheduling window. ISO strings; null when unset.
   startDate?: string | null;
   endDate?: string | null;
+  // v1.42: assignee — distinct from technician. Null when unassigned.
+  assigneeId?: string | null;
+  assigneeName?: string | null;
   position: number;
 }
 
@@ -43,6 +46,10 @@ interface SubtaskListProps {
   projectId: string;
   taskId: string;
   subtasks: SubtaskItem[];
+  // v1.42: team members for the per-row assignee dropdown. Parent fetches
+  // once and passes them down; we render `{name}` options + an "unassigned"
+  // sentinel. Server validates membership on submit.
+  teamMembers?: Array<{ userId: string; name: string }>;
   // Caller decides what to refresh on every mutation (typically the task
   // detail query + the kanban list so the progress chip stays in sync).
   onChange: () => Promise<void> | void;
@@ -61,6 +68,7 @@ export function SubtaskList({
   projectId,
   taskId,
   subtasks,
+  teamMembers = [],
   onChange,
 }: SubtaskListProps): JSX.Element {
   const [title, setTitle] = useState('');
@@ -85,6 +93,22 @@ export function SubtaskList({
     mutationFn: (input: { id: string; done: boolean }) =>
       subtasksApi.updateSubtask(teamId, projectId, taskId, input.id, { done: input.done }),
     onSuccess: async () => {
+      await onChange();
+    },
+  });
+
+  // v1.42: per-row assignee PATCH. Anyone with project access can change
+  // (no permission gate); server validates the user is a team member.
+  const updateAssigneeMut = useMutation({
+    mutationFn: (input: { id: string; assigneeId: string | null }) =>
+      subtasksApi.updateSubtask(teamId, projectId, taskId, input.id, {
+        assigneeId: input.assigneeId,
+      }),
+    onSuccess: async () => {
+      await onChange();
+    },
+    onError: async (err) => {
+      window.alert(errorMessage(err, 'Could not save assignee'));
       await onChange();
     },
   });
@@ -184,6 +208,10 @@ export function SubtaskList({
                   updateDatesMut.mutate({ id: s.id, startDate, endDate })
                 }
                 datesPending={updateDatesMut.isPending}
+                // v1.42: assignee dropdown wiring.
+                teamMembers={teamMembers}
+                onAssign={(assigneeId) => updateAssigneeMut.mutate({ id: s.id, assigneeId })}
+                assigneePending={updateAssigneeMut.isPending}
               />
             ))}
             {total === 0 && <li className="text-xs text-slate-400 italic">No subtasks.</li>}
@@ -217,6 +245,9 @@ function SortableRow({
   onDelete,
   onSaveDates,
   datesPending,
+  teamMembers,
+  onAssign,
+  assigneePending,
 }: {
   subtask: SubtaskItem;
   onToggle: (done: boolean) => void;
@@ -225,6 +256,10 @@ function SortableRow({
   // collects the two ISO strings (or null) and submits.
   onSaveDates: (startDate: string | null, endDate: string | null) => void;
   datesPending: boolean;
+  // v1.42: per-row assignee dropdown wiring.
+  teamMembers: Array<{ userId: string; name: string }>;
+  onAssign: (assigneeId: string | null) => void;
+  assigneePending: boolean;
 }): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: subtask.id,
@@ -289,6 +324,26 @@ function SortableRow({
           >
             {formattedRange}
           </span>
+        )}
+        {/* v1.42: per-row assignee dropdown. Hidden when no team members
+            were passed in (defensive: avoids an empty dropdown). Shows
+            "unassigned" by default; server validates membership on submit. */}
+        {teamMembers.length > 0 && (
+          <select
+            value={subtask.assigneeId ?? ''}
+            onChange={(e) => onAssign(e.target.value || null)}
+            disabled={assigneePending}
+            className="text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-1 py-0.5 max-w-[10rem]"
+            title={subtask.assigneeName ? `Assigned to ${subtask.assigneeName}` : 'Assign'}
+            aria-label={`Assignee for subtask ${subtask.title}`}
+          >
+            <option value="">— unassigned —</option>
+            {teamMembers.map((m) => (
+              <option key={m.userId} value={m.userId}>
+                {m.name}
+              </option>
+            ))}
+          </select>
         )}
         <button
           type="button"

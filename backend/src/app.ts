@@ -6,6 +6,7 @@ import { registerErrorHandler } from './middleware/errorHandler.js';
 import { authRoutes } from './routes/auth.js';
 import { teamsRoutes } from './routes/teams.js';
 import { projectsCrossTeamRoutes, projectsRoutes } from './routes/projects.js';
+import { ganttRoutes } from './routes/gantt.js';
 import { tasksRoutes } from './routes/tasks.js';
 import { commentsRoutes } from './routes/comments.js';
 import { activityRoutes } from './routes/activity.js';
@@ -164,6 +165,11 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     // gates write endpoints with `task.manage_dependencies`.
     await api.register(dependenciesRoutes, {
       prefix: '/teams/:teamId/projects/:projectId/tasks/:taskId/dependencies',
+    });
+    // v1.42: project Gantt report. Per-project read-only aggregator —
+    // every subtask grouped by parent task with summary counters.
+    await api.register(ganttRoutes, {
+      prefix: '/teams/:teamId/projects/:projectId/reports/gantt',
     });
     // v1.30: cross-team full-text search. Top-level mount — the endpoint
     // spans every team the caller is a member of, so it isn't nested

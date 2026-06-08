@@ -4,6 +4,146 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.0] — 2026-06-08
+
+**Task budget + Subtask assignee + Project Gantt report.** Three related
+additions, all additive and backward-compatible:
+
+- **Task.plannedBudget / Task.actualSpent** — mirrors v1.41 Project
+  budgets. DECIMAL(18,2), nullable, non-negative.
+- **Subtask.assigneeId** — distinct from the existing v1.19 Technician
+  (RACI / manager-gated). Lightweight "who's doing this now" field that
+  anyone with project access can change. Mirrors Task.assigneeId.
+- **GET /api/teams/:teamId/projects/:projectId/reports/gantt** —
+  per-project aggregate of every subtask grouped by parent task plus
+  cross-row summary counters (total tasks / total subtasks / scheduled
+  vs unscheduled / earliest start / latest end). New SPA page at
+  /projects/:projectId/reports/gantt renders an SVG horizontal bar chart
+  with parent-task grouping, filters (task / assignee / status / date
+  range), today marker, and overdue highlighting.
+
+### Schema
+
+- New migration `20260608180000_task_budget_subtask_assignee`:
+  - `Task.plannedBudget` / `Task.actualSpent` DECIMAL(18,2) NULL +
+    non-negative CHECK constraints.
+  - `Subtask.assigneeId` TEXT NULL + FK to User with `ON DELETE SET NULL`
+    + index.
+- `schema.prisma`: matching Prisma fields + new `SubtaskAssignee` relation.
+
+### Backend
+
+- `schemas/tasks.ts` — shared budget validator (regex + non-negative);
+  added to create + update bodies; added to `taskResponse`; extended
+  `taskSubtaskResponse` with `assigneeId` + `assigneeName` + dates.
+- `services/tasksService.ts` — `TaskSubtaskView` extended with
+  assignee + dates; `TaskView` extended with budget fields; `toView`
+  emits fixed-2 string budgets and the new subtask fields; `create()`
+  and `update()` accept and persist the budget pair; shared
+  `normaliseBudget()` coerces number|string|null to Prisma.Decimal|null.
+  `TASK_INCLUDE` extended to join `subtasks.assignee`.
+- `schemas/subtasks.ts` — added `assigneeId` to create + update bodies;
+  added to `subtaskResponse`.
+- `services/subtasksService.ts` — `SubtaskView` extended with
+  assignee fields; new `assertAssigneeInTeam()` helper (rejects 400 if
+  the user isn't a team member); `create()` and `update()` accept
+  assignee; `SUBTASK_INCLUDE` joins assignee name.
+- `services/ganttService.ts` (new) — `forProject()` returns
+  `GanttReport { projectId, summary, rows }`. Single Prisma query per
+  request joining tasks → subtasks → assignee + technician. Soft-deleted
+  tasks excluded; subtasks of all statuses included so historical
+  Gantt views work.
+- `routes/gantt.ts` (new) — `GET /teams/:teamId/projects/:projectId/reports/gantt`
+  with full auth chain: `requireAuth` + `requireTeamRole` +
+  `requireProjectAccess` (v1.39 visibility cascade) + `tasks:read` scope.
+- `app.ts` — registers the new route.
+
+### Frontend
+
+- `features/tasks/api.ts` — `Task` carries budget fields; `TaskSubtask`
+  carries assignee fields; `createTask` and `updateTask` accept budgets.
+- `features/subtasks/api.ts` — `Subtask` carries `assigneeId` +
+  `assigneeName`; create + update accept `assigneeId`.
+- `features/subtasks/SubtaskList.tsx` — each row gets an "unassigned /
+  member" dropdown sourced from the team-members list (passed in by
+  TaskDetailPage so we don't second-fetch). PATCH on change.
+- `pages/TaskDetailPage.tsx` — new "Budget" section above Comments
+  with `TaskBudgetSection` (mirrors v1.41 BudgetRow): read-only display
+  "Planned X · Spent Y (Z%)" with green/amber/red utilisation chip,
+  inline edit. Passes team-members into SubtaskList for the assignee
+  dropdown.
+- `features/reports/ganttApi.ts` (new) — typed client.
+- `pages/ProjectGanttPage.tsx` (new) — SVG-rendered chart. Summary
+  block + filter row (task / assignee / status / from / to). Day-level
+  resolution at 28px/day. Rows grouped under parent-task headers. Bar
+  colour by parent-task status; emerald when subtask is done; red
+  border when overdue (`endDate < today` and not done). Today vertical
+  marker. Native `title` tooltip with full row details. Empty state +
+  unscheduled-count footer.
+- `app/router.tsx` — `/projects/:projectId/reports/gantt` route entry.
+- `pages/ProjectsPage.tsx` — per-row "Gantt" link to the report.
+
+### Tests (15 new)
+
+- `tasks.test.ts` (5): create with budgets (fixed-2 echo); create
+  without; PATCH set then PATCH null clear; reject negative; reject
+  >2 fractional digits.
+- `subtasks.test.ts` (5): create with assignee echoes name; create
+  without; reject non-team-member; PATCH reassigns; PATCH null clears.
+- `gantt.test.ts` (4 new file): empty project returns zero summary;
+  aggregates summary across scheduled + unscheduled and emits
+  earliest/latest; rows include assignee + technician name; v1.39
+  cascade — non-owner MEMBER 404s on the gantt URL.
+
+### Verified
+
+- Backend: 398 pass, 5 LDAP skipped. 3 pre-existing unrelated file
+  errors (ldap.test.ts, updaterAuth, updaterUpgrade) — not v1.42-caused.
+- Frontend: `tsc --noEmit` clean; `vite build` clean (13.3s).
+- Live smoke: deferred.
+
+### Architectural decisions + trade-offs
+
+- **Subtask.assigneeId distinct from Technician.** The spec asked for an
+  assignment field; v1.19 already has Technician but it's RACI-style and
+  manager-gated. Adding a separate `assigneeId` mirrors Task.assigneeId
+  (the existing pattern) and keeps the lighter "who's working on this"
+  semantics distinct from the heavier RACI rule. No data migration
+  needed; existing Technician values are untouched.
+- **Decimal precision at the DB.** Budget rules are enforced in three
+  layers (Zod / service / DB CHECK) so a direct DB write can't slip an
+  invalid row past the schema. Same defence-in-depth posture as
+  v1.41 Project budgets.
+- **Gantt as a separate service + endpoint.** Could have piggy-backed
+  on the existing tasks list, but a dedicated endpoint lets us shape
+  the wire envelope (summary + rows) for the chart specifically and
+  avoids loading the kanban with unrelated joins.
+- **SVG over chart library.** No new dependency. The bar maths is a
+  handful of lines and the chart is small (~400 LoC). Day-level
+  resolution at 28 px/day is the smallest practical bucket for label
+  legibility; for week/month zoom we'd add controls later.
+- **Native `title` tooltips for v1.** Real popovers belong on a follow-up
+  — the spec asks for "tooltip or detail popup" and native tooltips
+  hit "tooltip" with zero code. A popover would add focus/keyboard
+  handling that isn't worth the surface area today.
+- **Visibility cascade reused.** Gantt uses the v1.39
+  `requireProjectAccess` middleware so non-owners 404 without a custom
+  check.
+
+### Potential future improvements
+
+- **Virtualisation** on the Gantt page for projects with thousands of
+  subtasks (today: full SVG renders fine up to a few hundred rows).
+- **Zoom controls** (day / week / month) on the Gantt axis. Currently
+  fixed at day resolution.
+- **Drag-to-reschedule** on bars. Would PATCH the subtask's startDate/endDate.
+- **Critical-path overlay** once dependencies (v1.29) are linked to subtasks.
+- **Click-to-popover** with full subtask details, comments link, attachments
+  count.
+- **Export** the chart as PNG/SVG/CSV for stakeholder reports.
+- **Currency / locale** on budget fields if the corpus goes
+  multi-currency.
+
 ## [1.41.0] — 2026-06-08
 
 **Subtask scheduling window + Project budget tracking.** Two parallel

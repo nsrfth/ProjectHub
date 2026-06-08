@@ -322,6 +322,9 @@ export default function TaskDetailPage(): JSX.Element {
                 projectId={projectId!}
                 taskId={taskId!}
                 subtasks={task.subtasks}
+                // v1.42: pass team members so the per-row assignee dropdown
+                // can render without a second team-detail fetch.
+                teamMembers={teamMembers.map((m) => ({ userId: m.userId, name: m.name }))}
                 onChange={async () => {
                   await Promise.all([
                     qc.invalidateQueries({ queryKey: ['task', teamId, projectId, taskId] }),
@@ -403,6 +406,21 @@ export default function TaskDetailPage(): JSX.Element {
                 />
               </div>
             </div>
+          </section>
+
+          {/* v1.42: task-level budget. Mirrors the v1.41 project budget UI
+              shape — read-only display when set + inline editor. Anyone with
+              project access can edit (no permission gate). */}
+          <section className="bg-white rounded shadow p-6 mb-6">
+            <h2 className="font-medium mb-3">Budget</h2>
+            <TaskBudgetSection
+              plannedBudget={task.plannedBudget}
+              actualSpent={task.actualSpent}
+              pending={updateTaskMut.isPending}
+              onSave={(planned, actual) =>
+                updateTaskMut.mutate({ plannedBudget: planned, actualSpent: actual })
+              }
+            />
           </section>
 
           <section className="bg-white rounded shadow p-6 mb-6">
@@ -489,6 +507,149 @@ export default function TaskDetailPage(): JSX.Element {
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+// v1.42: task-level budget editor. Read-only display when set
+// ("Planned 1,000.00 · Spent 750.00 (75.0%)") with a green/amber/red
+// utilisation chip; inline editor with two number inputs + save/clear.
+// Client-side mirror of the server's rule disables Save when malformed.
+function TaskBudgetSection({
+  plannedBudget,
+  actualSpent,
+  pending,
+  onSave,
+}: {
+  plannedBudget: string | null;
+  actualSpent: string | null;
+  pending: boolean;
+  onSave: (plannedBudget: string | null, actualSpent: string | null) => void;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [planned, setPlanned] = useState(plannedBudget ?? '');
+  const [actual, setActual] = useState(actualSpent ?? '');
+  // Re-sync only when the editor opens, so a background refetch can't
+  // stomp the user's in-progress edits.
+  useEffect(() => {
+    if (editing) {
+      setPlanned(plannedBudget ?? '');
+      setActual(actualSpent ?? '');
+    }
+  }, [editing, plannedBudget, actualSpent]);
+
+  const utilization =
+    plannedBudget && actualSpent && Number(plannedBudget) > 0
+      ? (Number(actualSpent) / Number(plannedBudget)) * 100
+      : null;
+
+  const fmt = (s: string | null): string =>
+    s === null
+      ? '—'
+      : Number(s).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+
+  const validNumber = (v: string): boolean =>
+    v.trim().length === 0 || (/^\d+(\.\d{1,2})?$/.test(v.trim()) && Number(v) >= 0);
+  const plannedInvalid = !validNumber(planned);
+  const actualInvalid = !validNumber(actual);
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-slate-700">
+        <span>
+          Planned <code>{fmt(plannedBudget)}</code> · Spent <code>{fmt(actualSpent)}</code>
+          {utilization !== null && (
+            <span
+              className={
+                ' ml-2 ' +
+                (utilization > 100
+                  ? 'text-red-600'
+                  : utilization > 80
+                    ? 'text-amber-600'
+                    : 'text-emerald-600')
+              }
+              title="Actual ÷ Planned"
+            >
+              ({utilization.toFixed(1)}%)
+            </span>
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="ml-auto text-xs text-slate-500 hover:underline"
+        >
+          {plannedBudget || actualSpent ? 'Edit' : 'Add budget'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <label className="flex items-center gap-1">
+        <span className="text-slate-500">Planned</span>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={planned}
+          onChange={(e) => setPlanned(e.target.value)}
+          className="w-32 rounded border-slate-300 px-1 py-0.5 border"
+        />
+      </label>
+      <label className="flex items-center gap-1">
+        <span className="text-slate-500">Actual Spent</span>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={actual}
+          onChange={(e) => setActual(e.target.value)}
+          className="w-32 rounded border-slate-300 px-1 py-0.5 border"
+        />
+      </label>
+      {(plannedInvalid || actualInvalid) && (
+        <span className="text-xs text-red-600">
+          Use a non-negative number with up to 2 decimals.
+        </span>
+      )}
+      <div className="flex gap-2 ml-auto">
+        <button
+          type="button"
+          disabled={pending || plannedInvalid || actualInvalid}
+          onClick={() => {
+            onSave(planned.trim() ? planned.trim() : null, actual.trim() ? actual.trim() : null);
+            setEditing(false);
+          }}
+          className="bg-slate-900 text-white rounded px-3 py-1 text-xs disabled:opacity-50"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            setPlanned('');
+            setActual('');
+            onSave(null, null);
+            setEditing(false);
+          }}
+          className="text-xs text-slate-500 hover:underline"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="text-xs text-slate-500 hover:underline"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

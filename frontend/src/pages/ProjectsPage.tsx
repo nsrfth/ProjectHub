@@ -292,6 +292,14 @@ export default function ProjectsPage(): JSX.Element {
                     >
                       {p.teamName}
                     </span>
+                    {/* v1.42: Gantt report link — visible to all viewers
+                        of the row (read-only report). */}
+                    <Link
+                      to={`/projects/${p.id}/reports/gantt`}
+                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >
+                      Gantt
+                    </Link>
                     {canEdit && (
                       <button
                         onClick={() => {

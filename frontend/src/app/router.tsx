@@ -5,6 +5,7 @@ import TeamsPage from '@/pages/TeamsPage';
 import ProjectsPage from '@/pages/ProjectsPage';
 import TasksPage from '@/pages/TasksPage';
 import TaskDetailPage from '@/pages/TaskDetailPage';
+import ProjectGanttPage from '@/pages/ProjectGanttPage';
 import AdminPage from '@/pages/AdminPage';
 import ReportsPage from '@/pages/ReportsPage';
 import SettingsLayout from '@/features/settings/SettingsLayout';
@@ -39,6 +40,8 @@ export const router = createBrowserRouter([
       { path: '/projects', element: <ProjectsPage /> },
       { path: '/projects/:projectId/tasks', element: <TasksPage /> },
       { path: '/projects/:projectId/tasks/:taskId', element: <TaskDetailPage /> },
+      // v1.42: per-project Gantt report.
+      { path: '/projects/:projectId/reports/gantt', element: <ProjectGanttPage /> },
       { path: '/admin', element: <AdminPage /> },
       { path: '/reports', element: <ReportsPage /> },
       { path: '/calendar', element: <CalendarPage /> },

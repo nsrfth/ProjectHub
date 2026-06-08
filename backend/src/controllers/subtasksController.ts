@@ -30,6 +30,7 @@ export class SubtasksController {
       req.params.projectId,
       req.params.taskId,
       // v1.19: creator becomes the default technician on create.
+      // v1.42: req.body.assigneeId is passed through here untouched.
       req.user.sub,
       req.body,
     );

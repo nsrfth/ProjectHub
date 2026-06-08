@@ -9,6 +9,10 @@ export interface Subtask {
   // only to change).
   technicianId: string | null;
   technicianName: string | null;
+  // v1.42: subtask assignee — distinct from technician. Anyone with
+  // project access can change; null when unassigned.
+  assigneeId: string | null;
+  assigneeName: string | null;
   // v1.41: optional scheduling window (ISO datetime strings, UTC midnight).
   startDate: string | null;
   endDate: string | null;
@@ -20,7 +24,14 @@ export async function createSubtask(
   projectId: string,
   taskId: string,
   // v1.41: dates accepted at create time; both optional.
-  input: { title: string; done?: boolean; startDate?: string | null; endDate?: string | null },
+  // v1.42: assignee accepted at create time.
+  input: {
+    title: string;
+    done?: boolean;
+    startDate?: string | null;
+    endDate?: string | null;
+    assigneeId?: string | null;
+  },
 ): Promise<Subtask> {
   return (
     await api.post<Subtask>(
@@ -37,10 +48,12 @@ export async function updateSubtask(
   subtaskId: string,
   // v1.19: technicianId change gated server-side to manager/admin.
   // v1.41: startDate / endDate — undefined leaves them, null clears.
+  // v1.42: assigneeId — undefined leaves, null clears, value sets.
   input: {
     title?: string;
     done?: boolean;
     technicianId?: string | null;
+    assigneeId?: string | null;
     startDate?: string | null;
     endDate?: string | null;
   },
