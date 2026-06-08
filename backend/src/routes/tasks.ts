@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { TasksService } from '../services/tasksService.js';
 import { TasksController } from '../controllers/tasksController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import {
   createTaskBody,
@@ -26,6 +27,10 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   // collaborates on cards. The activity log (future feature) records who did what.
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39 (BREAKING): nested routes 404 for non-ADMIN non-owners. Without
+  // this, URL-guessing `/projects/P/tasks` would bypass the projects-list
+  // visibility filter.
+  r.addHook('preHandler', requireProjectAccess());
 
   r.post('/', {
     preHandler: requireScope('tasks:write'),

@@ -5,6 +5,10 @@ import { BucketsService } from '../services/bucketsService.js';
 import { BucketsController } from '../controllers/bucketsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
+import {
+  requireBucketProjectAccess,
+  requireProjectAccess,
+} from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import {
   bucketListResponse,
@@ -39,6 +43,9 @@ export async function projectBucketsRoutes(app: FastifyInstance): Promise<void> 
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39: project visibility cascade. Only applies here (project-nested);
+  // bucketByIdRoutes below has no projectId in its URL.
+  r.addHook('preHandler', requireProjectAccess());
 
   r.get('/', {
     preHandler: requireScope('projects:read'),
@@ -87,6 +94,10 @@ export async function bucketByIdRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39: bucket-by-id routes look up project ownership via the bucket's
+  // own projectId. Without this, a non-owner could PATCH/DELETE buckets
+  // in a project they can't see in the projects list.
+  r.addHook('preHandler', requireBucketProjectAccess());
 
   r.patch('/:bucketId', {
     preHandler: [requireScope('projects:write'), requirePermission('buckets.manage')],

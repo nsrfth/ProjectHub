@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { LabelsService } from '../services/labelsService.js';
 import { LabelsController } from '../controllers/labelsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import { createLabelBody, labelResponse, updateLabelBody } from '../schemas/labels.js';
 
@@ -77,6 +78,9 @@ export async function taskLabelsRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39: project visibility cascade. (labelsRoutes above is team-scoped
+  // and intentionally skipped — labels are team-wide vocabulary.)
+  r.addHook('preHandler', requireProjectAccess());
 
   r.post('/', {
     preHandler: requireScope('tasks:write'),

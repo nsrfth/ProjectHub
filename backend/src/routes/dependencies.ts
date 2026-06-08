@@ -6,6 +6,7 @@ import { TasksService } from '../services/tasksService.js';
 import { DependenciesController } from '../controllers/dependenciesController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
+import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import {
   createDependencyBody,
@@ -27,6 +28,8 @@ export async function dependenciesRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39: project visibility cascade.
+  r.addHook('preHandler', requireProjectAccess());
 
   r.get('/', {
     preHandler: requireScope('tasks:read'),

@@ -472,13 +472,16 @@ describe('Buckets — RBAC (buckets.manage)', () => {
   it('member without buckets.manage gets 403 on writes; read still 200', async () => {
     const admin = await register('admin@example.com');
     const teamId = await createTeam(admin.token, 'team-1');
-    const projectId = await createProject(admin.token, teamId);
-    // Seed: pre-existing bucket so reads have something to return.
-    const bucketId = (await createBucket(admin.token, teamId, projectId, 'pre-existing')).json()
-      .id as string;
-
     const plain = await register('plain@example.com');
     await addMember(admin.token, teamId, plain.email, 'MEMBER');
+    // v1.39: project owned by `plain` so the visibility-gate cascade lets
+    // them reach the buckets routes — we want a 403 from the permission
+    // check, not a 404 from the gate.
+    const projectId = await createProject(plain.token, teamId);
+    // Seed: pre-existing bucket so reads have something to return. Admin
+    // can still create buckets in plain's project (global-ADMIN bypass).
+    const bucketId = (await createBucket(admin.token, teamId, projectId, 'pre-existing')).json()
+      .id as string;
 
     // Bind plain to a custom role that has EVERYTHING ELSE except
     // buckets.manage. The test asserts writes are denied; reads pass.

@@ -48,12 +48,27 @@ export class ProjectsController {
   };
 
   list = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
-    const items = await this.svc.list(req.params.teamId);
+    if (!req.user) throw Errors.unauthorized();
+    // v1.39: list is now visibility-filtered (non-ADMIN sees only their
+    // own projects). Thread the caller's userId + globalRole through to
+    // the service.
+    const items = await this.svc.list(
+      req.params.teamId,
+      req.user.sub,
+      req.user.globalRole,
+    );
     return reply.send(items.map(serialize));
   };
 
   get = async (req: FastifyRequest<{ Params: ProjectParams }>, reply: FastifyReply) => {
-    const p = await this.svc.get(req.params.teamId, req.params.projectId);
+    if (!req.user) throw Errors.unauthorized();
+    // v1.39: same caller-aware lookup; non-ADMIN non-owner gets 404.
+    const p = await this.svc.get(
+      req.params.teamId,
+      req.params.projectId,
+      req.user.sub,
+      req.user.globalRole,
+    );
     return reply.send(serialize(p));
   };
 

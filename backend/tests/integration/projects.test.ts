@@ -42,6 +42,28 @@ async function registerUser(email: string, name = 'User'): Promise<string> {
   return r.token;
 }
 
+// v1.39 tests: explicit MEMBER (not the auto-ADMIN promotion the first
+// bootstrap user gets). Pair with `registerAdmin` to control globalRole.
+async function registerMember(email: string, name = 'User'): Promise<string> {
+  const r = await bootstrapUser(app, {
+    email,
+    name,
+    password: PASSWORD,
+    globalRole: 'MEMBER',
+  });
+  return r.token;
+}
+
+async function registerAdmin(email: string, name = 'Admin'): Promise<string> {
+  const r = await bootstrapUser(app, {
+    email,
+    name,
+    password: PASSWORD,
+    globalRole: 'ADMIN',
+  });
+  return r.token;
+}
+
 async function createTeam(token: string, slug = 'team-a', name = 'Team A') {
   const res = await inject({
     method: 'POST',
@@ -190,7 +212,11 @@ describe('PATCH /api/teams/:teamId/projects/:projectId', () => {
     expect(res.json().status).toBe('ARCHIVED');
   });
 
-  it('forbids a MEMBER from editing someone elses project', async () => {
+  // v1.39 (BREAKING): non-owner non-ADMIN now sees the project as 404
+  // (visibility gate), not 403. The status-code expectation was 403
+  // pre-v1.39 when the gate was the v1.23 `project.edit` permission
+  // check; today the project simply isn't visible.
+  it('returns 404 when a MEMBER tries to edit someone elses project (v1.39 visibility gate)', async () => {
     const tokenOwner = await registerUser('owner@example.com');
     const tokenMember = await registerUser('member@example.com');
     const team = await createTeam(tokenOwner, 'acme');
@@ -211,14 +237,24 @@ describe('PATCH /api/teams/:teamId/projects/:projectId', () => {
       headers: { authorization: `Bearer ${tokenMember}` },
       payload: { name: 'Hijacked' },
     });
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(404);
   });
 
-  it('allows a team MANAGER to edit any project in their team', async () => {
-    const tokenManager = await registerUser('mgr@example.com');
-    const tokenOwner = await registerUser('owner@example.com');
-    const team = await createTeam(tokenManager, 'acme');
-    await addMember(tokenManager, team.id, 'owner@example.com', 'MEMBER');
+  // v1.39 (BREAKING): a team MANAGER no longer auto-bypasses the
+  // visibility gate. Only ADMIN bypasses; everyone else (MANAGER + MEMBER)
+  // can only edit projects they own. Pre-v1.39 the manager could edit
+  // any project in their team via the `project.edit` permission.
+  it('returns 404 when a team MANAGER tries to edit someone elses project (v1.39 visibility gate)', async () => {
+    // Bootstrap an admin to own the team (first user auto-promotes to ADMIN),
+    // then create an explicit MEMBER-globalRole user that we hand the team
+    // MANAGER role to. v1.39: being a team MANAGER no longer bypasses the
+    // visibility gate — only globalRole === 'ADMIN' does.
+    const tokenAdmin = await registerUser('admin@example.com');
+    const tokenManager = await registerMember('mgr@example.com');
+    const tokenOwner = await registerMember('owner@example.com');
+    const team = await createTeam(tokenAdmin, 'acme');
+    await addMember(tokenAdmin, team.id, 'mgr@example.com', 'MANAGER');
+    await addMember(tokenAdmin, team.id, 'owner@example.com', 'MEMBER');
 
     const proj = (
       await inject({
@@ -235,13 +271,14 @@ describe('PATCH /api/teams/:teamId/projects/:projectId', () => {
       headers: { authorization: `Bearer ${tokenManager}` },
       payload: { status: 'ON_HOLD' },
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().status).toBe('ON_HOLD');
+    expect(res.statusCode).toBe(404);
   });
 });
 
 describe('DELETE /api/teams/:teamId/projects/:projectId', () => {
-  it('forbids non-owner non-manager from deleting', async () => {
+  // v1.39 (BREAKING): non-owner non-ADMIN gets 404 (visibility gate),
+  // not 403. Same reasoning as the PATCH tests above.
+  it('returns 404 when a non-owner non-ADMIN tries to delete (v1.39 visibility gate)', async () => {
     const tokenOwner = await registerUser('owner@example.com');
     const tokenMember = await registerUser('member@example.com');
     const team = await createTeam(tokenOwner, 'acme');
@@ -261,7 +298,7 @@ describe('DELETE /api/teams/:teamId/projects/:projectId', () => {
       url: `/api/teams/${team.id}/projects/${proj.id}`,
       headers: { authorization: `Bearer ${tokenMember}` },
     });
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(404);
   });
 
   it('allows the owner to delete', async () => {
@@ -282,5 +319,226 @@ describe('DELETE /api/teams/:teamId/projects/:projectId', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(204);
+  });
+});
+
+// v1.39 (BREAKING) — project visibility tiering:
+//   - globalRole === 'ADMIN' → sees / manages every project in the team
+//   - everyone else (incl. team MANAGER)  → sees / manages only their
+//     own projects (Project.ownerId === userId)
+// The cascade middleware extends the same rule to /projects/:projectId/*
+// nested routes (tasks, buckets, comments, etc.) so URL-guessing past
+// the projects list filter returns 404.
+describe('v1.39 project visibility tiering', () => {
+  it('list — MEMBER sees only projects they own', async () => {
+    // The first bootstrapped user is an admin (auto-promote). Use that
+    // as the team-owner / counterparty, then make a plain MEMBER with
+    // an explicit role.
+    const adminToken = await registerUser('admin@example.com');
+    const memberToken = await registerMember('member@example.com');
+    const team = await createTeam(adminToken, 'acme');
+    await addMember(adminToken, team.id, 'member@example.com', 'MEMBER');
+
+    // Admin creates one; member creates one of their own.
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Admin Project' },
+    });
+    const mine = (await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${memberToken}` },
+      payload: { name: 'Mine' },
+    })).json();
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${memberToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const items = res.json() as Array<{ id: string; name: string }>;
+    expect(items.map((p) => p.id)).toEqual([mine.id]);
+  });
+
+  it('list — global ADMIN sees every project on the team', async () => {
+    const adminToken = await registerAdmin('admin@example.com');
+    const otherToken = await registerMember('other@example.com');
+    const team = await createTeam(adminToken, 'acme');
+    await addMember(adminToken, team.id, 'other@example.com', 'MEMBER');
+
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${otherToken}` },
+      payload: { name: 'Theirs' },
+    });
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Mine' },
+    });
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const items = res.json() as Array<{ name: string }>;
+    expect(items.map((p) => p.name).sort()).toEqual(['Mine', 'Theirs']);
+  });
+
+  it('GET single — MEMBER 404 on a project they do not own', async () => {
+    const adminToken = await registerUser('admin@example.com');
+    const memberToken = await registerMember('member@example.com');
+    const team = await createTeam(adminToken, 'acme');
+    await addMember(adminToken, team.id, 'member@example.com', 'MEMBER');
+
+    const proj = (await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Admin Project' },
+    })).json();
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${memberToken}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('GET single — global ADMIN bypass on someone elses project', async () => {
+    const adminToken = await registerAdmin('admin@example.com');
+    const otherToken = await registerMember('other@example.com');
+    const team = await createTeam(adminToken, 'acme');
+    await addMember(adminToken, team.id, 'other@example.com', 'MEMBER');
+
+    const proj = (await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${otherToken}` },
+      payload: { name: 'Theirs' },
+    })).json();
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().id).toBe(proj.id);
+  });
+
+  it('cascade — MEMBER 404 on /tasks under someone elses project (URL-guess bypass blocked)', async () => {
+    const adminToken = await registerUser('admin@example.com');
+    const memberToken = await registerMember('member@example.com');
+    const team = await createTeam(adminToken, 'acme');
+    await addMember(adminToken, team.id, 'member@example.com', 'MEMBER');
+
+    const proj = (await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Admin Project' },
+    })).json();
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${team.id}/projects/${proj.id}/tasks`,
+      headers: { authorization: `Bearer ${memberToken}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('cascade — MEMBER 404 on /buckets POST under someone elses project', async () => {
+    const adminToken = await registerUser('admin@example.com');
+    const memberToken = await registerMember('member@example.com');
+    const team = await createTeam(adminToken, 'acme');
+    await addMember(adminToken, team.id, 'member@example.com', 'MEMBER');
+
+    const proj = (await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Admin Project' },
+    })).json();
+
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects/${proj.id}/buckets`,
+      headers: { authorization: `Bearer ${memberToken}` },
+      payload: { name: 'Sneak in' },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('cascade — MEMBER 404 on bucket-by-id PATCH for someone elses project', async () => {
+    const adminToken = await registerUser('admin@example.com');
+    const memberToken = await registerMember('member@example.com');
+    const team = await createTeam(adminToken, 'acme');
+    await addMember(adminToken, team.id, 'member@example.com', 'MEMBER');
+
+    const proj = (await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Admin Project' },
+    })).json();
+    const bucket = (await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects/${proj.id}/buckets`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'B' },
+    })).json();
+
+    const res = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/buckets/${bucket.id}`,
+      headers: { authorization: `Bearer ${memberToken}` },
+      payload: { name: 'Hijacked' },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('owner can still see, edit, and delete their own project end-to-end', async () => {
+    const adminToken = await registerUser('admin@example.com');
+    const memberToken = await registerMember('member@example.com');
+    const team = await createTeam(adminToken, 'acme');
+    await addMember(adminToken, team.id, 'member@example.com', 'MEMBER');
+
+    const proj = (await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${memberToken}` },
+      payload: { name: 'Mine' },
+    })).json();
+
+    const get = await inject({
+      method: 'GET',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${memberToken}` },
+    });
+    expect(get.statusCode).toBe(200);
+
+    const patch = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${memberToken}` },
+      payload: { name: 'Mine (renamed)' },
+    });
+    expect(patch.statusCode).toBe(200);
+
+    const del = await inject({
+      method: 'DELETE',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${memberToken}` },
+    });
+    expect(del.statusCode).toBe(204);
   });
 });

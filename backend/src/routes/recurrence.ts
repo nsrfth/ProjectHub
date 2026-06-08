@@ -5,6 +5,7 @@ import { TaskTemplatesService } from '../services/taskTemplatesService.js';
 import { TasksService } from '../services/tasksService.js';
 import { RecurrenceController } from '../controllers/recurrenceController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import { recurrenceResponse, recurrenceUpsertBody } from '../schemas/recurrence.js';
 
@@ -20,6 +21,8 @@ export async function recurrenceRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39: project visibility cascade.
+  r.addHook('preHandler', requireProjectAccess());
 
   const params = z.object({
     teamId: z.string(),

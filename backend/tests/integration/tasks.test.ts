@@ -427,10 +427,12 @@ describe('PATCH /api/teams/:teamId/projects/:projectId/tasks/:taskId', () => {
 describe('DELETE /api/teams/:teamId/projects/:projectId/tasks/:taskId', () => {
   it('any team member can delete; 404 once gone', async () => {
     const { token } = await registerUser('a@example.com');
-    await registerUser('b@example.com');
+    const { token: bToken } = await registerUser('b@example.com');
     const team = await createTeam(token, 'acme');
     await addMember(token, team.id, 'b@example.com');
-    const project = await createProject(token, team.id);
+    // v1.39: project owned by B (the non-admin member who deletes the
+    // task below) so the visibility-gate cascade lets them reach DELETE.
+    const project = await createProject(bToken, team.id);
     const task = (
       await inject({
         method: 'POST',

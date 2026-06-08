@@ -62,10 +62,13 @@ async function setup() {
     payload: { email: 'member@example.com', role: 'MEMBER' },
   });
 
+  // v1.39: project owned by `member` so the visibility-gate cascade lets
+  // them list tasks under it after restore. Admin still bypasses, so the
+  // existing "admin creates/deletes the task" calls keep working.
   const project = await inject({
     method: 'POST',
     url: `/api/teams/${teamId}/projects`,
-    headers: { authorization: `Bearer ${adminToken}` },
+    headers: { authorization: `Bearer ${memberToken}` },
     payload: { name: 'P' },
   });
   const projectId = project.json().id as string;

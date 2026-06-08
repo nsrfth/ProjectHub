@@ -30,7 +30,12 @@ export default function ProjectsPage(): JSX.Element {
   const nav = useNavigate();
 
   const teamId = currentTeam?.id ?? null;
-  const isManager = currentTeam?.myRole === 'MANAGER';
+  // v1.39 (BREAKING): being a team MANAGER no longer grants edit on projects
+  // you don't own. Only the project owner OR a global ADMIN can edit.
+  // The backend list endpoint already filters by ownership, so non-owner
+  // projects don't normally appear in this list at all; the global-ADMIN
+  // bypass is the one case where a user sees other people's projects.
+  const isAdmin = user?.globalRole === 'ADMIN';
 
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects', teamId],
@@ -217,7 +222,7 @@ export default function ProjectsPage(): JSX.Element {
         )}
         <ul className="divide-y dark:divide-slate-700">
           {projects.map((p) => {
-            const canEdit = p.ownerId === user?.id || isManager;
+            const canEdit = p.ownerId === user?.id || isAdmin;
             return (
               <li key={p.id} className="py-3">
                 <div className="flex items-start justify-between gap-4">

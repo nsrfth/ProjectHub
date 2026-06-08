@@ -39,7 +39,11 @@ async function inject(opts: Parameters<FastifyInstance['inject']>[0]) {
   return app.inject(opts);
 }
 
-async function setup() {
+// v1.39: the project must be owned by the test's primary non-admin actor
+// so the visibility-gate cascade doesn't 404 before reaching the permission
+// check we're trying to exercise. `projectOwner` picks which token owns
+// the project ('member' default, 'mgr' for the manager-reassignment cases).
+async function setup(projectOwner: 'member' | 'mgr' = 'member') {
   // First reg = global ADMIN.
   const adminReg = await bootstrapUser(app, { email: 'admin@example.com', name: 'Admin', password: PASSWORD });
   const adminToken = adminReg.token;
@@ -76,10 +80,11 @@ async function setup() {
     payload: { email: 'mgr@example.com', role: 'MANAGER' },
   });
 
+  const ownerToken = projectOwner === 'mgr' ? mgrToken : memberToken;
   const project = await inject({
     method: 'POST',
     url: `/api/teams/${teamId}/projects`,
-    headers: { authorization: `Bearer ${adminToken}` },
+    headers: { authorization: `Bearer ${ownerToken}` },
     payload: { name: 'P' },
   });
   const projectId = project.json().id as string;
@@ -125,7 +130,7 @@ describe('Task.technicianId', () => {
   });
 
   it('team MANAGER can reassign technicianId', async () => {
-    const { adminToken, mgrToken, memberId, teamId, projectId } = await setup();
+    const { adminToken, mgrToken, memberId, teamId, projectId } = await setup('mgr');
     const created = await inject({
       method: 'POST',
       url: `/api/teams/${teamId}/projects/${projectId}/tasks`,
@@ -145,7 +150,7 @@ describe('Task.technicianId', () => {
   });
 
   it('rejects technicianId pointing at a non-team-member (400)', async () => {
-    const { adminToken, mgrToken, teamId, projectId } = await setup();
+    const { adminToken, mgrToken, teamId, projectId } = await setup('mgr');
     // Make a fourth user NOT in the team.
     const outsider = await bootstrapUser(app, { email: 'out@example.com', name: 'Out', password: PASSWORD });
     const outsiderId = outsider.userId;

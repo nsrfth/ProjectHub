@@ -5,6 +5,7 @@ import { CommentsService } from '../services/commentsService.js';
 import { TasksService } from '../services/tasksService.js';
 import { CommentsController } from '../controllers/commentsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import {
   commentResponse,
@@ -23,6 +24,8 @@ export async function commentsRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39: project visibility cascade.
+  r.addHook('preHandler', requireProjectAccess());
 
   r.post('/', {
     preHandler: requireScope('comments:write'),

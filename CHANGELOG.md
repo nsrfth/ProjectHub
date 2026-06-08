@@ -4,6 +4,113 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.39.0] — 2026-06-07 — BREAKING
+
+**Project visibility tightening.** Pre-v1.39 every team member saw every
+project in their team; team MANAGERs could also edit any project. As of
+v1.39:
+
+| Role | Sees in projects list | Can act on a project / its nested resources |
+|---|---|---|
+| Global ADMIN | every project in the team | every project (bypass) |
+| Team MANAGER | only projects they own | only projects they own |
+| Team MEMBER  | only projects they own | only projects they own |
+
+The visibility rule cascades to every `/projects/:projectId/*` nested
+endpoint (tasks, buckets, subtasks, comments, activity, attachments,
+dependencies, recurrence, taskLabels) and to the bucket-by-id endpoints
+that take only `:bucketId`. Non-owners get **404** (not 403) so the
+existence of unseen projects is never leaked — matching the
+projects-list and labels precedent.
+
+This is a **hard cutover**: no feature flag, no soft transition. Team
+MANAGERs who relied on cross-project edit rights will need to be made
+project owners (via direct DB update for now — a project-transfer
+endpoint can land in a later release if needed) or promoted to global
+ADMIN.
+
+### Backend
+
+- `services/projectsService.ts` — `list()` filters by `ownerId === caller`
+  for non-ADMINs; `get()` 404s non-owner non-admins; `update()` /
+  `remove()` reuse `get()` so the v1.23 `project.edit` / `project.delete`
+  / `project.set_accountable` permission checks are now dead code (a
+  non-owner non-admin 404s at the gate). `userHasPermission` import
+  dropped along with them.
+- `services/projectsService.ts` — new `assertCallerCanAccess()` helper
+  centralises the rule for direct service-layer callers.
+- `controllers/projectsController.ts` — `list` and `get` now pass
+  `req.user.sub` + `req.user.globalRole` into the service.
+- `middleware/requireProjectAccess.ts` — new. Two exports:
+  - `requireProjectAccess()` — for `/teams/:teamId/projects/:projectId/*`
+    routes. One Prisma `findUnique` per nested-route request.
+  - `requireBucketProjectAccess()` — sibling for the two bucket-by-id
+    routes (PATCH/DELETE `/teams/:teamId/buckets/:bucketId`) where the
+    URL has no `:projectId`. Looks up bucket → project → ownership.
+- Route cascades — `addHook('preHandler', requireProjectAccess())`
+  installed in: `routes/tasks.ts`, `routes/subtasks.ts`,
+  `routes/comments.ts`, `routes/activity.ts`, `routes/attachments.ts`,
+  `routes/dependencies.ts`, `routes/recurrence.ts`,
+  `routes/buckets.ts` (projectBucketsRoutes), `routes/labels.ts`
+  (taskLabelsRoutes only — the team-scoped labelsRoutes is unaffected).
+  `routes/buckets.ts` (bucketByIdRoutes) uses
+  `requireBucketProjectAccess()`.
+
+### Frontend
+
+- `pages/ProjectsPage.tsx` — drops the `isManager` bypass on `canEdit`.
+  Edit/delete affordances now only render for `ownerId === user.id ||
+  user.globalRole === 'ADMIN'`. Mirrors the new backend rule.
+
+### Tests
+
+- `tests/integration/projects.test.ts` — 3 existing PATCH/DELETE tests
+  retitled and re-asserted (403 → 404, "visibility gate" suffix). 8 new
+  v1.39 cases: admin-bypass list, MEMBER-only-own list, GET 404 vs
+  ADMIN bypass, cascade-404 on `/tasks` and `/buckets`-POST and
+  bucket-by-id PATCH, owner end-to-end.
+- 22 existing integration tests restructured across `technician.test.ts`,
+  `dateEditRestriction.test.ts`, `buckets.test.ts`,
+  `dependencies.test.ts`, `tasks.test.ts`, `trash.test.ts`,
+  `notifications.test.ts`, `attachments.test.ts`, `comments.test.ts`,
+  `roles.test.ts` so the actor owns the project and reaches the
+  permission/business rule actually under test. Three of the
+  comments-MANAGER tests pivot the project ownership via a direct DB
+  update (no project-transfer endpoint exists yet).
+
+### Migration / Operator notes
+
+- No schema migration. The visibility tightening is pure code.
+- Existing data is unaffected — Project rows keep their `ownerId`.
+  Owners and global ADMINs see everything they expect; only
+  cross-owner MANAGER access is gone.
+- The 404-on-cascade behaviour means malformed clients holding stale
+  project IDs (URLs bookmarked before ownership change) get 404
+  instead of 403 — same shape as `/projects/:badId` already returned.
+
+### Verified
+
+- `backend`: 369 pass, 5 skipped (LDAP). Three pre-existing unrelated
+  test-file errors (`ldap.test.ts` needs a server, `updaterAuth` +
+  `updaterUpgrade` are env-dependent) are not v1.39-caused.
+- `frontend`: `tsc --noEmit` clean; `vite build` clean (29.7s).
+- Live smoke: deferred to manual review.
+
+### Phase boundary notes
+
+- No project-ownership-transfer endpoint yet. The intended workflow for
+  a project moving between owners is direct DB update by an admin (or
+  manual via a future endpoint). If migration toil becomes real, an
+  admin-only `POST /api/teams/:teamId/projects/:id/transfer` can land
+  in v1.40 in a few lines.
+- `Project.ownerId` is nullable (FK SetNull on user delete). An orphan
+  project (owner deleted) is invisible to everyone except global
+  ADMINs until reassigned. This matches the team-membership story.
+- The cascade middleware adds one Prisma `findUnique({ select: {
+  teamId, ownerId }})` per nested-route request. At the corpus sizes
+  TaskHub targets, that's noise; if it becomes hot it can be cached
+  per-request via `request.context`.
+
 ## [1.38.0] — 2026-06-09
 
 **Brand: new "Quad" logo + split wordmark + favicon.** Cosmetic

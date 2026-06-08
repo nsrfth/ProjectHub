@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AttachmentsService } from '../services/attachmentsService.js';
 import { AttachmentsController } from '../controllers/attachmentsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import { attachmentResponse } from '../schemas/attachments.js';
 import type { Env } from '../config/env.js';
@@ -17,6 +18,8 @@ export async function attachmentsRoutes(app: FastifyInstance, opts: { env: Env }
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39: project visibility cascade.
+  r.addHook('preHandler', requireProjectAccess());
 
   // No `body` schema on upload — multipart is parsed by @fastify/multipart in
   // the handler, not via Zod. Same reasoning as why the validator is omitted

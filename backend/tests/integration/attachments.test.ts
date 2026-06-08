@@ -230,50 +230,81 @@ describe('DELETE /api/.../attachments/:id', () => {
     expect(del.statusCode).toBe(204);
   });
 
-  it('forbids a MEMBER from deleting someone elses attachment but lets the MANAGER do it', async () => {
-    const s = await setup();
-    // Add a MEMBER and a second MANAGER (in addition to s.owner who created the team).
+  // v1.39 (BREAKING): the pre-v1.39 version of this test asserted that a
+  // MEMBER who didn't upload an attachment got 403 (attachment ownership
+  // rule). Under v1.39 the only way a MEMBER reaches the attachments route
+  // for a project they don't own is via cascade-404 first — the attachment
+  // ownership rule is unreachable for cross-project members because the
+  // cross-project scenario no longer exists. The test now asserts:
+  //   - a non-owner MEMBER on the team gets 404 (visibility-cascade)
+  //   - the team MANAGER / global ADMIN still deletes via 204
+  it('blocks a non-owner MEMBER (404 via v1.39 cascade) but the MANAGER still deletes', async () => {
+    const owner = await register('owner@example.com');
     const member = await register('member@example.com');
+    const otherMember = await register('other@example.com');
+    const team = (
+      await inject({
+        method: 'POST',
+        url: '/api/teams',
+        headers: { authorization: `Bearer ${owner.token}` },
+        payload: { name: 'T', slug: 'att-perm' },
+      })
+    ).json();
     await inject({
       method: 'POST',
-      url: `/api/teams/${s.teamId}/members`,
-      headers: { authorization: `Bearer ${s.owner.token}` },
+      url: `/api/teams/${team.id}/members`,
+      headers: { authorization: `Bearer ${owner.token}` },
       payload: { email: 'member@example.com', role: 'MEMBER' },
     });
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/members`,
+      headers: { authorization: `Bearer ${owner.token}` },
+      payload: { email: 'other@example.com', role: 'MEMBER' },
+    });
+    // v1.39: project owned by `member` so they can act on it; otherMember
+    // is a non-owner non-admin → cascade-404 short-circuits them.
+    const project = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${team.id}/projects`,
+        headers: { authorization: `Bearer ${member.token}` },
+        payload: { name: 'P' },
+      })
+    ).json();
+    const task = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${team.id}/projects/${project.id}/tasks`,
+        headers: { authorization: `Bearer ${member.token}` },
+        payload: { title: 'T' },
+      })
+    ).json();
 
-    // Member uploads.
     const { payload, headers } = multipart('member.txt', 'text/plain', 'm');
     const att = (
       await inject({
         method: 'POST',
-        url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/attachments`,
+        url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}/attachments`,
         headers: { ...headers, authorization: `Bearer ${member.token}` },
         payload,
       })
     ).json();
 
-    // Add a second member as well so we can test the MEMBER-vs-MEMBER case.
-    const otherMember = await register('other@example.com');
-    await inject({
-      method: 'POST',
-      url: `/api/teams/${s.teamId}/members`,
-      headers: { authorization: `Bearer ${s.owner.token}` },
-      payload: { email: 'other@example.com', role: 'MEMBER' },
-    });
-
-    // otherMember tries to delete member's attachment — 403.
+    // otherMember (non-owner non-admin) cascade-404s.
     const denied = await inject({
       method: 'DELETE',
-      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/attachments/${att.id}`,
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}/attachments/${att.id}`,
       headers: { authorization: `Bearer ${otherMember.token}` },
     });
-    expect(denied.statusCode).toBe(403);
+    expect(denied.statusCode).toBe(404);
 
-    // owner (MANAGER) succeeds.
+    // owner (global ADMIN + team MANAGER) succeeds via the admin bypass on
+    // both the visibility cascade and the attachment ownership rule.
     const ok = await inject({
       method: 'DELETE',
-      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/attachments/${att.id}`,
-      headers: { authorization: `Bearer ${s.owner.token}` },
+      url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}/attachments/${att.id}`,
+      headers: { authorization: `Bearer ${owner.token}` },
     });
     expect(ok.statusCode).toBe(204);
   });

@@ -428,7 +428,11 @@ describe('Task dependencies', () => {
     await prisma.teamMembership.create({
       data: { userId: b.userId, teamId, role: 'MEMBER' },
     });
-    const projectId = await createProject(a.token, teamId, 'P');
+    // v1.39: project owned by B so the visibility-gate cascade lets them
+    // reach the dependencies route — we want a 403 from the permission
+    // check, not a 404 from the gate. Admin still bypasses, so the
+    // admin-creates-the-tasks calls below keep working.
+    const projectId = await createProject(b.token, teamId, 'P');
     const t1 = await createTask(a.token, teamId, projectId, 'T1');
     const t2 = await createTask(a.token, teamId, projectId, 'T2');
 

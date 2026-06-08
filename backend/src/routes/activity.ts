@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ActivityController } from '../controllers/activityController.js';
 import { TasksService } from '../services/tasksService.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import { activityResponse } from '../schemas/activity.js';
 
@@ -14,6 +15,8 @@ export async function activityRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39: project visibility cascade.
+  r.addHook('preHandler', requireProjectAccess());
   r.addHook('preHandler', requireScope('tasks:read'));
 
   r.get('/', {

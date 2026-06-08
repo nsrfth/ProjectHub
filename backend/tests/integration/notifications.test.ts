@@ -62,11 +62,15 @@ async function setupTeamWithMembers() {
     headers: { authorization: `Bearer ${owner.token}` },
     payload: { email: 'member@example.com', role: 'MEMBER' },
   });
+  // v1.39: project owned by `member` so the visibility-gate cascade lets
+  // them comment / change status on tasks the owner created. Admin still
+  // bypasses (owner = first-bootstrapped user = global ADMIN), so the
+  // existing "owner creates the task" calls keep working.
   const project = (
     await inject({
       method: 'POST',
       url: `/api/teams/${team.id}/projects`,
-      headers: { authorization: `Bearer ${owner.token}` },
+      headers: { authorization: `Bearer ${member.token}` },
       payload: { name: 'P' },
     })
   ).json();

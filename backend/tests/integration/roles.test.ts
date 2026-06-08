@@ -260,11 +260,14 @@ describe('permission gates end-to-end', () => {
     const { adminToken, memberToken, memberId, teamId } = await setup();
     await ensureSystemRoles(teamId);
 
-    // Create a project + task as admin.
+    // v1.39: project owned by `member` so they can reach the task PATCH
+    // — we want the 403 to come from the requirePermission gate (default
+    // Member role missing task.change_technician), not from the
+    // visibility cascade. Admin still bypasses on POST.
     const project = await inject({
       method: 'POST',
       url: `/api/teams/${teamId}/projects`,
-      headers: { authorization: `Bearer ${adminToken}` },
+      headers: { authorization: `Bearer ${memberToken}` },
       payload: { name: 'P' },
     });
     const projectId = project.json().id as string;

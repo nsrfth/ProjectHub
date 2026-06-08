@@ -1,0 +1,74 @@
+import type { preHandlerHookHandler } from 'fastify';
+import { prisma } from '../data/prisma.js';
+import { Errors } from '../lib/errors.js';
+
+// v1.39 (BREAKING): project-visibility gate for every route nested under
+// /teams/:teamId/projects/:projectId/*.
+//
+// Pre-v1.39 the route layer only checked team membership (requireTeamRole),
+// which meant any team member could URL-guess `/projects/P/tasks` and
+// reach a project they couldn't see in the projects list. With v1.39's
+// projects-list filter (non-ADMIN sees only own projects), that bypass
+// would have made the change cosmetic.
+//
+// Gate semantics — mirrors ProjectsService.assertCallerCanAccess:
+//   - globalRole === 'ADMIN' → bypass (admin still requires the project
+//     to actually exist in the named team).
+//   - everyone else → require Project.ownerId === request.user.sub.
+//   - any failure → 404, never 403 (no existence leak).
+//
+// Hook order: install AFTER requireAuth + requireTeamRole. Reads
+// request.user (populated by requireAuth) and the {teamId, projectId} URL
+// params. Hit is one Prisma findUnique per nested-route request — cheap.
+
+export function requireProjectAccess(): preHandlerHookHandler {
+  return async (request) => {
+    if (!request.user) throw Errors.unauthorized();
+    const params = request.params as { teamId?: string; projectId?: string };
+    if (!params.teamId || !params.projectId) {
+      throw Errors.internal(
+        'requireProjectAccess installed on a route without :teamId / :projectId',
+      );
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { id: params.projectId },
+      select: { teamId: true, ownerId: true },
+    });
+    if (!project || project.teamId !== params.teamId) {
+      throw Errors.notFound('Project not found');
+    }
+    if (request.user.globalRole === 'ADMIN') return;
+    if (project.ownerId !== request.user.sub) {
+      throw Errors.notFound('Project not found');
+    }
+  };
+}
+
+// v1.39: sibling for routes that take `bucketId` directly without a
+// `projectId` in the URL (the bucket-by-id rename / delete endpoints).
+// Looks up the bucket → its project → ownership, applies the same rule.
+// Returns 404 on any failure to match the projects/labels precedent.
+export function requireBucketProjectAccess(): preHandlerHookHandler {
+  return async (request) => {
+    if (!request.user) throw Errors.unauthorized();
+    const params = request.params as { teamId?: string; bucketId?: string };
+    if (!params.teamId || !params.bucketId) {
+      throw Errors.internal(
+        'requireBucketProjectAccess installed on a route without :teamId / :bucketId',
+      );
+    }
+
+    const bucket = await prisma.bucket.findUnique({
+      where: { id: params.bucketId },
+      select: { teamId: true, project: { select: { ownerId: true } } },
+    });
+    if (!bucket || bucket.teamId !== params.teamId) {
+      throw Errors.notFound('Bucket not found');
+    }
+    if (request.user.globalRole === 'ADMIN') return;
+    if (bucket.project.ownerId !== request.user.sub) {
+      throw Errors.notFound('Bucket not found');
+    }
+  };
+}

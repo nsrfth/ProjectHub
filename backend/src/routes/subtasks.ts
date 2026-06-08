@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { SubtasksService } from '../services/subtasksService.js';
 import { SubtasksController } from '../controllers/subtasksController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
+import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import {
   createSubtaskBody,
@@ -23,6 +24,8 @@ export async function subtasksRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
+  // v1.39: project visibility cascade.
+  r.addHook('preHandler', requireProjectAccess());
 
   r.post('/', {
     preHandler: requireScope('tasks:write'),

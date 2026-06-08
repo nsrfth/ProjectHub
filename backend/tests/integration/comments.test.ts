@@ -180,9 +180,20 @@ describe('PATCH /api/.../comments/:commentId', () => {
     expect(res.json().body).toBe('fixed');
   });
 
+  // v1.39: to exercise the "MANAGER cannot edit non-authored comments"
+  // rule we need the MANAGER to actually be able to *see* the project.
+  // Project ownership is given to the manager (team MANAGER role +
+  // project owner) so cascade-404 doesn't short-circuit the assertion.
   it('forbids non-author edits even by a MANAGER', async () => {
     const owner = await setup('owner@example.com');
     const otherToken = await addMember(owner.token, owner.teamId, 'other@example.com', 'MANAGER');
+    // Owner-the-admin transfers ownership to `other` via direct DB write
+    // (no project-transfer endpoint exists yet). v1.39 cascade then
+    // grants `other` access; owner (global ADMIN) still bypasses.
+    await prisma.project.update({
+      where: { id: owner.projectId },
+      data: { ownerId: (await prisma.user.findUnique({ where: { email: 'other@example.com' } }))!.id },
+    });
     const c = (
       await inject({
         method: 'POST',
@@ -221,9 +232,16 @@ describe('DELETE /api/.../comments/:commentId', () => {
     expect(res.statusCode).toBe(204);
   });
 
+  // v1.39: project ownership transferred to `member` so they can post a
+  // comment in the first place. manager (global ADMIN + team MANAGER)
+  // still deletes via admin bypass + the comment-delete-by-MANAGER rule.
   it('lets a team MANAGER delete a non-authored comment', async () => {
     const manager = await setup('mgr@example.com');
     const memberToken = await addMember(manager.token, manager.teamId, 'member@example.com', 'MEMBER');
+    await prisma.project.update({
+      where: { id: manager.projectId },
+      data: { ownerId: (await prisma.user.findUnique({ where: { email: 'member@example.com' } }))!.id },
+    });
     const memberComment = (
       await inject({
         method: 'POST',
@@ -240,9 +258,17 @@ describe('DELETE /api/.../comments/:commentId', () => {
     expect(res.statusCode).toBe(204);
   });
 
+  // v1.39: member must own the project to reach the comments route;
+  // owner (admin) still posts their own comment via cascade bypass. The
+  // member-deleting-someone-else's-comment assertion (the actual rule
+  // under test) then runs against the comment-delete-by-author rule.
   it('forbids a MEMBER from deleting another MEMBER\'s comment', async () => {
     const owner = await setup('owner@example.com');
     const memberToken = await addMember(owner.token, owner.teamId, 'member@example.com', 'MEMBER');
+    await prisma.project.update({
+      where: { id: owner.projectId },
+      data: { ownerId: (await prisma.user.findUnique({ where: { email: 'member@example.com' } }))!.id },
+    });
     const targetComment = (
       await inject({
         method: 'POST',
