@@ -7,6 +7,42 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.47.0] — 2026-06-09
+
+**Asana-style Timeline on Planner → Calendar** — replaces the v1.46 vertical
+day list with a horizontal, Gantt-like interactive view.
+
+### Calendar Timeline (frontend)
+
+- **Horizontal timeline** with day / week / month zoom, scrollable time axis,
+  and a sticky task sidebar (project → task → subtask hierarchy with
+  expand/collapse).
+- **Draggable task bars** — drag to shift dates; drag edges to resize.
+  Tasks use `startDate` → `dueDate` (with `plannedDate` fallback); subtasks
+  use `startDate` → `endDate`. Updates persist via existing task/subtask
+  PATCH APIs.
+- **Toolbar** — project, assignee, status, date range, search, zoom, Today,
+  and prev/next navigation.
+- **Bar chrome** — task name, progress fill (subtask completion for parent
+  tasks), assignee initials, status colour, overdue ring, hover tooltips.
+- **Performance** — row virtualization for the chart body; pointer-based
+  drag with window-level listeners (no re-render storm during drag).
+- **Dependencies (future-ready)** — `DependencyLayer` SVG overlay and
+  `TimelineDependencyEdge` types reserved for FINISH_TO_START connectors
+  (phase 2; no new backend endpoints in this release).
+
+### Removed
+
+- `CalendarTimelineView.tsx` (vertical week list) — fully replaced, not
+  duplicated.
+
+### Data / API
+
+- No schema migration. Reuses `listAllProjects`, `listTasks`, `updateTask`,
+  and `updateSubtask`. Grid/week/month calendar modes unchanged.
+
+---
+
 ## [1.46.0] — 2026-06-10
 
 **Dashboard, calendar timeline, IT demo seed, navigation polish, and bug fixes.**

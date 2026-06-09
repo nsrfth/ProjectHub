@@ -5,7 +5,7 @@ import { useTeams } from '@/features/teams/TeamsContext';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
 import { useT } from '@/lib/i18n';
 import { fetchCalendar, type CalendarTask } from '@/features/calendar/api';
-import CalendarTimelineView from '@/features/calendar/CalendarTimelineView';
+import AsanaTimelineView from '@/features/calendar/timeline/AsanaTimelineView';
 import { getWeekStartDay, getWeekendDays, isWeekend } from '@/lib/calendar';
 import {
   addDaysUtc,
@@ -30,8 +30,7 @@ import {
 //               (Saturday for Sat+Sun and Thu+Fri presets). Off-days red.
 //   month     — 6-row grid (42 cells) with the same week-start column.
 //               Off-days red, days outside the current month dimmed.
-//   timeline  — vertical list of days in the current week with full task
-//               rows (status, assignee, project) instead of grid chips.
+//   timeline  — Asana-style horizontal Gantt (project → task → subtask).
 //
 // Task fetch uses the `dueDate` field by default — that's the date most
 // teams plan against. The picker on the toolbar lets a user switch to
@@ -283,24 +282,32 @@ export default function CalendarPage(): JSX.Element {
           ))}
         </div>
         <div className="flex items-center gap-1 text-sm">
-          <button onClick={() => shift(-1)} className="px-2 py-1 border rounded hover:bg-slate-100">‹</button>
-          <button onClick={() => setCursor(utcDay(new Date()))} className="px-3 py-1 border rounded hover:bg-slate-100">
-            Today
-          </button>
-          <button onClick={() => shift(1)} className="px-2 py-1 border rounded hover:bg-slate-100">›</button>
+          {view !== 'timeline' && (
+            <>
+              <button onClick={() => shift(-1)} className="px-2 py-1 border rounded hover:bg-slate-100">‹</button>
+              <button onClick={() => setCursor(utcDay(new Date()))} className="px-3 py-1 border rounded hover:bg-slate-100">
+                Today
+              </button>
+              <button onClick={() => shift(1)} className="px-2 py-1 border rounded hover:bg-slate-100">›</button>
+            </>
+          )}
         </div>
-        <div className="text-sm text-slate-700 ml-2">{cursorMonthLabel}</div>
+        {view !== 'timeline' && <div className="text-sm text-slate-700 ml-2">{cursorMonthLabel}</div>}
         <div className="ml-auto flex items-center gap-2 text-sm">
-          <label className="text-xs text-slate-500">Date field</label>
-          <select
-            value={field}
-            onChange={(e) => setField(e.target.value as DateField)}
-            className="border rounded px-2 py-1"
-          >
-            <option value="due">Due date</option>
-            <option value="planned">Planned date</option>
-          </select>
-          {isFetching && <span className="text-xs text-slate-400">loading…</span>}
+          {view !== 'timeline' && (
+            <>
+              <label className="text-xs text-slate-500">Date field</label>
+              <select
+                value={field}
+                onChange={(e) => setField(e.target.value as DateField)}
+                className="border rounded px-2 py-1"
+              >
+                <option value="due">Due date</option>
+                <option value="planned">Planned date</option>
+              </select>
+            </>
+          )}
+          {isFetching && view !== 'timeline' && <span className="text-xs text-slate-400">loading…</span>}
         </div>
       </div>
 
@@ -322,7 +329,7 @@ export default function CalendarPage(): JSX.Element {
       )}
 
       {view === 'timeline' ? (
-        <CalendarTimelineView cells={cells} byDay={byDay} field={field} />
+        <AsanaTimelineView selectedTeam={selectedTeam} teams={teams} />
       ) : (
         <>
       {/* Header row of weekday names — only meaningful in week + month modes. */}

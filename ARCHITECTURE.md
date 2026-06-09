@@ -165,8 +165,9 @@ over the same rows without duplicating business logic:
 /planner
   ├── my-tasks   → GET /api/me/tasks (assignee-scoped, paginated)
   ├── board      → project picker → /projects/:id/tasks (kanban + grouping)
-  ├── calendar   → GET /api/teams/:teamId/calendar (unchanged)
-  │                views: work-week | week | month | timeline (v1.46)
+  ├── calendar   → GET /api/teams/:teamId/calendar (grid modes)
+  │                + timeline: client fan-out listTasks (v1.47 Asana-style Gantt)
+  │                views: work-week | week | month | timeline
   ├── charts     → client aggregation + /reports/summary|workload fallback
   │                (status, member, due-date filters via PlannerFilterBar)
   └── grid       → fan-out listTasks per visible project, client filter/sort
@@ -190,6 +191,28 @@ shells.
 `assigneeId = user.sub` and `teamId IN memberships`. Project-owner rules
 from v1.39 do *not* apply here — assignment visibility is intentional (a user
 must see work assigned to them even on projects they don't own).
+
+## Calendar Timeline (v1.47)
+
+The **Timeline** tab on `/planner/calendar` is a client-side Gantt built in
+`frontend/src/features/calendar/timeline/`:
+
+```
+AsanaTimelineView
+  ├── useTimelineData   → listAllProjects + listTasks fan-out (same as Grid)
+  ├── utils/buildTimelineRows → project → task → subtask flat rows
+  ├── TimelineBar + useTimelineBarDrag → pointer drag/resize → PATCH task/subtask
+  └── DependencyLayer   → empty SVG overlay (phase-2 dependency arrows)
+```
+
+Grid/week/month modes still use `GET /api/teams/:teamId/calendar`. Timeline
+does **not** — it needs full task graphs with subtasks and start/end pairs,
+so it reuses the per-project task list API. Date edits go through the
+existing task/subtask PATCH routes (same v1.18 manager date gate applies).
+
+Zoom levels adjust `pxPerDay` and visible window length. Row virtualization
+renders only viewport ± buffer rows in the chart body while keeping full
+scroll height for the sidebar labels.
 
 ## Personal project buckets (v1.45)
 

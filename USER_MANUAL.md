@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.46.0** (2026-06-10)
+Version **v1.47.0** (2026-06-09)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -247,11 +247,11 @@ The **Planner → Calendar** tab (`/planner/calendar`; `/calendar` redirects her
 - **Work-week** — 5 cells starting on the first non-off-day. With Sat+Sun off, the first column is Monday; with Thu+Fri off, it's Saturday. The off-day setting drives both *which* 5 days appear and *where* the cursor lands.
 - **Week** — 7 cells, Sunday-leading. Off-days are still tinted red.
 - **Month** — full 6-week grid (42 cells). Days outside the current month are dimmed. Each cell shows up to 3 tasks + "+N more".
-- **Timeline** (v1.46) — vertical list of the current week, one section per day. Each task row shows title, project, assignee, status badge, and team colour strip. Best when a day has many tasks and grid cells would truncate them.
+- **Timeline** (v1.47) — **Asana-style horizontal Gantt** across all projects in the selected team(s). Tasks appear as draggable bars from start → due (subtasks: start → end). Hierarchy: **Project → Task → Subtask** with expand/collapse. Toolbar: zoom (Day / Week / Month), Today, search, filters (project, assignee, status, date range). Drag a bar to shift dates; drag edges to resize. Bars show name, progress, assignee initials, and status colour. Unscheduled items appear in the sidebar without a bar.
 
 Each task appears as a coloured pill — the pill colour is the **team accent** ([Team colours](#team-colours) above). Click the pill to jump to the task.
 
-The **Date field** dropdown on the toolbar lets you bucket by `dueDate` (default — "what's due when") or `plannedDate` ("what we're targeting"). Completed tasks aren't shown — they belong in Reports, not the forward-looking calendar.
+The **Date field** dropdown (Due vs Planned) applies to grid modes only — the Timeline view uses each task's start/due (or subtask start/end) range directly. Completed tasks are omitted from grid calendar fetches; the Timeline shows all non-deleted tasks (including done) so historical bars remain visible.
 
 Off-days are determined by the [Workweek](#workweek-off-days) admin setting (see below). They render with a red label + a red-50 background tint so they're impossible to miss.
 
