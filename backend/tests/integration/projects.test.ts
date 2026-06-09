@@ -327,7 +327,7 @@ describe('DELETE /api/teams/:teamId/projects/:projectId', () => {
 //   - everyone else (incl. team MANAGER)  → sees / manages only their
 //     own projects (Project.ownerId === userId)
 // The cascade middleware extends the same rule to /projects/:projectId/*
-// nested routes (tasks, buckets, comments, etc.) so URL-guessing past
+// nested routes (tasks, comments, etc.) so URL-guessing past
 // the projects list filter returns 404.
 describe('v1.39 project visibility tiering', () => {
   it('list — MEMBER sees only projects they own', async () => {
@@ -452,56 +452,6 @@ describe('v1.39 project visibility tiering', () => {
       method: 'GET',
       url: `/api/teams/${team.id}/projects/${proj.id}/tasks`,
       headers: { authorization: `Bearer ${memberToken}` },
-    });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('cascade — MEMBER 404 on /buckets POST under someone elses project', async () => {
-    const adminToken = await registerUser('admin@example.com');
-    const memberToken = await registerMember('member@example.com');
-    const team = await createTeam(adminToken, 'acme');
-    await addMember(adminToken, team.id, 'member@example.com', 'MEMBER');
-
-    const proj = (await inject({
-      method: 'POST',
-      url: `/api/teams/${team.id}/projects`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'Admin Project' },
-    })).json();
-
-    const res = await inject({
-      method: 'POST',
-      url: `/api/teams/${team.id}/projects/${proj.id}/buckets`,
-      headers: { authorization: `Bearer ${memberToken}` },
-      payload: { name: 'Sneak in' },
-    });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('cascade — MEMBER 404 on bucket-by-id PATCH for someone elses project', async () => {
-    const adminToken = await registerUser('admin@example.com');
-    const memberToken = await registerMember('member@example.com');
-    const team = await createTeam(adminToken, 'acme');
-    await addMember(adminToken, team.id, 'member@example.com', 'MEMBER');
-
-    const proj = (await inject({
-      method: 'POST',
-      url: `/api/teams/${team.id}/projects`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'Admin Project' },
-    })).json();
-    const bucket = (await inject({
-      method: 'POST',
-      url: `/api/teams/${team.id}/projects/${proj.id}/buckets`,
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'B' },
-    })).json();
-
-    const res = await inject({
-      method: 'PATCH',
-      url: `/api/teams/${team.id}/buckets/${bucket.id}`,
-      headers: { authorization: `Bearer ${memberToken}` },
-      payload: { name: 'Hijacked' },
     });
     expect(res.statusCode).toBe(404);
   });

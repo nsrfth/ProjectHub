@@ -22,8 +22,6 @@ import * as labelsApi from '@/features/labels/api';
 import { formatShamsiDate } from '@/lib/shamsi';
 import { LabelChip } from '@/features/labels/LabelChip';
 import { useT } from '@/lib/i18n';
-import BucketBoard from '@/features/buckets/BucketBoard';
-
 const STATUS_ORDER: tasksApi.TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const STATUS_LABEL: Record<tasksApi.TaskStatus, string> = {
   TODO: 'To do',
@@ -309,8 +307,7 @@ export default function TasksPage(): JSX.Element {
 
   // Group tasks by status, preserving server-supplied position order.
   // v1.36: groups operate on `filteredTasks` so the label filter strip
-  // affects every view-mode (Kanban, List, by Technician). Buckets view
-  // applies the same filter inside BucketBoard via a prop.
+  // affects every view-mode (Kanban, List, by Technician).
   const grouped = useMemo(() => {
     const g: Record<tasksApi.TaskStatus, tasksApi.Task[]> = {
       TODO: [],
@@ -329,28 +326,20 @@ export default function TasksPage(): JSX.Element {
   //     role-gated reassignment that MEMBERs can't perform).
   //   - list       — v1.33: dense sortable table. Same data; better for users
   //     who want to scan dozens of tasks without flipping between columns.
-  //   - buckets    — v1.34.1: project-defined bucket columns (independent of
-  //     status). Cross-bucket drag → PATCH /tasks/:taskId { bucketId }.
-  type ViewMode = 'status' | 'technician' | 'list' | 'buckets';
-  // v1.34.2: honour `?view=buckets` (and friends) on the URL so the
-  // ProjectBucketStrip's "Manage →" link lands directly in the buckets
-  // view. The query param wins over the stored localStorage preference
-  // on first render only; subsequent toggles persist as usual.
-  // v1.34.3: default view is now Buckets — matches the Planner-style
-  // "open a plan, see the board" UX. Users who picked a different
-  // view previously keep their stored preference.
-  // v1.36: searchParams is hoisted higher up (above the label filter).
+  type ViewMode = 'status' | 'technician' | 'list';
+  // Honour `?view=` on the URL on first render; subsequent toggles persist
+  // in localStorage.
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const fromUrl = searchParams.get('view');
-    if (fromUrl === 'status' || fromUrl === 'technician' || fromUrl === 'list' || fromUrl === 'buckets') {
+    if (fromUrl === 'status' || fromUrl === 'technician' || fromUrl === 'list') {
       return fromUrl;
     }
-    if (typeof window === 'undefined') return 'buckets';
+    if (typeof window === 'undefined') return 'status';
     const stored = window.localStorage.getItem('kanban.viewMode');
-    if (stored === 'status' || stored === 'technician' || stored === 'list' || stored === 'buckets') {
+    if (stored === 'status' || stored === 'technician' || stored === 'list') {
       return stored;
     }
-    return 'buckets';
+    return 'status';
   });
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -491,7 +480,6 @@ export default function TasksPage(): JSX.Element {
             {([
               { key: 'status', label: t('tasks.view.status') },
               { key: 'list', label: t('tasks.view.list') },
-              { key: 'buckets', label: t('tasks.view.buckets') },
               { key: 'technician', label: t('tasks.view.technician') },
             ] as const).map((v) => (
               <button
@@ -593,15 +581,6 @@ export default function TasksPage(): JSX.Element {
           onDelete={(task) => {
             if (window.confirm(`Delete task "${task.title}"?`)) deleteMut.mutate(task.id);
           }}
-        />
-      )}
-
-      {viewMode === 'buckets' && teamId && projectId && (
-        <BucketBoard
-          teamId={teamId}
-          projectId={projectId}
-          onOpenTask={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
-          filterLabelIds={selectedLabelIds.size > 0 ? [...selectedLabelIds] : null}
         />
       )}
 

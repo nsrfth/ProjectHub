@@ -44,11 +44,6 @@ export const createTaskBody = z.object({
   dueDate: z.string().datetime().nullable().optional(),
   plannedDate: z.string().datetime().nullable().optional(),
   completedAt: z.string().datetime().nullable().optional(),
-  // v1.34.3: pre-bucket the new task. Omitted / null = unbucketed
-  // (existing default). String must reference a Bucket in the same
-  // project (cross-project → 400, cross-team → 404). Validation
-  // mirrors the same check on PATCH from v1.34.0.
-  bucketId: z.string().nullable().optional(),
   // v1.42: optional task-level budget fields, mirrors Project budget rules.
   plannedBudget: budgetSchema,
   actualSpent: budgetSchema,
@@ -69,10 +64,6 @@ export const updateTaskBody = z
     dueDate: z.string().datetime().nullable().optional(),
     plannedDate: z.string().datetime().nullable().optional(),
     completedAt: z.string().datetime().nullable().optional(),
-    // v1.34: move the task to a bucket (string), unbucket (null), or
-    // leave alone (omitted). Service validates that the bucket lives in
-    // the same project — cross-project bucketId → 400, cross-team → 404.
-    bucketId: z.string().nullable().optional(),
     // v1.42: optional budget patch — undefined leaves, null clears.
     plannedBudget: budgetSchema,
     actualSpent: budgetSchema,
@@ -128,8 +119,6 @@ export const taskResponse = z.object({
   // on create; changes gated to team MANAGER / global ADMIN.
   technicianId: z.string().nullable(),
   technicianName: z.string().nullable(),
-  // v1.34: bucket reference. Null when the task is unbucketed.
-  bucketId: z.string().nullable(),
   title: z.string(),
   description: z.string().nullable(),
   status: taskStatusEnum,

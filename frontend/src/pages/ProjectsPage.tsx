@@ -6,7 +6,6 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
 import * as projectsApi from '@/features/projects/api';
 import { formatShamsiTimestampDate } from '@/lib/shamsi';
-import ProjectBucketStrip from '@/features/buckets/ProjectBucketStrip';
 import CreateProjectForm from '@/features/projects/CreateProjectForm';
 import Modal from '@/features/ui/Modal';
 
@@ -213,8 +212,6 @@ export default function ProjectsPage(): JSX.Element {
                     })
                   }
                 />
-                {/* v1.40: bucket strip uses the project's own teamId. */}
-                <ProjectBucketStrip teamId={p.teamId} projectId={p.id} />
               </li>
             );
           })}

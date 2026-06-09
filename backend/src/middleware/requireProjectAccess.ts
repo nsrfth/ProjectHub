@@ -44,31 +44,3 @@ export function requireProjectAccess(): preHandlerHookHandler {
     }
   };
 }
-
-// v1.39: sibling for routes that take `bucketId` directly without a
-// `projectId` in the URL (the bucket-by-id rename / delete endpoints).
-// Looks up the bucket → its project → ownership, applies the same rule.
-// Returns 404 on any failure to match the projects/labels precedent.
-export function requireBucketProjectAccess(): preHandlerHookHandler {
-  return async (request) => {
-    if (!request.user) throw Errors.unauthorized();
-    const params = request.params as { teamId?: string; bucketId?: string };
-    if (!params.teamId || !params.bucketId) {
-      throw Errors.internal(
-        'requireBucketProjectAccess installed on a route without :teamId / :bucketId',
-      );
-    }
-
-    const bucket = await prisma.bucket.findUnique({
-      where: { id: params.bucketId },
-      select: { teamId: true, project: { select: { ownerId: true } } },
-    });
-    if (!bucket || bucket.teamId !== params.teamId) {
-      throw Errors.notFound('Bucket not found');
-    }
-    if (request.user.globalRole === 'ADMIN') return;
-    if (bucket.project.ownerId !== request.user.sub) {
-      throw Errors.notFound('Bucket not found');
-    }
-  };
-}

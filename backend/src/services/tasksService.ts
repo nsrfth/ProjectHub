@@ -102,8 +102,6 @@ export interface TaskView {
   // can change it after. technicianName is joined for the UI.
   technicianId: string | null;
   technicianName: string | null;
-  // v1.34: bucket reference. Null when the task is unbucketed (default).
-  bucketId: string | null;
   title: string;
   description: string | null;
   status: TaskStatus;
@@ -164,7 +162,6 @@ function toView(
     assigneeId: row.assigneeId,
     technicianId: row.technicianId,
     technicianName: row.technician?.name ?? null,
-    bucketId: row.bucketId,
     title: row.title,
     description: row.description,
     status: row.status,
@@ -233,10 +230,6 @@ export class TasksService {
       dueDate?: string | null;
       plannedDate?: string | null;
       completedAt?: string | null;
-      // v1.34.3: pre-bucket the new task. Omitted / null = unbucketed.
-      // String = move into that bucket; validated to belong to the
-      // same project (cross-project → 400, cross-team → 404).
-      bucketId?: string | null;
       // v1.42: optional budget pair. number | string | null.
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
@@ -251,20 +244,6 @@ export class TasksService {
         where: { userId_teamId: { userId: input.assigneeId, teamId } },
       });
       if (!membership) throw Errors.badRequest('Assignee is not a member of this team');
-    }
-
-    // v1.34.3: bucket validation mirrors the PATCH path from v1.34.0.
-    if (typeof input.bucketId === 'string') {
-      const target = await prisma.bucket.findUnique({
-        where: { id: input.bucketId },
-        select: { projectId: true, teamId: true },
-      });
-      if (!target || target.teamId !== teamId) {
-        throw Errors.notFound('Bucket not found');
-      }
-      if (target.projectId !== projectId) {
-        throw Errors.badRequest('Bucket belongs to a different project');
-      }
     }
 
     const status = input.status ?? 'TODO';
@@ -310,9 +289,6 @@ export class TasksService {
           plannedDate: input.plannedDate ? new Date(input.plannedDate) : null,
           completedAt,
           position,
-          // v1.34.3: explicit null and omission both result in NULL
-          // (unbucketed); a string ID was validated above.
-          bucketId: input.bucketId ?? null,
           // v1.42: Decimal? — Prisma accepts undefined ("don't write") so
           // the conditional spread keeps the default NULL when caller omits.
           ...(normaliseBudget(input.plannedBudget) !== undefined && {
@@ -421,10 +397,6 @@ export class TasksService {
       dueDate?: string | null;
       plannedDate?: string | null;
       completedAt?: string | null;
-      // v1.34: bucket assignment. Omitted = no change; null = unbucket;
-      // string = move to that bucket (validated to belong to the same
-      // project + team; cross-project → 400, cross-team → 404).
-      bucketId?: string | null;
       // v1.42: budget patch — undefined leaves, null clears.
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
@@ -437,22 +409,6 @@ export class TasksService {
         where: { userId_teamId: { userId: input.assigneeId, teamId } },
       });
       if (!membership) throw Errors.badRequest('Assignee is not a member of this team');
-    }
-
-    // v1.34: bucket move validation. Omitted = skip; null = unbucket
-    // (always allowed); string = target bucket must belong to the SAME
-    // project (cross-project → 400) and the SAME team (cross-team → 404).
-    if (typeof input.bucketId === 'string') {
-      const target = await prisma.bucket.findUnique({
-        where: { id: input.bucketId },
-        select: { projectId: true, teamId: true },
-      });
-      if (!target || target.teamId !== teamId) {
-        throw Errors.notFound('Bucket not found');
-      }
-      if (target.projectId !== projectId) {
-        throw Errors.badRequest('Bucket belongs to a different project');
-      }
     }
 
     // v1.19 → v1.23: technician change gate. Now gated by the
@@ -579,10 +535,6 @@ export class TasksService {
       'dueDate',
       'plannedDate',
       'completedAt',
-      // v1.34: bucket moves participate in the audit log alongside other
-      // field changes. No separate activity action — moving a task isn't
-      // a notification-worthy event like assignment.
-      'bucketId',
     ] as const;
     const DATE_FIELDS = new Set(['startDate', 'dueDate', 'plannedDate', 'completedAt']);
     const changedNonStatusFields = NON_STATUS_FIELDS.filter((f) => {
@@ -622,7 +574,6 @@ export class TasksService {
               plannedDate: input.plannedDate === null ? null : new Date(input.plannedDate),
             }),
             ...(resolvedCompletedAt !== undefined && { completedAt: resolvedCompletedAt }),
-            ...(input.bucketId !== undefined && { bucketId: input.bucketId }),
             // v1.42: budget patch.
             ...(normaliseBudget(input.plannedBudget) !== undefined && {
               plannedBudget: normaliseBudget(input.plannedBudget),

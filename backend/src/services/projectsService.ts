@@ -6,7 +6,7 @@ import { Errors } from '../lib/errors.js';
 // - everyone else → sees and manages only their own projects
 //   (Project.ownerId === userId). Being a team MANAGER no longer grants
 //   cross-project rights.
-// - Nested routes (tasks/buckets/comments/subtasks/...) cascade the same
+// - Nested routes (tasks/comments/subtasks/...) cascade the same
 //   gate via middleware/requireProjectAccess.ts; URL-guessing past a
 //   non-owned project gives 404 just like the projects/list filter does.
 //
@@ -274,7 +274,7 @@ export class ProjectsService {
     }));
   }
 
-  // v1.39: helper for nested routes (tasks / buckets / labels / comments
+  // v1.39: helper for nested routes (tasks / labels / comments
   // / subtasks / attachments / dependencies / recurrence) to enforce the
   // same project-visibility rule at the route layer. The
   // `requireProjectAccess` middleware in middleware/requireProjectAccess.ts

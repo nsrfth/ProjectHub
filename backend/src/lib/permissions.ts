@@ -34,13 +34,6 @@ export const PERMISSIONS = [
   'project.delete',
   'project.set_accountable',
 
-  // v1.34: bucket grouping inside a project. Create / rename / reorder /
-  // delete a bucket. Members hold this by default (matches Labels parity —
-  // any team member can curate the project's column layout); custom roles
-  // can revoke. Moving a TASK between buckets goes through the existing
-  // task update path and is implicit team-member capability.
-  'buckets.manage',
-
   // Team membership + governance.
   'team.invite_member',
   'team.remove_member',
@@ -74,7 +67,7 @@ export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
     'task.manage_dependencies',
   ],
   Comments: ['comment.delete_others'],
-  Projects: ['project.edit', 'project.delete', 'project.set_accountable', 'buckets.manage'],
+  Projects: ['project.edit', 'project.delete', 'project.set_accountable'],
   Team: [
     'team.invite_member',
     'team.remove_member',
@@ -102,7 +95,4 @@ export const DEFAULT_MANAGER_PERMISSIONS: readonly Permission[] = PERMISSIONS;
 export const DEFAULT_MEMBER_PERMISSIONS: readonly Permission[] = [
   'task.delete',
   'task.modify_dates',
-  // v1.34: members can manage buckets by default (matches Labels parity —
-  // any team member can curate the project's column layout).
-  'buckets.manage',
 ];
