@@ -53,7 +53,7 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
     { to: '/calendar', label: t('nav.calendar'), icon: IconCalendar },
     { to: '/reports', label: t('nav.reports'), icon: IconReports },
     { to: '/settings/preferences', label: t('nav.settings'), icon: IconSettings },
-    { to: '/trash', label: 'Trash', icon: IconTrash },
+    { to: '/trash', label: t('nav.trash'), icon: IconTrash },
     { to: '/admin', label: t('nav.admin'), icon: IconAdmin, adminOnly: true },
   ];
   const visible = items.filter((it) => !it.adminOnly || user?.globalRole === 'ADMIN');

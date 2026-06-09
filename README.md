@@ -3,9 +3,11 @@
 Self-hostable team task management. React + Fastify + Postgres + Prisma + Redis,
 fronted by Caddy with automatic HTTPS.
 
-> Status: **scaffold + Feature 1 (Auth) complete.** Teams, projects, tasks,
-> kanban board, comments, activity, notifications, and admin panel are queued
-> as separate features.
+> Status: **feature-complete for self-hosted team task management** — teams,
+> projects, kanban/bucket boards, subtasks, comments, attachments, labels,
+> dependencies, recurrence, notifications, reports, calendar, search, LDAP/
+> SCIM, 2FA, API tokens, webhooks, backups, and admin tooling are all
+> implemented. See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## Stack
 
@@ -68,10 +70,9 @@ npm run dev            # http://localhost:5173 (proxies /api to backend)
 
 Two options:
 
-1. **Seed**: `npx prisma db seed` creates `admin@example.com` /
-   `ChangeMe123!`. **Change the password immediately** via
-   `POST /api/auth/password/reset-request` (in dev the reset token is returned
-   in the response).
+1. **Seed**: `npx prisma db seed` creates `admin@taskhub.local` /
+   `admin` (override with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`).
+   **Change the password immediately** in production.
 2. **Admin-only provisioning** (v1.30.11, S-9): public self-registration is
    removed. The seeded admin is the only bootstrap path; subsequent accounts are
    created by an admin via **Settings → Admin → New user**

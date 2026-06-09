@@ -75,7 +75,7 @@ this user admin of *this team* or admin of *the system*".
 ## Auth flow
 
 ```
-Login / Register:
+Login (admin-provisioned or LDAP/SCIM JIT — no public register):
   Client POSTs credentials
   Backend issues:
     - access token  (JWT, signed with JWT_ACCESS_SECRET,  TTL 15m default)

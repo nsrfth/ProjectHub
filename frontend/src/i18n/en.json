@@ -8,6 +8,7 @@
   "nav.calendar": "Calendar",
   "nav.admin": "Admin",
   "nav.settings": "Settings",
+  "nav.trash": "Trash",
   "nav.signOut": "Sign out",
   "nav.signIn": "Sign in",
   "nav.backToDashboard": "← Back to dashboard",

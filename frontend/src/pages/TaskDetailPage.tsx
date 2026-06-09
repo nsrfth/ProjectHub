@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
-import { useTeams } from '@/features/teams/TeamsContext';
+import { useProjectTeam } from '@/features/projects/useProjectTeam';
 import { getTeam } from '@/features/teams/api';
 import * as tasksApi from '@/features/tasks/api';
 import * as commentsApi from '@/features/comments/api';
@@ -102,11 +102,10 @@ function describeActivity(a: activityApi.ActivityEntry): string {
 export default function TaskDetailPage(): JSX.Element {
   const { projectId, taskId } = useParams<{ projectId: string; taskId: string }>();
   const { user } = useAuth();
-  const { currentTeam } = useTeams();
+  const { teamId, project, projectTeam } = useProjectTeam(projectId);
   const qc = useQueryClient();
 
-  const teamId = currentTeam?.id ?? null;
-  const isManager = currentTeam?.myRole === 'MANAGER';
+  const isManager = projectTeam?.myRole === 'MANAGER';
 
   const { data: task, isLoading: taskLoading } = useQuery({
     queryKey: ['task', teamId, projectId, taskId],
@@ -195,15 +194,26 @@ export default function TaskDetailPage(): JSX.Element {
     },
   });
 
-  if (!currentTeam) {
+  if (!teamId || !project) {
     return (
       <div className="min-h-screen p-8 max-w-3xl mx-auto">
         <p className="text-sm text-slate-500">
-          Select or{' '}
-          <Link to="/teams" className="underline">
-            create a team
-          </Link>{' '}
-          first.
+          {projectId ? (
+            <>
+              Project not found or you don&apos;t have access.{' '}
+              <Link to="/projects" className="underline">
+                Back to projects
+              </Link>
+            </>
+          ) : (
+            <>
+              Select or{' '}
+              <Link to="/teams" className="underline">
+                create a team
+              </Link>{' '}
+              first.
+            </>
+          )}
         </p>
       </div>
     );

@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useTeams } from '@/features/teams/TeamsContext';
-import * as projectsApi from '@/features/projects/api';
+import { useProjectTeam } from '@/features/projects/useProjectTeam';
 import * as tasksApi from '@/features/tasks/api';
 import * as labelsApi from '@/features/labels/api';
 import { formatShamsiDate } from '@/lib/shamsi';
@@ -59,12 +59,13 @@ function errorMessage(err: unknown, fallback: string): string {
 // by @dnd-kit's PointerSensor activation distance.
 interface SortableCardProps {
   task: tasksApi.Task;
+  accent: string;
   onOpen: (taskId: string) => void;
   onDelete: (task: tasksApi.Task) => void;
   onStatusChange: (task: tasksApi.Task, status: tasksApi.TaskStatus) => void;
 }
 
-function SortableCard({ task, onOpen, onDelete, onStatusChange }: SortableCardProps): JSX.Element {
+function SortableCard({ task, accent, onOpen, onDelete, onStatusChange }: SortableCardProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { columnId: task.status, kind: 'task' as const },
@@ -74,11 +75,6 @@ function SortableCard({ task, onOpen, onDelete, onStatusChange }: SortableCardPr
     transition,
     opacity: isDragging ? 0.4 : 1,
   };
-  // v1.12: paint the team's accent colour as a left stripe so cards from
-  // different teams (in cross-team views) read instantly. Falls back to
-  // slate when the team has no colour configured.
-  const { currentTeam } = useTeams();
-  const accent = currentTeam?.color ?? '#cbd5e1';
   return (
     <li
       ref={setNodeRef}
@@ -195,25 +191,35 @@ function Column({ status, tasks, children }: ColumnProps): JSX.Element {
 export default function TasksPage(): JSX.Element {
   const { projectId } = useParams<{ projectId: string }>();
   const { currentTeam } = useTeams();
+  const { teamId, project, projectTeam } = useProjectTeam(projectId);
   const qc = useQueryClient();
   const nav = useNavigate();
 
-  const teamId = currentTeam?.id ?? null;
+  // #region agent log
+  fetch('http://127.0.0.1:7913/ingest/ce89f6c8-255d-4008-a5cc-0cc6b19a3c80', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'adf9a1' },
+    body: JSON.stringify({
+      sessionId: 'adf9a1',
+      hypothesisId: 'A',
+      location: 'TasksPage.tsx',
+      message: 'team id comparison',
+      data: {
+        projectId: projectId ?? null,
+        currentTeamId: currentTeam?.id ?? null,
+        resolvedTeamId: teamId,
+        mismatch: !!teamId && !!currentTeam?.id && teamId !== currentTeam.id,
+        projectLoaded: !!project,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   // v1.36: hoisted above the label-filter useMemo so the filter logic
   // can read ?labels=. v1.34.2's `?view=` reader (further down) still
   // works against this same getter.
   const [searchParams, setSearchParams] = useSearchParams();
-
-  const { data: project } = useQuery({
-    queryKey: ['projects', teamId, projectId],
-    queryFn: async () => {
-      if (!teamId || !projectId) return null;
-      const all = await projectsApi.listProjects(teamId);
-      return all.find((p) => p.id === projectId) ?? null;
-    },
-    enabled: !!teamId && !!projectId,
-  });
 
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['tasks', teamId, projectId],
@@ -398,19 +404,32 @@ export default function TasksPage(): JSX.Element {
 
   const t = useT();
 
-  if (!currentTeam) {
+  if (!teamId || !project) {
     return (
       <div className="min-h-screen p-8 max-w-3xl mx-auto">
         <p className="text-sm text-slate-500">
-          Select or{' '}
-          <Link to="/teams" className="underline">
-            create a team
-          </Link>{' '}
-          first.
+          {projectId ? (
+            <>
+              Project not found or you don&apos;t have access.{' '}
+              <Link to="/projects" className="underline">
+                Back to projects
+              </Link>
+            </>
+          ) : (
+            <>
+              Select or{' '}
+              <Link to="/teams" className="underline">
+                create a team
+              </Link>{' '}
+              first.
+            </>
+          )}
         </p>
       </div>
     );
   }
+
+  const teamAccent = projectTeam?.color ?? '#cbd5e1';
 
   function onCreate(e: FormEvent): void {
     e.preventDefault();
@@ -451,7 +470,7 @@ export default function TasksPage(): JSX.Element {
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold truncate">{project?.name ?? 'Tasks'}</h1>
           <p className="text-sm text-slate-500">
-            in <span className="font-medium">{currentTeam.name}</span>
+            in <span className="font-medium">{project.teamName}</span>
           </p>
         </div>
         {/* Project context: a board belongs to one project — surface a quick
@@ -564,6 +583,7 @@ export default function TasksPage(): JSX.Element {
                     <SortableCard
                       key={t.id}
                       task={t}
+                      accent={teamAccent}
                       onOpen={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
                       onDelete={(task) => {
                         if (window.confirm(`Delete task "${task.title}"?`)) deleteMut.mutate(task.id);
