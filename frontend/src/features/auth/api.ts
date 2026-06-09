@@ -9,6 +9,7 @@ export interface AuthUser {
   // Frontend uses this to hide "change password" + similar local-only actions.
   directoryId: string | null;
   externalId: string | null;
+  authSource: 'LOCAL' | 'LDAP' | 'SCIM';
   // Phase 2C: surfaced so Settings → Security can show the right state
   // without an extra round-trip on render.
   totpEnabled: boolean;

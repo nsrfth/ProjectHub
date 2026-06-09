@@ -6,7 +6,7 @@ import { hashPassword, randomTokenHex, sha256, verifyPassword } from '../lib/has
 import { parseDuration } from '../lib/time.js';
 import type { Env } from '../config/env.js';
 import { DirectoryService } from './directoryService.js';
-import { LdapService, type LdapAuthResult } from './ldapService.js';
+import { isLdapInfrastructureError, LdapService, type LdapAuthResult } from './ldapService.js';
 import { TwoFactorService } from './twoFactorService.js';
 import { emailService } from './emailService.js';
 import { systemRoleIdFor } from '../lib/teamRoles.js';
@@ -30,6 +30,7 @@ export interface IssuedSession {
     globalRole: 'ADMIN' | 'MEMBER';
     directoryId: string | null;
     externalId: string | null;
+    authSource: 'LOCAL' | 'LDAP' | 'SCIM';
     totpEnabled: boolean;
     calendarPreference: 'SHAMSI' | 'GREGORIAN';
     themePreference: 'LIGHT' | 'DARK';
@@ -121,29 +122,57 @@ export class AuthService {
   // mints users at all.
 
   async login(input: { email: string; password: string }): Promise<IssuedSession> {
-    const user = await prisma.user.findUnique({ where: { email: input.email } });
+    const identifier = input.email.trim();
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: identifier },
+          {
+            ldapUsername: { equals: identifier, mode: 'insensitive' },
+            authSource: 'LDAP',
+          },
+        ],
+      },
+    });
 
     // Soft-disabled users (SCIM `active: false`) can't log in regardless of
     // which auth backend they're on. Same error string as bad credentials to
     // avoid leaking account state.
     if (user?.disabledAt) throw Errors.unauthorized('Invalid credentials');
 
-    // ── Local user (no directoryId): legacy argon2 password check. ─────────
-    if (user && !user.directoryId) {
+    // ── Local user: legacy argon2 password check. ───────────────────────────
+    if (user && user.authSource === 'LOCAL') {
       if (!user.passwordHash) throw Errors.unauthorized('Invalid credentials');
       const ok = await verifyPassword(user.passwordHash, input.password);
       if (!ok) throw Errors.unauthorized('Invalid credentials');
       return this.issueSession(user);
     }
 
-    // ── Directory-bound user: bind against the specific directory. ─────────
-    if (user?.directoryId) {
+    // ── LDAP user: bind against the configured directory. ───────────────────
+    if (user?.authSource === 'LDAP' && user.directoryId) {
       const dir = await this.directories.getRaw(user.directoryId).catch(() => null);
-      if (!dir) throw Errors.unauthorized('Invalid credentials');
-      const result = await this.ldap.authenticate(dir, input.email, input.password);
+      if (!dir || dir.kind !== 'LDAP') throw Errors.unauthorized('Invalid credentials');
+      const loginId = user.email === identifier ? identifier : (user.ldapUsername ?? identifier);
+      let result: LdapAuthResult | null;
+      try {
+        result = await this.ldap.authenticate(dir, loginId, input.password);
+      } catch (e) {
+        if (isLdapInfrastructureError(e)) {
+          throw Errors.serviceUnavailable(
+            'Directory sign-in is temporarily unavailable. Please try again later.',
+          );
+        }
+        throw e;
+      }
       if (!result) throw Errors.unauthorized('Invalid credentials');
       await this.syncFromLdap(user, dir.id, result);
-      return this.issueSession(user);
+      const refreshed = await prisma.user.findUnique({ where: { id: user.id } });
+      return this.issueSession(refreshed ?? user);
+    }
+
+    // SCIM-provisioned users authenticate via the IdP, not password login.
+    if (user?.authSource === 'SCIM') {
+      throw Errors.unauthorized('Invalid credentials');
     }
 
     // ── No local row yet: try each active LDAP directory in turn (JIT). ────
@@ -152,13 +181,75 @@ export class AuthService {
     const directories = await this.directories.listActiveLdap();
     for (const dir of directories) {
       if (!dir.allowJIT) continue;
-      const result = await this.ldap.authenticate(dir, input.email, input.password);
+      let result: LdapAuthResult | null;
+      try {
+        result = await this.ldap.authenticate(dir, identifier, input.password);
+      } catch (e) {
+        if (isLdapInfrastructureError(e)) {
+          throw Errors.serviceUnavailable(
+            'Directory sign-in is temporarily unavailable. Please try again later.',
+          );
+        }
+        throw e;
+      }
       if (!result) continue;
       const provisioned = await this.provisionFromLdap(dir.id, result);
       return this.issueSession(provisioned);
     }
 
     throw Errors.unauthorized('Invalid credentials');
+  }
+
+  // Admin action: refresh LDAP profile without a password bind.
+  async refreshLdapUserProfile(userId: string): Promise<User> {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw Errors.notFound('User not found');
+    if (user.authSource !== 'LDAP' || !user.directoryId || !user.externalId) {
+      throw Errors.conflict('User is not linked to an LDAP directory');
+    }
+    const dir = await this.directories.getRaw(user.directoryId);
+    if (dir.kind !== 'LDAP') throw Errors.conflict('User is not linked to an LDAP directory');
+    let result: LdapAuthResult | null;
+    try {
+      result = await this.ldap.fetchUserProfile(dir, user.externalId);
+    } catch (e) {
+      if (isLdapInfrastructureError(e)) {
+        throw Errors.serviceUnavailable(
+          'Could not reach the directory server. Check connectivity and try again.',
+        );
+      }
+      throw e;
+    }
+    if (!result) throw Errors.notFound('User no longer exists in the directory');
+    await this.syncFromLdap(user, dir.id, result, { skipGroups: true });
+    const refreshed = await prisma.user.findUnique({ where: { id: userId } });
+    if (!refreshed) throw Errors.notFound('User not found');
+    return refreshed;
+  }
+
+  // Admin action: verify directory credentials (password is never stored).
+  async testLdapUserCredentials(userId: string, password: string): Promise<{ ok: true }> {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw Errors.notFound('User not found');
+    if (user.authSource !== 'LDAP' || !user.directoryId) {
+      throw Errors.conflict('User is not linked to an LDAP directory');
+    }
+    const dir = await this.directories.getRaw(user.directoryId);
+    if (dir.kind !== 'LDAP') throw Errors.conflict('User is not linked to an LDAP directory');
+    const loginId = user.ldapUsername ?? user.email;
+    let result: LdapAuthResult | null;
+    try {
+      result = await this.ldap.authenticate(dir, loginId, password);
+    } catch (e) {
+      if (isLdapInfrastructureError(e)) {
+        throw Errors.serviceUnavailable(
+          'Could not reach the directory server. Check connectivity and try again.',
+        );
+      }
+      throw e;
+    }
+    if (!result) throw Errors.unauthorized('Directory credentials are invalid');
+    return { ok: true };
   }
 
   // JIT-create the local User row for a successfully-bound LDAP user. First
@@ -175,10 +266,10 @@ export class AuthService {
     try {
       user = await prisma.user.create({
         data: {
-          email: result.email,
-          name: result.displayName || result.email,
+          ...this.ldapProfileFields(result),
           directoryId,
           externalId: result.dn,
+          authSource: 'LDAP',
           // No local password — argon2 verify can't be run on this row.
           passwordHash: null,
           emailVerifiedAt: new Date(),
@@ -201,21 +292,68 @@ export class AuthService {
     return refreshed ?? user;
   }
 
-  // Pull fresh email/name from LDAP and reapply group mappings on each login.
-  // Cheap because the search already happened in authenticate().
+  // Pull fresh profile fields from LDAP and reapply group mappings on each login.
+  // Sync failures must not block sign-in — profile drift is acceptable short-term.
   private async syncFromLdap(
     user: User,
     directoryId: string,
     result: LdapAuthResult,
+    opts: { skipGroups?: boolean } = {},
   ): Promise<void> {
-    const dataUpdate: Prisma.UserUpdateInput = {};
-    if (user.email !== result.email) dataUpdate.email = result.email;
-    if (result.displayName && user.name !== result.displayName) dataUpdate.name = result.displayName;
-    if (user.externalId !== result.dn) dataUpdate.externalId = result.dn;
-    if (Object.keys(dataUpdate).length) {
-      await prisma.user.update({ where: { id: user.id }, data: dataUpdate });
+    try {
+      const dataUpdate = this.ldapProfileData(result, user);
+      if (Object.keys(dataUpdate).length) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { ...dataUpdate, ldapSyncedAt: new Date() },
+        });
+      } else {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { ldapSyncedAt: new Date() },
+        });
+      }
+    } catch {
+      // Unique email collision or transient DB error — login still succeeded.
     }
-    await this.applyDirectoryGroups(user.id, directoryId, result.groups);
+    if (!opts.skipGroups) {
+      try {
+        await this.applyDirectoryGroups(user.id, directoryId, result.groups);
+      } catch {
+        // Group sync failure must not block sign-in.
+      }
+    }
+  }
+
+  private ldapProfileFields(result: LdapAuthResult) {
+    return {
+      email: result.email,
+      name: result.displayName || result.email,
+      ldapUsername: result.ldapUsername,
+      userPrincipalName: result.userPrincipalName,
+      department: result.department,
+      jobTitle: result.jobTitle,
+      managerName: result.managerName,
+    };
+  }
+
+  private ldapProfileData(
+    result: LdapAuthResult,
+    existing: User,
+  ): Prisma.UserUpdateInput {
+    const data: Prisma.UserUpdateInput = {};
+    const fields = this.ldapProfileFields(result);
+    if (existing.email !== fields.email) data.email = fields.email;
+    if (existing.name !== fields.name) data.name = fields.name;
+    if (existing.externalId !== result.dn) data.externalId = result.dn;
+    if (existing.ldapUsername !== fields.ldapUsername) data.ldapUsername = fields.ldapUsername;
+    if (existing.userPrincipalName !== fields.userPrincipalName) {
+      data.userPrincipalName = fields.userPrincipalName;
+    }
+    if (existing.department !== fields.department) data.department = fields.department;
+    if (existing.jobTitle !== fields.jobTitle) data.jobTitle = fields.jobTitle;
+    if (existing.managerName !== fields.managerName) data.managerName = fields.managerName;
+    return data;
   }
 
   // Translate LDAP group DNs into TaskHub role assignments. Only fires when
@@ -538,6 +676,7 @@ export class AuthService {
         globalRole: user.globalRole,
         directoryId: user.directoryId,
         externalId: user.externalId,
+        authSource: user.directoryId ? user.authSource : 'LOCAL',
         totpEnabled: user.totpEnabled,
         calendarPreference: user.calendarPreference,
         themePreference: user.themePreference,

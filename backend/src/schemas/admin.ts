@@ -16,6 +16,8 @@ export const listQuery = z.object({
 
 export type ListQuery = z.infer<typeof listQuery>;
 
+export const authSourceEnum = z.enum(['LOCAL', 'LDAP', 'SCIM']);
+
 export const adminUserResponse = z.object({
   id: z.string(),
   email: z.string().email(),
@@ -24,10 +26,16 @@ export const adminUserResponse = z.object({
   emailVerifiedAt: z.string().nullable(),
   createdAt: z.string(),
   membershipCount: z.number().int().nonnegative(),
-  // v1.32.0: surfaced so the admin UI can hide "Reset password" for
-  // directory-owned (LDAP/SCIM) users — their password lives in the
-  // directory, not in TaskHub.
   directoryId: z.string().nullable().default(null),
+  authSource: authSourceEnum,
+  ldapUsername: z.string().nullable(),
+  userPrincipalName: z.string().nullable(),
+  department: z.string().nullable(),
+  jobTitle: z.string().nullable(),
+  managerName: z.string().nullable(),
+  ldapSyncedAt: z.string().nullable(),
+  directoryName: z.string().nullable(),
+  directoryActive: z.boolean(),
 });
 
 // Paginated envelopes — `nextCursor` is null when there's no more data.
@@ -88,3 +96,15 @@ export const adminResetPasswordResponse = z.object({
 });
 
 export type AdminResetPasswordBody = z.infer<typeof adminResetPasswordBody>;
+
+export const ldapTestAuthBody = z.object({
+  password: z.string().min(1).max(256),
+});
+
+export type LdapTestAuthBody = z.infer<typeof ldapTestAuthBody>;
+
+export const ldapSyncResponse = adminUserResponse;
+
+export const ldapTestAuthResponse = z.object({
+  ok: z.literal(true),
+});

@@ -73,6 +73,14 @@ enum DirectoryKind {
   SCIM
 }
 
+// How the user signs in. LOCAL = argon2 password in TaskHub; LDAP = directory
+// bind; SCIM = provisioned via SCIM (no password login).
+enum AuthSource {
+  LOCAL
+  LDAP
+  SCIM
+}
+
 // v1.10: per-user display calendar. Affects every place the frontend renders
 // a calendar date or timestamp. Default SHAMSI matches the pre-v1.10
 // behaviour (TaskHub is Persian-leaning by default); switching to GREGORIAN
@@ -210,6 +218,16 @@ model User {
   // External stable identifier (LDAP DN, SCIM externalId). Unique together
   // with directoryId so multiple directories can use overlapping IDs.
   externalId      String?
+  // Explicit auth backend — backfilled from directoryId + Directory.kind for
+  // existing rows. LOCAL users have directoryId=null.
+  authSource      AuthSource @default(LOCAL)
+  // LDAP profile fields (synced on login / admin refresh). Null for LOCAL users.
+  ldapUsername    String?
+  userPrincipalName String?
+  department      String?
+  jobTitle        String?
+  managerName     String?
+  ldapSyncedAt    DateTime?
   // Set when the user is soft-disabled. Login + refresh both reject when
   // this is non-null. SCIM deprovision (PATCH active=false) sets this and
   // revokes outstanding refresh tokens; reprovision (active=true) clears it.

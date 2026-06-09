@@ -1,6 +1,7 @@
 import { api } from '@/lib/api';
 
 export type GlobalRole = 'ADMIN' | 'MEMBER';
+export type AuthSource = 'LOCAL' | 'LDAP' | 'SCIM';
 
 export interface AdminUser {
   id: string;
@@ -10,9 +11,16 @@ export interface AdminUser {
   emailVerifiedAt: string | null;
   createdAt: string;
   membershipCount: number;
-  // v1.32.0: surfaced so the UI can hide "Reset password" for directory-
-  // owned (LDAP/SCIM) users — their password lives in the directory.
   directoryId: string | null;
+  authSource: AuthSource;
+  ldapUsername: string | null;
+  userPrincipalName: string | null;
+  department: string | null;
+  jobTitle: string | null;
+  managerName: string | null;
+  ldapSyncedAt: string | null;
+  directoryName: string | null;
+  directoryActive: boolean;
 }
 
 export interface AdminTeam {
@@ -88,4 +96,12 @@ export async function resetUserPassword(
       ...(password ? { password } : {}),
     })
   ).data;
+}
+
+export async function refreshLdapUser(userId: string): Promise<AdminUser> {
+  return (await api.post<AdminUser>(`/admin/users/${userId}/ldap/sync`)).data;
+}
+
+export async function testLdapUserAuth(userId: string, password: string): Promise<void> {
+  await api.post(`/admin/users/${userId}/ldap/test-auth`, { password });
 }

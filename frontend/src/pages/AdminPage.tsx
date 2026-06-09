@@ -14,6 +14,22 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+function authSourceLabel(source: adminApi.AuthSource): string {
+  switch (source) {
+    case 'LDAP': return 'LDAP';
+    case 'SCIM': return 'SCIM';
+    default: return 'Local';
+  }
+}
+
+function authSourceBadgeClass(source: adminApi.AuthSource): string {
+  switch (source) {
+    case 'LDAP': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200';
+    case 'SCIM': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200';
+    default: return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200';
+  }
+}
+
 export default function AdminPage(): JSX.Element {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -91,6 +107,32 @@ export default function AdminPage(): JSX.Element {
     onError: (err) => {
       window.alert(errorMessage(err, 'Could not delete user'));
     },
+  });
+
+  const [ldapPanelUserId, setLdapPanelUserId] = useState<string | null>(null);
+  const [ldapTestPassword, setLdapTestPassword] = useState('');
+  const [ldapActionMsg, setLdapActionMsg] = useState<string | null>(null);
+  const [ldapActionErr, setLdapActionErr] = useState<string | null>(null);
+
+  const refreshLdapMut = useMutation({
+    mutationFn: (userId: string) => adminApi.refreshLdapUser(userId),
+    onSuccess: () => {
+      setLdapActionMsg('User information refreshed from directory.');
+      setLdapActionErr(null);
+      resetUsers();
+    },
+    onError: (err) => setLdapActionErr(errorMessage(err, 'Could not refresh user')),
+  });
+
+  const testLdapMut = useMutation({
+    mutationFn: (input: { userId: string; password: string }) =>
+      adminApi.testLdapUserAuth(input.userId, input.password),
+    onSuccess: () => {
+      setLdapActionMsg('Directory credentials are valid.');
+      setLdapActionErr(null);
+      setLdapTestPassword('');
+    },
+    onError: (err) => setLdapActionErr(errorMessage(err, 'Directory authentication failed')),
   });
 
   // v1.32.0: reset-password modal state. Lives on the page so the one-time
@@ -294,6 +336,8 @@ export default function AdminPage(): JSX.Element {
             <tr>
               <th className="py-1 pr-4">Name</th>
               <th className="py-1 pr-4">Email</th>
+              <th className="py-1 pr-4">Auth</th>
+              <th className="py-1 pr-4">LDAP user</th>
               <th className="py-1 pr-4">Role</th>
               <th className="py-1 pr-4">Teams</th>
               <th className="py-1 pr-4">Joined</th>
@@ -308,6 +352,19 @@ export default function AdminPage(): JSX.Element {
                 <tr key={u.id} className="border-t">
                   <td className="py-2 pr-4">{u.name}</td>
                   <td className="py-2 pr-4 text-slate-600">{u.email}</td>
+                  <td className="py-2 pr-4">
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${authSourceBadgeClass(u.authSource)}`}>
+                      {authSourceLabel(u.authSource)}
+                    </span>
+                    {u.authSource === 'LDAP' && (
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {u.directoryActive ? u.directoryName ?? 'Linked' : 'Directory offline'}
+                      </p>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4 text-slate-500 font-mono text-xs">
+                    {u.ldapUsername ?? '—'}
+                  </td>
                   <td className="py-2 pr-4">
                     <span className="text-xs uppercase tracking-wide text-slate-500">
                       {u.globalRole}
@@ -331,13 +388,27 @@ export default function AdminPage(): JSX.Element {
                       {u.globalRole === 'ADMIN' ? 'Demote' : 'Promote'}
                     </button>
                     <button
-                      disabled={u.directoryId !== null}
+                      disabled={u.authSource !== 'LOCAL'}
                       onClick={() => openReset(u)}
                       className="text-xs underline disabled:opacity-40 mr-3"
-                      title={u.directoryId ? 'Directory-owned' : undefined}
+                      title={u.authSource !== 'LOCAL' ? 'Directory-owned' : undefined}
                     >
                       Reset password
                     </button>
+                    {u.authSource === 'LDAP' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLdapPanelUserId(ldapPanelUserId === u.id ? null : u.id);
+                          setLdapActionMsg(null);
+                          setLdapActionErr(null);
+                          setLdapTestPassword('');
+                        }}
+                        className="text-xs underline mr-3"
+                      >
+                        {ldapPanelUserId === u.id ? 'Hide LDAP' : 'LDAP'}
+                      </button>
+                    )}
                     <button
                       disabled={isSelf || deleteUserMut.isPending}
                       onClick={() => {
@@ -369,6 +440,62 @@ export default function AdminPage(): JSX.Element {
             {usersLoading ? 'Loading…' : 'Load more'}
           </button>
         )}
+
+        {ldapPanelUserId && (() => {
+          const u = users.find((row) => row.id === ldapPanelUserId);
+          if (!u || u.authSource !== 'LDAP') return null;
+          return (
+            <div className="mt-4 rounded border border-blue-200 dark:border-blue-800 p-3 text-sm bg-blue-50/50 dark:bg-blue-900/10">
+              <p className="font-medium mb-2">LDAP — {u.email}</p>
+              <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-xs mb-3">
+                <div><dt className="text-slate-500 inline">Directory: </dt><dd className="inline">{u.directoryName ?? '—'}</dd></div>
+                <div><dt className="text-slate-500 inline">Status: </dt><dd className="inline">{u.directoryActive ? 'Connected' : 'Not configured'}</dd></div>
+                <div><dt className="text-slate-500 inline">Username: </dt><dd className="inline font-mono">{u.ldapUsername ?? '—'}</dd></div>
+                <div><dt className="text-slate-500 inline">UPN: </dt><dd className="inline font-mono">{u.userPrincipalName ?? '—'}</dd></div>
+                <div><dt className="text-slate-500 inline">Department: </dt><dd className="inline">{u.department ?? '—'}</dd></div>
+                <div><dt className="text-slate-500 inline">Job title: </dt><dd className="inline">{u.jobTitle ?? '—'}</dd></div>
+                <div><dt className="text-slate-500 inline">Manager: </dt><dd className="inline">{u.managerName ?? '—'}</dd></div>
+                <div><dt className="text-slate-500 inline">Last sync: </dt><dd className="inline">{u.ldapSyncedAt ? formatShamsiTimestampDate(u.ldapSyncedAt) : 'Never'}</dd></div>
+              </dl>
+              <div className="flex flex-wrap gap-2 items-center mb-2">
+                <button
+                  type="button"
+                  disabled={refreshLdapMut.isPending}
+                  onClick={() => refreshLdapMut.mutate(u.id)}
+                  className="text-xs rounded border border-slate-300 dark:border-slate-600 px-2 py-1"
+                >
+                  {refreshLdapMut.isPending ? 'Refreshing…' : 'Refresh from directory'}
+                </button>
+              </div>
+              <form
+                className="flex flex-wrap gap-2 items-center"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!ldapTestPassword) return;
+                  testLdapMut.mutate({ userId: u.id, password: ldapTestPassword });
+                }}
+              >
+                <input
+                  type="password"
+                  value={ldapTestPassword}
+                  onChange={(e) => setLdapTestPassword(e.target.value)}
+                  placeholder="Test directory password"
+                  autoComplete="new-password"
+                  className="flex-1 min-w-[12rem] rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 px-2 py-1 text-xs font-mono"
+                />
+                <button
+                  type="submit"
+                  disabled={testLdapMut.isPending || !ldapTestPassword}
+                  className="text-xs rounded bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 px-2 py-1 disabled:opacity-50"
+                >
+                  {testLdapMut.isPending ? 'Testing…' : 'Test authentication'}
+                </button>
+              </form>
+              {ldapActionMsg && <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">{ldapActionMsg}</p>}
+              {ldapActionErr && <p className="text-xs text-red-600 mt-2">{ldapActionErr}</p>}
+            </div>
+          );
+        })()}
 
         {/* v1.32.0: reset-password panel. Reveals the generated password
             once when the admin lets the server pick. */}

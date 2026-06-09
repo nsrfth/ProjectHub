@@ -42,6 +42,12 @@ export default function SecurityPage(): JSX.Element {
           their password lives in the directory and the backend would 403. */}
       <div className="border rounded p-4">
         <h3 className="font-medium mb-1">{t('security.password.title')}</h3>
+        {user?.authSource === 'LDAP' && (
+          <p className="text-xs text-slate-500 mb-2">LDAP account — sign in with your directory password.</p>
+        )}
+        {user?.authSource === 'SCIM' && (
+          <p className="text-xs text-slate-500 mb-2">Provisioned account — password is managed by your identity provider.</p>
+        )}
         {user?.directoryId ? (
           <p className="text-sm text-slate-600">
             {t('security.password.directoryOwned')}

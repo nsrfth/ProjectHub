@@ -3,6 +3,8 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { AdminService } from '../services/adminService.js';
 import { AdminController } from '../controllers/adminController.js';
+import { AuthService } from '../services/authService.js';
+import { loadEnv } from '../config/env.js';
 import { requireAuth, requireGlobalRole } from '../middleware/auth.js';
 import { requireScope } from '../middleware/requireScope.js';
 import { updateCheckService } from '../services/updateCheckService.js';
@@ -12,6 +14,9 @@ import {
   adminUserResponse,
   createUserBody,
   createUserResponse,
+  ldapSyncResponse,
+  ldapTestAuthBody,
+  ldapTestAuthResponse,
   listQuery,
   teamsPage,
   updateUserRoleBody,
@@ -21,8 +26,16 @@ import {
 // Admin endpoints are gated by GlobalRole=ADMIN. There is no team-level RBAC
 // here; an admin operates above the tenant boundary by definition.
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
+  const env = loadEnv();
   const svc = new AdminService();
-  const ctrl = new AdminController(svc);
+  const authSvc = new AuthService(env, {
+    signAccess: (p) => app.signAccess(p as Parameters<typeof app.signAccess>[0]),
+    signRefresh: (p, exp) => app.signRefresh(p, exp),
+    verifyRefresh: (t) => app.verifyRefresh(t),
+    signPending: (sub) => app.signPending(sub),
+    verifyPending: (t) => app.verifyPending(t),
+  });
+  const ctrl = new AdminController(svc, authSvc);
   const r = app.withTypeProvider<ZodTypeProvider>();
 
   r.addHook('preHandler', requireAuth);
@@ -74,6 +87,29 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // (validated by passwordSchema) or omit it for a server-generated value
   // returned once. Directory-owned (LDAP/SCIM) targets are rejected with
   // 409 — their password lives in the directory.
+  r.post('/users/:userId/ldap/sync', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Refresh an LDAP user profile from the directory (ADMIN only)',
+      params: z.object({ userId: z.string() }),
+      response: { 200: ldapSyncResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.refreshLdapUser,
+  });
+
+  r.post('/users/:userId/ldap/test-auth', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Test LDAP credentials for a user (password is not stored)',
+      params: z.object({ userId: z.string() }),
+      body: ldapTestAuthBody,
+      response: { 200: ldapTestAuthResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.testLdapUserAuth,
+  });
+
   r.post('/users/:userId/password', {
     schema: {
       tags: ['admin'],

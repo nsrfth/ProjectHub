@@ -21,4 +21,6 @@ export const Errors = {
   conflict: (msg = 'Conflict') => new AppError(409, 'CONFLICT', msg),
   tooManyRequests: (msg = 'Too many requests') => new AppError(429, 'RATE_LIMITED', msg),
   internal: (msg = 'Internal server error') => new AppError(500, 'INTERNAL', msg),
+  serviceUnavailable: (msg = 'Service temporarily unavailable') =>
+    new AppError(503, 'SERVICE_UNAVAILABLE', msg),
 };

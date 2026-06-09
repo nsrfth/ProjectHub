@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isLdapInfrastructureError,
   normaliseLdapHost,
   resolveLdapTransport,
 } from '../../src/services/ldapService.js';
@@ -15,5 +16,10 @@ describe('ldapService helpers', () => {
     expect(resolveLdapTransport({ useTLS: true, port: 389 })).toBe('starttls');
     expect(resolveLdapTransport({ useTLS: true, port: 636 })).toBe('ldaps');
     expect(resolveLdapTransport({ useTLS: true, port: null })).toBe('ldaps');
+  });
+
+  it('detects LDAP infrastructure errors', () => {
+    expect(isLdapInfrastructureError(new Error('connect ECONNREFUSED'))).toBe(true);
+    expect(isLdapInfrastructureError(new Error('Invalid credentials'))).toBe(false);
   });
 });

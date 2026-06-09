@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useT } from '@/lib/i18n';
 
@@ -36,8 +37,13 @@ export default function LoginPage(): JSX.Element {
       } else {
         nav('/dashboard');
       }
-    } catch {
-      setError(t('login.invalid'));
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 503) {
+        const msg = err.response?.data?.error?.message;
+        setError(typeof msg === 'string' && msg.length ? msg : t('login.invalid'));
+      } else {
+        setError(t('login.invalid'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -70,11 +76,12 @@ export default function LoginPage(): JSX.Element {
           <label className="block">
             <span className="text-sm font-medium">{t('login.email')}</span>
             <input
-              type="email"
+              type="text"
               required
-              autoComplete="email"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="email@example.com or directory username"
               className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 dark:bg-slate-700 px-3 py-2 border"
             />
           </label>

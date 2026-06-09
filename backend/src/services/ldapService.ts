@@ -4,12 +4,17 @@ import { Client } from 'ldapts';
 import { decrypt } from '../lib/crypto.js';
 import { Errors } from '../lib/errors.js';
 
-// Result of a successful LDAP authentication.
+// Result of a successful LDAP authentication or profile lookup.
 export interface LdapAuthResult {
   // Distinguished name — used as User.externalId.
   dn: string;
   email: string;
   displayName: string;
+  ldapUsername: string | null;
+  userPrincipalName: string | null;
+  department: string | null;
+  jobTitle: string | null;
+  managerName: string | null;
   // DNs of groups the user belongs to. Empty if no group lookup happened.
   groups: string[];
 }
@@ -93,6 +98,53 @@ async function withClient<T>(
   }
 }
 
+function entryAttr(entry: Record<string, unknown>, name: string): string | null {
+  const v = entry[name];
+  if (v == null) return null;
+  if (Array.isArray(v)) return v.length ? String(v[0]) : null;
+  return String(v);
+}
+
+function userSearchFilter(directory: Directory, identifier: string): string {
+  const escaped = escapeFilter(identifier);
+  const byEmail = `(${directory.emailAttr}=${escaped})`;
+  const byUserId = `(${directory.userIdAttr}=${escaped})`;
+  const byUpn = '(userPrincipalName=' + escaped + ')';
+  const match = directory.userIdAttr === 'userPrincipalName'
+    ? `(|${byEmail}${byUserId})`
+    : `(|${byEmail}${byUserId}${byUpn})`;
+  return directory.userFilter ? `(&${directory.userFilter}${match})` : match;
+}
+
+const PROFILE_ATTRS = (directory: Directory) => [
+  directory.userIdAttr,
+  directory.emailAttr,
+  directory.nameAttr,
+  'userPrincipalName',
+  'department',
+  'title',
+  'manager',
+  'dn',
+];
+
+function profileFromEntry(
+  directory: Directory,
+  entry: Record<string, unknown>,
+  fallbackIdentifier: string,
+  managerName: string | null,
+): Omit<LdapAuthResult, 'groups'> {
+  return {
+    dn: String(entry.dn),
+    email: entryAttr(entry, directory.emailAttr) ?? fallbackIdentifier,
+    displayName: entryAttr(entry, directory.nameAttr) ?? fallbackIdentifier,
+    ldapUsername: entryAttr(entry, directory.userIdAttr),
+    userPrincipalName: entryAttr(entry, 'userPrincipalName'),
+    department: entryAttr(entry, 'department'),
+    jobTitle: entryAttr(entry, 'title'),
+    managerName,
+  };
+}
+
 export class LdapService {
   // Search-then-bind authentication. Returns the user's DN + attributes + group
   // DNs on success, or null on bad credentials / not found. Throws on
@@ -100,7 +152,7 @@ export class LdapService {
   // "wrong password" cases.
   async authenticate(
     directory: Directory,
-    email: string,
+    identifier: string,
     password: string,
   ): Promise<LdapAuthResult | null> {
     if (!directory.host) throw Errors.badRequest('Directory host missing');
@@ -110,64 +162,92 @@ export class LdapService {
     }
 
     const bindPassword = decrypt(directory.bindPasswordEnc);
-
-    // Step 1: bind as the service account and search for the user.
-    let userDn = '';
-    let attrs: { email: string; name: string } = { email, name: email };
-    await withClient(directory, async (adminClient) => {
-      await adminClient.bind(directory.bindDN!, bindPassword);
-
-      const escaped = escapeFilter(email);
-      const baseFilter = `(${directory.emailAttr}=${escaped})`;
-      const filter = directory.userFilter
-        ? `(&${directory.userFilter}${baseFilter})`
-        : baseFilter;
-
-      const { searchEntries } = await adminClient.search(directory.baseDN!, {
-        scope: 'sub',
-        filter,
-        attributes: [
-          directory.userIdAttr,
-          directory.emailAttr,
-          directory.nameAttr,
-          'dn',
-        ],
-        sizeLimit: 2,
-      });
-
-      if (searchEntries.length === 0) return;
-      if (searchEntries.length > 1) {
-        throw Errors.internal(
-          `Ambiguous LDAP search: multiple entries for ${email}. Check userFilter.`,
-        );
-      }
-      const entry = searchEntries[0]!;
-      userDn = entry.dn;
-      attrs = {
-        email: String(entry[directory.emailAttr] ?? email),
-        name: String(entry[directory.nameAttr] ?? email),
-      };
-    });
-
-    if (!userDn) return null;
+    const resolvedProfile = await this.searchUserProfile(directory, identifier, bindPassword);
+    if (!resolvedProfile) return null;
 
     // Step 2: rebind as the user with the supplied password.
     try {
       await withClient(directory, async (userClient) => {
-        await userClient.bind(userDn, password);
+        await userClient.bind(resolvedProfile.dn, password);
       });
     } catch {
       return null;
     }
 
-    const groups = await this.fetchGroups(directory, userDn).catch(() => [] as string[]);
+    const groups = await this.fetchGroups(directory, resolvedProfile.dn).catch(() => [] as string[]);
+    return { ...resolvedProfile, groups };
+  }
 
-    return {
-      dn: userDn,
-      email: attrs.email,
-      displayName: attrs.name,
-      groups,
-    };
+  private async searchUserProfile(
+    directory: Directory,
+    identifier: string,
+    bindPassword: string,
+  ): Promise<Omit<LdapAuthResult, 'groups'> | null> {
+    return withClient(directory, async (adminClient) => {
+      await adminClient.bind(directory.bindDN!, bindPassword);
+
+      const filter = userSearchFilter(directory, identifier);
+      const { searchEntries } = await adminClient.search(directory.baseDN!, {
+        scope: 'sub',
+        filter,
+        attributes: PROFILE_ATTRS(directory),
+        sizeLimit: 2,
+      });
+
+      if (searchEntries.length === 0) return null;
+      if (searchEntries.length > 1) {
+        throw Errors.internal(
+          `Ambiguous LDAP search: multiple entries for ${identifier}. Check userFilter.`,
+        );
+      }
+      const entry = searchEntries[0]! as Record<string, unknown>;
+      const managerDn = entryAttr(entry, 'manager');
+      const managerName = managerDn
+        ? await this.resolveManagerName(adminClient, managerDn)
+        : null;
+      return profileFromEntry(directory, entry, identifier, managerName);
+    });
+  }
+
+  // Service-account profile refresh — no password bind. Used by admin sync.
+  async fetchUserProfile(directory: Directory, userDn: string): Promise<LdapAuthResult | null> {
+    if (!directory.host || !directory.baseDN || !directory.bindDN || !directory.bindPasswordEnc) {
+      throw Errors.badRequest('Directory LDAP connection is not fully configured');
+    }
+    const bindPassword = decrypt(directory.bindPasswordEnc);
+
+    return withClient(directory, async (client) => {
+      await client.bind(directory.bindDN!, bindPassword);
+      const { searchEntries } = await client.search(userDn, {
+        scope: 'base',
+        filter: '(objectClass=*)',
+        attributes: PROFILE_ATTRS(directory),
+      });
+      if (!searchEntries.length) return null;
+      const entry = searchEntries[0]! as Record<string, unknown>;
+      const managerDn = entryAttr(entry, 'manager');
+      const managerName = managerDn
+        ? await this.resolveManagerName(client, managerDn)
+        : null;
+      const profile = profileFromEntry(directory, entry, userDn, managerName);
+      const groups = await this.fetchGroups(directory, userDn).catch(() => [] as string[]);
+      return { ...profile, groups };
+    });
+  }
+
+  private async resolveManagerName(client: Client, managerDn: string): Promise<string | null> {
+    try {
+      const { searchEntries } = await client.search(managerDn, {
+        scope: 'base',
+        filter: '(objectClass=*)',
+        attributes: ['cn', 'displayName'],
+      });
+      if (!searchEntries.length) return null;
+      const entry = searchEntries[0]! as Record<string, unknown>;
+      return entryAttr(entry, 'displayName') ?? entryAttr(entry, 'cn');
+    } catch {
+      return null;
+    }
   }
 
   async fetchGroups(directory: Directory, userDn: string): Promise<string[]> {
@@ -230,4 +310,22 @@ export class LdapService {
       return { ok: false, message };
     }
   }
+}
+
+// True when the error looks like a directory connectivity / TLS failure
+// rather than bad credentials.
+export function isLdapInfrastructureError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes('econnrefused')
+    || msg.includes('econnreset')
+    || msg.includes('etimedout')
+    || msg.includes('enotfound')
+    || msg.includes('getaddrinfo')
+    || msg.includes('certificate')
+    || msg.includes('tls')
+    || msg.includes('socket')
+    || msg.includes('timeout')
+  );
 }

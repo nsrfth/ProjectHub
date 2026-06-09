@@ -1,4 +1,4 @@
-import { Prisma, type GlobalRole } from '@prisma/client';
+import { Prisma, type AuthSource, type GlobalRole, type User } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { hashPassword } from '../lib/hashing.js';
@@ -17,9 +17,16 @@ export interface AdminUserView {
   emailVerifiedAt: Date | null;
   createdAt: Date;
   membershipCount: number;
-  // v1.32.0: surfaced so the admin UI can hide local-password actions for
-  // directory-owned users (LDAP/SCIM). Null for local-password accounts.
   directoryId: string | null;
+  authSource: AuthSource;
+  ldapUsername: string | null;
+  userPrincipalName: string | null;
+  department: string | null;
+  jobTitle: string | null;
+  managerName: string | null;
+  ldapSyncedAt: Date | null;
+  directoryName: string | null;
+  directoryActive: boolean;
 }
 
 export interface AdminTeamView {
@@ -36,7 +43,47 @@ export interface Page<T> {
   nextCursor: string | null;
 }
 
+type UserWithCounts = User & {
+  _count: { memberships: number };
+  directory: { name: string; host: string | null } | null;
+};
+
+function toAdminUserView(u: UserWithCounts): AdminUserView {
+  const linked = !!u.directoryId;
+  return {
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    globalRole: u.globalRole,
+    emailVerifiedAt: u.emailVerifiedAt,
+    createdAt: u.createdAt,
+    membershipCount: u._count.memberships,
+    directoryId: u.directoryId,
+    authSource: linked ? u.authSource : 'LOCAL',
+    ldapUsername: u.ldapUsername,
+    userPrincipalName: u.userPrincipalName,
+    department: u.department,
+    jobTitle: u.jobTitle,
+    managerName: u.managerName,
+    ldapSyncedAt: u.ldapSyncedAt,
+    directoryName: u.directory?.name ?? null,
+    directoryActive: linked && !!u.directory?.host,
+  };
+}
+
 export class AdminService {
+  async getUserView(userId: string): Promise<AdminUserView> {
+    const u = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        _count: { select: { memberships: true } },
+        directory: { select: { name: true, host: true } },
+      },
+    });
+    if (!u) throw Errors.notFound('User not found');
+    return toAdminUserView(u);
+  }
+
   async listUsers(opts: { cursor?: string; limit: number }): Promise<Page<AdminUserView>> {
     // Cursor pagination: fetch limit+1 to know if there's a next page without
     // a separate count query. The last item is the cursor for the next page.
@@ -44,22 +91,16 @@ export class AdminService {
       orderBy: { createdAt: 'asc' },
       take: opts.limit + 1,
       ...(opts.cursor && { cursor: { id: opts.cursor }, skip: 1 }),
-      include: { _count: { select: { memberships: true } } },
+      include: {
+        _count: { select: { memberships: true } },
+        directory: { select: { name: true, host: true } },
+      },
     });
     const hasMore = rows.length > opts.limit;
     const page = hasMore ? rows.slice(0, opts.limit) : rows;
     const last = page[page.length - 1];
     return {
-      items: page.map((u) => ({
-        id: u.id,
-        email: u.email,
-        name: u.name,
-        globalRole: u.globalRole,
-        emailVerifiedAt: u.emailVerifiedAt,
-        createdAt: u.createdAt,
-        membershipCount: u._count.memberships,
-        directoryId: u.directoryId,
-      })),
+      items: page.map(toAdminUserView),
       nextCursor: hasMore && last ? last.id : null,
     };
   }
@@ -90,18 +131,12 @@ export class AdminService {
     const updated = await prisma.user.update({
       where: { id: targetUserId },
       data: { globalRole: newRole },
-      include: { _count: { select: { memberships: true } } },
+      include: {
+        _count: { select: { memberships: true } },
+        directory: { select: { name: true, host: true } },
+      },
     });
-    return {
-      id: updated.id,
-      email: updated.email,
-      name: updated.name,
-      globalRole: updated.globalRole,
-      emailVerifiedAt: updated.emailVerifiedAt,
-      createdAt: updated.createdAt,
-      membershipCount: updated._count.memberships,
-      directoryId: updated.directoryId,
-    };
+    return toAdminUserView(updated);
   }
 
   async listTeams(opts: { cursor?: string; limit: number }): Promise<Page<AdminTeamView>> {
@@ -186,22 +221,14 @@ export class AdminService {
           email: input.email,
           name: input.name,
           passwordHash,
+          authSource: 'LOCAL',
           globalRole: input.globalRole,
           emailVerifiedAt: input.emailVerified ? new Date() : null,
         },
         include: { _count: { select: { memberships: true } } },
       });
       return {
-        user: {
-          id: created.id,
-          email: created.email,
-          name: created.name,
-          globalRole: created.globalRole,
-          emailVerifiedAt: created.emailVerifiedAt,
-          createdAt: created.createdAt,
-          membershipCount: created._count.memberships,
-          directoryId: created.directoryId,
-        },
+        user: toAdminUserView({ ...created, directory: null }),
         generatedPassword,
       };
     } catch (err) {

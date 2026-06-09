@@ -130,6 +130,7 @@ export class ScimService {
       data: {
         directoryId,
         externalId: externalId ?? null,
+        authSource: 'SCIM',
         email,
         name: combinedName({ displayName, ...name, userName }),
         passwordHash: null,

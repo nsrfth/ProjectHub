@@ -1,6 +1,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AdminService, AdminUserView, AdminTeamView } from '../services/adminService.js';
-import type { AdminResetPasswordBody, CreateUserBody, ListQuery } from '../schemas/admin.js';
+import type { AuthService } from '../services/authService.js';
+import type {
+  AdminResetPasswordBody,
+  CreateUserBody,
+  ListQuery,
+  LdapTestAuthBody,
+} from '../schemas/admin.js';
 import { Errors } from '../lib/errors.js';
 
 type UserParams = { userId: string };
@@ -11,6 +17,7 @@ function serializeUser(u: AdminUserView) {
     ...u,
     emailVerifiedAt: u.emailVerifiedAt ? u.emailVerifiedAt.toISOString() : null,
     createdAt: u.createdAt.toISOString(),
+    ldapSyncedAt: u.ldapSyncedAt ? u.ldapSyncedAt.toISOString() : null,
   };
 }
 
@@ -19,7 +26,10 @@ function serializeTeam(t: AdminTeamView) {
 }
 
 export class AdminController {
-  constructor(private readonly svc: AdminService) {}
+  constructor(
+    private readonly svc: AdminService,
+    private readonly auth: AuthService,
+  ) {}
 
   listUsers = async (
     req: FastifyRequest<{ Querystring: ListQuery }>,
@@ -80,5 +90,22 @@ export class AdminController {
       req.body.password,
     );
     return reply.send({ generatedPassword });
+  };
+
+  refreshLdapUser = async (
+    req: FastifyRequest<{ Params: UserParams }>,
+    reply: FastifyReply,
+  ) => {
+    await this.auth.refreshLdapUserProfile(req.params.userId);
+    const view = await this.svc.getUserView(req.params.userId);
+    return reply.send(serializeUser(view));
+  };
+
+  testLdapUserAuth = async (
+    req: FastifyRequest<{ Params: UserParams; Body: LdapTestAuthBody }>,
+    reply: FastifyReply,
+  ) => {
+    await this.auth.testLdapUserCredentials(req.params.userId, req.body.password);
+    return reply.send({ ok: true as const });
   };
 }

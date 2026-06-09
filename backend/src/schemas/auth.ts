@@ -15,7 +15,8 @@ export const passwordSchema = z
 // in schemas/admin.ts (createUserBody).
 
 export const loginBody = z.object({
-  email: z.string().email().toLowerCase(),
+  // Accepts email or LDAP username (sAMAccountName). Lowercased for lookup.
+  email: z.string().min(1).max(254).transform((s) => s.trim().toLowerCase()),
   password: z.string().min(1).max(200),
 });
 
@@ -55,6 +56,7 @@ export const userResponse = z.object({
   // for LDAP-managed accounts.
   directoryId: z.string().nullable().default(null),
   externalId: z.string().nullable().default(null),
+  authSource: z.enum(['LOCAL', 'LDAP', 'SCIM']).default('LOCAL'),
   // Phase 2C: surfaced so the Settings → Security page can render the
   // correct "enable" vs "disable" affordance without a second round-trip.
   totpEnabled: z.boolean().default(false),
