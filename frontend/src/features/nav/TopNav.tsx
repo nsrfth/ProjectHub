@@ -19,10 +19,8 @@ const TITLE_BY_PREFIX: Array<[string, MessageKey]> = [
   ['/dashboard', 'nav.dashboard'],
   ['/teams', 'nav.teams'],
   ['/projects', 'nav.projects'],
-  ['/calendar', 'nav.calendar'],
+  ['/planner', 'nav.planner'],
   ['/reports', 'nav.reports'],
-  ['/trash', 'nav.dashboard'], // fall through to a generic header
-  ['/admin', 'nav.admin'],
   ['/settings', 'nav.settings'],
   ['/search', 'search.title'],
 ];

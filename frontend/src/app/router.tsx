@@ -48,7 +48,7 @@ export const router = createBrowserRouter([
       { path: '/projects/:projectId/tasks/:taskId', element: <TaskDetailPage /> },
       // v1.42: per-project Gantt report.
       { path: '/projects/:projectId/reports/gantt', element: <ProjectGanttPage /> },
-      { path: '/admin', element: <AdminPage /> },
+      { path: '/admin', element: <Navigate to="/settings/admin" replace /> },
       { path: '/reports', element: <ReportsPage /> },
       { path: '/calendar', element: <Navigate to="/planner/calendar" replace /> },
       {
@@ -63,7 +63,7 @@ export const router = createBrowserRouter([
           { path: 'my-tasks', element: <MyTasksPage /> },
         ],
       },
-      { path: '/trash', element: <TrashPage /> },
+      { path: '/trash', element: <Navigate to="/settings/trash" replace /> },
       { path: '/search', element: <SearchPage /> },
       { path: '/help', element: <HelpPage /> },
       { path: '/about', element: <AboutPage /> },
@@ -80,6 +80,8 @@ export const router = createBrowserRouter([
           { path: 'audit', element: <AuditPage /> },
           { path: 'api', element: <ApiWebhooksPage /> },
           { path: 'backups', element: <BackupsPage /> },
+          { path: 'trash', element: <TrashPage /> },
+          { path: 'admin', element: <AdminPage /> },
         ],
       },
     ],

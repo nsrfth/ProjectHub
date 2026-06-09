@@ -3,7 +3,6 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
 import { useT } from '@/lib/i18n';
 import {
-  IconAdmin,
   IconCalendar,
   IconClose,
   IconDashboard,
@@ -11,7 +10,6 @@ import {
   IconReports,
   IconSettings,
   IconTeams,
-  IconTrash,
 } from './icons';
 import { BrandMark, BrandWordmark } from '@/features/brand/BrandMark';
 
@@ -30,7 +28,6 @@ interface NavItem {
   to: string;
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
-  adminOnly?: boolean;
 }
 
 function initials(name: string | undefined, email: string | undefined): string {
@@ -53,10 +50,8 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
     { to: '/planner/my-tasks', label: t('nav.planner'), icon: IconCalendar },
     { to: '/reports', label: t('nav.reports'), icon: IconReports },
     { to: '/settings/preferences', label: t('nav.settings'), icon: IconSettings },
-    { to: '/trash', label: t('nav.trash'), icon: IconTrash },
-    { to: '/admin', label: t('nav.admin'), icon: IconAdmin, adminOnly: true },
   ];
-  const visible = items.filter((it) => !it.adminOnly || user?.globalRole === 'ADMIN');
+  const visible = items;
 
   return (
     <>

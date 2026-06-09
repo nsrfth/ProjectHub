@@ -57,7 +57,7 @@ export default function TrashPage(): JSX.Element {
 
   if (!currentTeam) {
     return (
-      <div className="p-8 max-w-3xl mx-auto">
+      <div className="max-w-3xl">
         <p className="text-sm text-slate-500">
           Select or <Link to="/teams" className="underline">create a team</Link> first.
         </p>
@@ -68,7 +68,7 @@ export default function TrashPage(): JSX.Element {
   const totalItems = (data?.tasks.length ?? 0) + (data?.comments.length ?? 0);
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="max-w-4xl">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold">Trash</h1>

@@ -28,6 +28,12 @@ const NAV: NavItem[] = [
     descriptionKey: 'settings.nav.preferencesDesc',
     roles: ['ADMIN', 'MANAGER', 'MEMBER'],
   },
+  {
+    to: '/settings/trash',
+    labelKey: 'settings.nav.trash',
+    descriptionKey: 'settings.nav.trashDesc',
+    roles: ['ADMIN', 'MANAGER', 'MEMBER'],
+  },
   // v1.23: per-team roles + permission matrix. Listing is open to any
   // team member; mutations gated by team.manage_roles on the server.
   {
@@ -81,6 +87,12 @@ const NAV: NavItem[] = [
     to: '/settings/backups',
     labelKey: 'settings.nav.backups',
     descriptionKey: 'settings.nav.backupsDesc',
+    roles: ['ADMIN'],
+  },
+  {
+    to: '/settings/admin',
+    labelKey: 'settings.nav.admin',
+    descriptionKey: 'settings.nav.adminDesc',
     roles: ['ADMIN'],
   },
 ];

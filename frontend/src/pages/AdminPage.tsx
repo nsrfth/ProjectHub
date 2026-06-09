@@ -215,7 +215,7 @@ export default function AdminPage(): JSX.Element {
   void teamsPageData;
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="max-w-5xl">
       <h1 className="text-2xl font-semibold mb-6">Admin</h1>
 
       {/* v1.26: admin-provisioned user. Email + name + password (or auto-
