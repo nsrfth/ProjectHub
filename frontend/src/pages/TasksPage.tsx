@@ -16,7 +16,6 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useTeams } from '@/features/teams/TeamsContext';
 import { useProjectTeam } from '@/features/projects/useProjectTeam';
 import * as tasksApi from '@/features/tasks/api';
 import * as labelsApi from '@/features/labels/api';
@@ -190,7 +189,6 @@ function Column({ status, tasks, children }: ColumnProps): JSX.Element {
 
 export default function TasksPage(): JSX.Element {
   const { projectId } = useParams<{ projectId: string }>();
-  const { currentTeam } = useTeams();
   const { teamId, project, projectTeam } = useProjectTeam(projectId);
   const qc = useQueryClient();
   const nav = useNavigate();
