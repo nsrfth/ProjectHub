@@ -115,3 +115,38 @@ export function adoptServerWeekend(serverPref: number[] | undefined | null): voi
 export function isWeekend(date: Date): boolean {
   return _weekendDays.includes(date.getUTCDay());
 }
+
+// ── Week layout ───────────────────────────────────────────────────────────
+// Derive the first column of 7-day calendar rows from the off-day set.
+// JS convention: 0=Sun .. 6=Sat. Both supported presets (Sat+Sun and
+// Thu+Fri weekends) display Saturday → … → Friday. Custom configs pick
+// the start day that clusters off-days at the start or end of the row.
+
+export function getWeekStartDay(offDays?: number[]): number {
+  return deriveWeekStartDay(sanitiseDays(offDays ?? _weekendDays));
+}
+
+function deriveWeekStartDay(off: number[]): number {
+  if (off.length === 0) return 0;
+
+  // Western Sat+Sun off ([0, 6]) and Iranian Thu+Fri off ([4, 5]).
+  if (off.includes(0) && off.includes(6)) return 6;
+  if (off.includes(4) && off.includes(5)) return 6;
+
+  // Future custom sets: prefer a row start where off-days sit in the first
+  // two or last two columns; tie-break toward Saturday (6).
+  let bestStart = 6;
+  let bestScore = -1;
+  for (let start = 0; start < 7; start++) {
+    let score = 0;
+    for (let i = 0; i < 7; i++) {
+      if (!off.includes((start + i) % 7)) continue;
+      if (i <= 1 || i >= 5) score++;
+    }
+    if (score > bestScore || (score === bestScore && start === 6)) {
+      bestScore = score;
+      bestStart = start;
+    }
+  }
+  return bestStart;
+}

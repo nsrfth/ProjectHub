@@ -3,7 +3,18 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTeams } from '@/features/teams/TeamsContext';
 import { fetchCalendar, type CalendarTask } from '@/features/calendar/api';
-import { getWeekendDays, isWeekend } from '@/lib/calendar';
+import { getWeekStartDay, getWeekendDays, isWeekend } from '@/lib/calendar';
+import {
+  addDaysUtc,
+  addMonthsUtc,
+  DAY_NAMES_FULL,
+  getOrderedWeekdayIndices,
+  getOrderedWeekdayLabels,
+  rangeForCalendarView,
+  sameDayUtc,
+  utcDay,
+  type CalendarViewMode,
+} from '@/lib/calendarWeek';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
 
 // v1.12: Calendar views page. Reads tasks across every project in the
@@ -13,15 +24,16 @@ import { formatShamsiCalendarDate } from '@/lib/shamsi';
 //               config drives which 5 days appear AND where the cursor
 //               lands (e.g. on a Western SAT_SUN config, work-week starts
 //               Monday; on Iranian THU_FRI, work-week starts Saturday).
-//   week      — 7 cells, always Sun..Sat. Off-days still painted red.
-//   month     — 6-row grid (42 cells). Off-days red, days outside the
-//               current month dimmed.
+//   week      — 7 cells anchored at the instance work-week start day
+//               (Saturday for Sat+Sun and Thu+Fri presets). Off-days red.
+//   month     — 6-row grid (42 cells) with the same week-start column.
+//               Off-days red, days outside the current month dimmed.
 //
 // Task fetch uses the `dueDate` field by default — that's the date most
 // teams plan against. The picker on the toolbar lets a user switch to
 // `plannedDate` for the timeliness-flavoured view.
 
-type ViewMode = 'work-week' | 'week' | 'month';
+type ViewMode = CalendarViewMode;
 type DateField = 'due' | 'planned';
 // v1.33: team selector. Either a specific team id, or 'all' to fan out
 // the same /teams/:teamId/calendar call across every team the caller
@@ -29,63 +41,6 @@ type DateField = 'due' | 'planned';
 // so chips visually disambiguate teams without any new endpoint.
 const ALL_TEAMS = 'all' as const;
 type TeamSelection = typeof ALL_TEAMS | string;
-
-const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function utcDay(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
-function addDaysUtc(d: Date, n: number): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + n));
-}
-function addMonthsUtc(d: Date, n: number): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, d.getUTCDate()));
-}
-function sameDayUtc(a: Date, b: Date): boolean {
-  return a.getUTCFullYear() === b.getUTCFullYear()
-    && a.getUTCMonth() === b.getUTCMonth()
-    && a.getUTCDate() === b.getUTCDate();
-}
-
-// First non-off-day on/after `from`. Used to anchor work-week mode so the
-// week starts on a workday even when the cursor lands on a weekend.
-function firstWorkdayOnOrAfter(from: Date, off: number[]): Date {
-  let d = utcDay(from);
-  for (let i = 0; i < 7; i++) {
-    if (!off.includes(d.getUTCDay())) return d;
-    d = addDaysUtc(d, 1);
-  }
-  return utcDay(from);
-}
-
-// Pick the visible date range for the chosen view, anchored at `cursor`.
-function rangeFor(view: ViewMode, cursor: Date, off: number[]): { start: Date; end: Date; cells: Date[] } {
-  if (view === 'work-week') {
-    const start = firstWorkdayOnOrAfter(cursor, off);
-    const cells: Date[] = [];
-    let d = start;
-    while (cells.length < 5) {
-      if (!off.includes(d.getUTCDay())) cells.push(d);
-      d = addDaysUtc(d, 1);
-    }
-    const end = addDaysUtc(cells[cells.length - 1]!, 1);
-    return { start, end, cells };
-  }
-  if (view === 'week') {
-    // Sunday-anchored week containing `cursor`. Off-day independent.
-    const c = utcDay(cursor);
-    const start = addDaysUtc(c, -c.getUTCDay());
-    const cells = Array.from({ length: 7 }, (_, i) => addDaysUtc(start, i));
-    return { start, end: addDaysUtc(start, 7), cells };
-  }
-  // month — 6 weeks, padded on both ends to fill the leading/trailing
-  // partial rows. Sunday-leading rows.
-  const first = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 1));
-  const start = addDaysUtc(first, -first.getUTCDay());
-  const cells = Array.from({ length: 42 }, (_, i) => addDaysUtc(start, i));
-  return { start, end: addDaysUtc(start, 42), cells };
-}
 
 function shortLabel(d: Date, monthMode: boolean): string {
   // Shamsi-aware short label for the cell header — the calendar setting
@@ -102,6 +57,9 @@ export default function CalendarPage(): JSX.Element {
   const { teams, currentTeam } = useTeams();
   const nav = useNavigate();
   const off = getWeekendDays();
+  const weekStart = getWeekStartDay(off);
+  const weekdayColumns = useMemo(() => getOrderedWeekdayIndices(weekStart), [weekStart]);
+  const weekdayHeaderLabels = useMemo(() => getOrderedWeekdayLabels(true, weekStart), [weekStart]);
 
   const [view, setView] = useState<ViewMode>('week');
   const [field, setField] = useState<DateField>('due');
@@ -134,7 +92,10 @@ export default function CalendarPage(): JSX.Element {
   const isAllTeams = selectedTeam === ALL_TEAMS;
   const singleTeamId = isAllTeams ? null : selectedTeam;
 
-  const { start, end, cells } = useMemo(() => rangeFor(view, cursor, off), [view, cursor, off]);
+  const { start, end, cells } = useMemo(
+    () => rangeForCalendarView(view, cursor, off),
+    [view, cursor, off],
+  );
 
   // Single-team query — used when one specific team is selected.
   const singleTeamQuery = useQuery({
@@ -351,10 +312,10 @@ export default function CalendarPage(): JSX.Element {
       {/* Header row of weekday names — only meaningful in week + month modes. */}
       {view !== 'work-week' && (
         <div className="grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 text-xs text-slate-600">
-          {DAY_NAMES_SHORT.map((label, idx) => (
+          {weekdayHeaderLabels.map((label, idx) => (
             <div
-              key={idx}
-              className={`bg-white text-center py-1 ${off.includes(idx) ? 'text-red-600 font-medium' : ''}`}
+              key={weekdayColumns[idx]}
+              className={`bg-white text-center py-1 ${off.includes(weekdayColumns[idx]!) ? 'text-red-600 font-medium' : ''}`}
             >
               {label}
             </div>
