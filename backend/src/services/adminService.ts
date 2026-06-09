@@ -2,7 +2,8 @@ import { Prisma, type AuthSource, type GlobalRole, type User } from '@prisma/cli
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { hashPassword } from '../lib/hashing.js';
-import { randomBytes } from 'node:crypto';
+import { generateCompliantPassword } from '../lib/passwordPolicy.js';
+import { passwordPolicyService } from './passwordPolicyService.js';
 
 // Admin operations bypass team-level RBAC and instead require GlobalRole=ADMIN
 // (enforced by the route layer). The hard invariant this service guards is
@@ -206,13 +207,17 @@ export class AdminService {
     // Resolve password: caller-supplied wins; otherwise generate a 20-char
     // URL-safe token. The schema validator already enforced the policy when
     // a password was supplied, so we trust it here.
+    const policy = await passwordPolicyService.getPolicy();
     const generatedPassword = input.password
       ? null
-      : // 15 bytes -> 20 base64 chars; strip URL-unfriendly chars to keep it
-        // copy-paste-safe (no + / =) and add a trailing digit so it always
-        // satisfies the "must contain digits" rule.
-        (randomBytes(15).toString('base64').replace(/[+/=]/g, '').slice(0, 19) + '7');
+      : generateCompliantPassword(policy);
     const plaintext = input.password ?? generatedPassword!;
+    if (input.password) {
+      await passwordPolicyService.assertValid(plaintext, {
+        email: input.email,
+        name: input.name,
+      });
+    }
     const passwordHash = await hashPassword(plaintext);
 
     try {
@@ -221,6 +226,7 @@ export class AdminService {
           email: input.email,
           name: input.name,
           passwordHash,
+          passwordChangedAt: new Date(),
           authSource: 'LOCAL',
           globalRole: input.globalRole,
           emailVerifiedAt: input.emailVerified ? new Date() : null,
@@ -260,19 +266,25 @@ export class AdminService {
       );
     }
 
+    const policy = await passwordPolicyService.getPolicy();
     const generatedPassword = suppliedPassword
       ? null
-      : (randomBytes(15).toString('base64').replace(/[+/=]/g, '').slice(0, 19) + '7');
+      : generateCompliantPassword(policy);
     const plaintext = suppliedPassword ?? generatedPassword!;
-    const passwordHash = await hashPassword(plaintext);
+    await passwordPolicyService.assertValid(plaintext, {
+      email: target.email,
+      name: target.name,
+    });
+    await passwordPolicyService.assertNotReused(targetUserId, plaintext);
 
+    const passwordHash = await hashPassword(plaintext);
     await prisma.$transaction([
-      prisma.user.update({ where: { id: targetUserId }, data: { passwordHash } }),
       prisma.refreshToken.updateMany({
         where: { userId: targetUserId, revokedAt: null },
         data: { revokedAt: new Date() },
       }),
     ]);
+    await passwordPolicyService.recordPasswordChange(targetUserId, passwordHash);
     return { generatedPassword };
   }
 

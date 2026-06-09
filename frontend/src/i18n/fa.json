@@ -136,6 +136,8 @@
   "settings.nav.apiDesc": "توکن‌های شخصی + وب‌هوک تیم",
   "settings.nav.backups": "پشتیبان‌گیری",
   "settings.nav.backupsDesc": "پشتیبان‌گیری زمان‌بندی‌شده از پایگاه داده",
+  "settings.nav.taskhub": "تسک‌هاب",
+  "settings.nav.taskhubDesc": "پورت سرور و گواهی SSL",
   "settings.nav.labels": "برچسب‌ها",
   "settings.nav.labelsDesc": "برچسب‌های تیمی برای تسک‌ها",
 

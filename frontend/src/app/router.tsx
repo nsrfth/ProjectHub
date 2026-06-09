@@ -16,6 +16,7 @@ import ApiWebhooksPage from '@/pages/settings/ApiWebhooksPage';
 import PreferencesPage from '@/pages/settings/PreferencesPage';
 import RolesPage from '@/pages/settings/RolesPage';
 import BackupsPage from '@/pages/settings/BackupsPage';
+import TaskhubPage from '@/pages/settings/TaskhubPage';
 import LabelsPage from '@/pages/settings/LabelsPage';
 import SearchPage from '@/pages/SearchPage';
 import HelpPage from '@/pages/HelpPage';
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
           { path: 'roles', element: <RolesPage /> },
           { path: 'labels', element: <LabelsPage /> },
           { path: 'directories', element: <DirectoriesPage /> },
+          { path: 'taskhub', element: <TaskhubPage /> },
           { path: 'security', element: <SecurityPage /> },
           { path: 'audit', element: <AuditPage /> },
           { path: 'api', element: <ApiWebhooksPage /> },

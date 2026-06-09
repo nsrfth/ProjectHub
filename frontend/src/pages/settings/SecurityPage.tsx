@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useT } from '@/lib/i18n';
@@ -12,6 +12,12 @@ import {
   twoFactorSetup,
   type TwoFactorSetup,
 } from '@/features/auth/api';
+import {
+  fetchAdminPasswordPolicy,
+  updateAdminPasswordPolicy,
+  type PasswordPolicy,
+} from '@/features/security/passwordPolicyApi';
+import { PasswordPolicyHints, PasswordStrengthIndicator } from '@/features/security/PasswordStrength';
 
 // Settings → Security. Phase 2C surfaces TOTP enrolment + disable + recovery
 // code regeneration. Future phases (password rotation policy, sign-in log
@@ -56,6 +62,8 @@ export default function SecurityPage(): JSX.Element {
           <ChangePasswordPanel />
         )}
       </div>
+
+      {user?.globalRole === 'ADMIN' && <AdminPasswordPolicySection />}
 
       <div className="border rounded p-4">
         <h3 className="font-medium mb-1">Two-factor authentication</h3>
@@ -120,13 +128,14 @@ function ChangePasswordPanel(): JSX.Element {
         onChange={setNext}
         autoComplete="new-password"
       />
+      <PasswordStrengthIndicator password={next} />
       <Field
         label={t('security.password.confirm')}
         value={confirm}
         onChange={setConfirm}
         autoComplete="new-password"
       />
-      <p className="text-xs text-slate-500">{t('security.password.policyHint')}</p>
+      <PasswordPolicyHints />
       {error && <p className="text-red-600 text-xs">{error}</p>}
       <button
         type="submit"
@@ -136,6 +145,139 @@ function ChangePasswordPanel(): JSX.Element {
         {mut.isPending ? t('security.password.submitting') : t('security.password.submit')}
       </button>
     </form>
+  );
+}
+
+function AdminPasswordPolicySection(): JSX.Element {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin', 'password-policy'],
+    queryFn: fetchAdminPasswordPolicy,
+  });
+  const [form, setForm] = useState<PasswordPolicy | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const policy = form ?? data ?? null;
+
+  const saveMut = useMutation({
+    mutationFn: () => updateAdminPasswordPolicy(policy!),
+    onSuccess: () => {
+      setMsg('Password policy updated.');
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ['system', 'password-policy'] });
+    },
+    onError: (e) => setErr(errorMessage(e, 'Could not save policy')),
+  });
+
+  if (isLoading || !policy) {
+    return <div className="border rounded p-4 text-sm text-slate-500">Loading password policy…</div>;
+  }
+
+  function set<K extends keyof PasswordPolicy>(key: K, value: PasswordPolicy[K]): void {
+    setForm({ ...(policy as PasswordPolicy), [key]: value });
+  }
+
+  return (
+    <div className="border rounded p-4 space-y-3">
+      <h3 className="font-medium">Local password policy</h3>
+      <p className="text-xs text-slate-500">
+        Applies to local TaskHub accounts only. LDAP / Active Directory users follow directory rules.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+        <label className="block">
+          Minimum length
+          <input
+            type="number"
+            min={6}
+            max={128}
+            value={policy.minLength}
+            onChange={(e) => set('minLength', Number(e.target.value))}
+            className="mt-1 block w-full rounded border px-2 py-1 dark:bg-slate-700"
+          />
+        </label>
+        <label className="block">
+          Password expiration (days, 0 = off)
+          <input
+            type="number"
+            min={0}
+            value={policy.passwordExpirationDays}
+            onChange={(e) => set('passwordExpirationDays', Number(e.target.value))}
+            className="mt-1 block w-full rounded border px-2 py-1 dark:bg-slate-700"
+          />
+        </label>
+        <label className="block">
+          Password history count
+          <input
+            type="number"
+            min={0}
+            max={24}
+            value={policy.passwordHistoryCount}
+            onChange={(e) => set('passwordHistoryCount', Number(e.target.value))}
+            className="mt-1 block w-full rounded border px-2 py-1 dark:bg-slate-700"
+          />
+        </label>
+        <label className="block">
+          Min password age (days)
+          <input
+            type="number"
+            min={0}
+            value={policy.minPasswordAgeDays}
+            onChange={(e) => set('minPasswordAgeDays', Number(e.target.value))}
+            className="mt-1 block w-full rounded border px-2 py-1 dark:bg-slate-700"
+          />
+        </label>
+        <label className="block">
+          Max failed logins (0 = off)
+          <input
+            type="number"
+            min={0}
+            value={policy.maxFailedLoginAttempts}
+            onChange={(e) => set('maxFailedLoginAttempts', Number(e.target.value))}
+            className="mt-1 block w-full rounded border px-2 py-1 dark:bg-slate-700"
+          />
+        </label>
+        <label className="block">
+          Lockout duration (minutes)
+          <input
+            type="number"
+            min={1}
+            value={policy.lockoutDurationMinutes}
+            onChange={(e) => set('lockoutDurationMinutes', Number(e.target.value))}
+            className="mt-1 block w-full rounded border px-2 py-1 dark:bg-slate-700"
+          />
+        </label>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+        {([
+          ['requireUppercase', 'Require uppercase'],
+          ['requireLowercase', 'Require lowercase'],
+          ['requireNumbers', 'Require numbers'],
+          ['requireSpecialChars', 'Require special characters'],
+          ['preventCommonPasswords', 'Block common passwords'],
+          ['preventUsernameInPassword', 'Block email/username in password'],
+        ] as const).map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={policy[key]}
+              onChange={(e) => set(key, e.target.checked)}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      <button
+        type="button"
+        disabled={saveMut.isPending}
+        onClick={() => saveMut.mutate()}
+        className="text-sm bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded px-3 py-1.5 disabled:opacity-50"
+      >
+        {saveMut.isPending ? 'Saving…' : 'Save password policy'}
+      </button>
+      {msg && <p className="text-xs text-emerald-600">{msg}</p>}
+      {err && <p className="text-xs text-red-600">{err}</p>}
+    </div>
   );
 }
 

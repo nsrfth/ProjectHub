@@ -1,14 +1,10 @@
 import { z } from 'zod';
 
-// Password policy: min 12 chars, must contain at least one letter and one digit.
-// Keep it strict but not annoying — long random passphrases pass easily.
-export const passwordSchema = z
-  .string()
-  .min(12, 'Password must be at least 12 characters')
-  .max(200)
-  .refine((p) => /[A-Za-z]/.test(p) && /\d/.test(p), {
-    message: 'Password must contain letters and digits',
-  });
+// Route-level shape only — full policy enforced in PasswordPolicyService.
+export const passwordInputSchema = z.string().min(1).max(200);
+
+/** @deprecated Use passwordInputSchema + PasswordPolicyService.assertValid */
+export const passwordSchema = passwordInputSchema;
 
 // v1.30.11 (S-9): registerBody removed alongside the public
 // /auth/register route. Admin-driven user creation uses the schemas
@@ -26,7 +22,7 @@ export const requestResetBody = z.object({
 
 export const performResetBody = z.object({
   token: z.string().min(32).max(256),
-  password: passwordSchema,
+  password: passwordInputSchema,
 });
 
 // v1.32.0: user-initiated password change. Verifies `currentPassword`
@@ -35,7 +31,7 @@ export const performResetBody = z.object({
 // whatever they currently have); `newPassword` runs the regular policy.
 export const changeOwnPasswordBody = z.object({
   currentPassword: z.string().min(1).max(200),
-  newPassword: passwordSchema,
+  newPassword: passwordInputSchema,
 });
 
 export const verificationRequestBody = z.object({

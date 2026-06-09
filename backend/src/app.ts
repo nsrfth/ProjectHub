@@ -32,6 +32,8 @@ import { calendarRoutes } from './routes/calendar.js';
 import { trashRoutes } from './routes/trash.js';
 import { rolesRoutes } from './routes/roles.js';
 import { backupsRoutes } from './routes/backups.js';
+import { taskhubRoutes } from './routes/taskhub.js';
+import { securitySettingsRoutes } from './routes/securitySettings.js';
 import { maintenanceGate } from './middleware/maintenance.js';
 import { decorateLifecycle } from './lib/lifecycle.js';
 import { prisma } from './data/prisma.js';
@@ -146,6 +148,8 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(reportsRoutes, { prefix: '/teams/:teamId/reports' });
 
     await api.register(settingsRoutes, { prefix: '/settings' });
+    await api.register(taskhubRoutes, { prefix: '/settings/taskhub' });
+    await api.register(securitySettingsRoutes, { prefix: '/settings/security' });
 
     await api.register(directoriesRoutes, { prefix: '/settings/directories' });
 

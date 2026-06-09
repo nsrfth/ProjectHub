@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { passwordSchema } from './auth.js';
+import { passwordInputSchema } from './auth.js';
 
 export const globalRoleEnum = z.enum(['ADMIN', 'MEMBER']);
 
@@ -67,7 +67,7 @@ export const createUserBody = z.object({
   name: z.string().min(1).max(120).trim(),
   // Same policy as self-register (min 12 chars, letters + digits). When
   // omitted, the service generates a random 20-char string and returns it.
-  password: passwordSchema.optional(),
+  password: passwordInputSchema.optional(),
   globalRole: globalRoleEnum.default('MEMBER'),
   // Skip the email-verification flow for admin-provisioned accounts — the
   // admin vouches for the address. Override to false if you want them to
@@ -88,7 +88,7 @@ export const createUserResponse = z.object({
 // password handling: caller-supplied wins, omit for a server-generated
 // 20-char value returned ONCE.
 export const adminResetPasswordBody = z.object({
-  password: passwordSchema.optional(),
+  password: passwordInputSchema.optional(),
 });
 
 export const adminResetPasswordResponse = z.object({

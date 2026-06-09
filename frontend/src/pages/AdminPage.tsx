@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
 import * as adminApi from '@/features/admin/api';
 import { formatShamsiTimestampDate } from '@/lib/shamsi';
+import { PasswordPolicyHints, PasswordStrengthIndicator } from '@/features/security/PasswordStrength';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -247,14 +248,17 @@ export default function AdminPage(): JSX.Element {
             className="rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-sm"
           />
           <div className="flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="Password (leave blank to auto-generate)"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="flex-1 rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-sm font-mono"
-              autoComplete="new-password"
-            />
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="Password (leave blank to auto-generate)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-sm font-mono"
+                autoComplete="new-password"
+              />
+              <PasswordStrengthIndicator password={newPassword} />
+            </div>
             <button
               type="button"
               onClick={() => setNewPassword('')}
@@ -280,10 +284,10 @@ export default function AdminPage(): JSX.Element {
             >
               {createUserMut.isPending ? 'Creating…' : 'Create user'}
             </button>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Password rule: ≥ 12 characters, letters + digits. Leave blank
-              and the server will generate one — shown ONCE below.
-            </p>
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              <PasswordPolicyHints />
+              <p className="mt-1">Leave blank and the server will generate one — shown ONCE below.</p>
+            </div>
           </div>
         </form>
         {newError && <p className="text-xs text-red-600 dark:text-red-400 mt-2">{newError}</p>}

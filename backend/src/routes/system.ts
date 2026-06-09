@@ -3,6 +3,8 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { prisma } from '../data/prisma.js';
 import { PERMISSIONS, PERMISSION_GROUPS } from '../lib/permissions.js';
+import { passwordPolicyService } from '../services/passwordPolicyService.js';
+import { publicPasswordPolicyResponse } from '../schemas/passwordPolicy.js';
 
 // Public read-only system metadata. Used by:
 //   - The frontend's About button (version + build + license + counts).
@@ -100,6 +102,15 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
         counts: { users, teams, tasks },
       });
     },
+  });
+
+  r.get('/password-policy', {
+    schema: {
+      tags: ['system'],
+      summary: 'Public local-user password policy (for login/change-password UI)',
+      response: { 200: publicPasswordPolicyResponse },
+    },
+    handler: async (_req, reply) => reply.send(await passwordPolicyService.getPublicPolicyView()),
   });
 
   // v1.23: catalog of permission constants + UI grouping. Auth-less by

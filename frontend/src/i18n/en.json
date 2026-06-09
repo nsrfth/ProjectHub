@@ -136,6 +136,8 @@
   "settings.nav.apiDesc": "Personal tokens + team webhooks",
   "settings.nav.backups": "Backups",
   "settings.nav.backupsDesc": "Scheduled database dumps",
+  "settings.nav.taskhub": "TaskHub",
+  "settings.nav.taskhubDesc": "Server port and SSL certificates",
   "settings.nav.labels": "Labels",
   "settings.nav.labelsDesc": "Team tags for tasks",
 

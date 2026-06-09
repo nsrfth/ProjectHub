@@ -10,6 +10,7 @@ import { isLdapInfrastructureError, LdapService, type LdapAuthResult } from './l
 import { TwoFactorService } from './twoFactorService.js';
 import { emailService } from './emailService.js';
 import { systemRoleIdFor } from '../lib/teamRoles.js';
+import { passwordPolicyService } from './passwordPolicyService.js';
 
 // All token lifecycle logic lives here. Routes/controllers don't talk to Prisma directly.
 
@@ -142,9 +143,14 @@ export class AuthService {
 
     // ── Local user: legacy argon2 password check. ───────────────────────────
     if (user && user.authSource === 'LOCAL') {
+      await this.assertNotLocked(user);
       if (!user.passwordHash) throw Errors.unauthorized('Invalid credentials');
       const ok = await verifyPassword(user.passwordHash, input.password);
-      if (!ok) throw Errors.unauthorized('Invalid credentials');
+      if (!ok) {
+        await this.recordFailedLogin(user.id);
+        throw Errors.unauthorized('Invalid credentials');
+      }
+      await this.clearFailedLogin(user.id);
       return this.issueSession(user);
     }
 
@@ -592,7 +598,7 @@ export class AuthService {
   ): Promise<void> {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw Errors.unauthorized();
-    if (user.directoryId || !user.passwordHash) {
+    if (user.authSource !== 'LOCAL' || !user.passwordHash) {
       throw Errors.forbidden(
         'Password is managed by your directory and cannot be changed here',
       );
@@ -600,14 +606,16 @@ export class AuthService {
     const ok = await verifyPassword(user.passwordHash, input.currentPassword);
     if (!ok) throw Errors.badRequest('Current password is incorrect');
 
+    await passwordPolicyService.assertMinAge(userId);
+    await passwordPolicyService.assertValid(input.newPassword, { email: user.email, name: user.name });
+    await passwordPolicyService.assertNotReused(userId, input.newPassword);
+
     const passwordHash = await hashPassword(input.newPassword);
-    await prisma.$transaction([
-      prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
-      prisma.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      }),
-    ]);
+    await passwordPolicyService.recordPasswordChange(userId, passwordHash);
+    await prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
   }
 
   async performPasswordReset(input: { token: string; password: string }): Promise<void> {
@@ -617,16 +625,58 @@ export class AuthService {
       throw Errors.badRequest('Invalid or expired reset token');
     }
 
+    const target = await prisma.user.findUnique({ where: { id: reset.userId } });
+    if (!target || target.authSource !== 'LOCAL') {
+      throw Errors.badRequest('Invalid or expired reset token');
+    }
+    await passwordPolicyService.assertValid(input.password, {
+      email: target.email,
+      name: target.name,
+    });
+    await passwordPolicyService.assertNotReused(reset.userId, input.password);
+
     const passwordHash = await hashPassword(input.password);
     await prisma.$transaction([
-      prisma.user.update({ where: { id: reset.userId }, data: { passwordHash } }),
       prisma.passwordReset.update({ where: { id: reset.id }, data: { usedAt: new Date() } }),
-      // Revoke every active session for this user; force re-login.
       prisma.refreshToken.updateMany({
         where: { userId: reset.userId, revokedAt: null },
         data: { revokedAt: new Date() },
       }),
     ]);
+    await passwordPolicyService.recordPasswordChange(reset.userId, passwordHash);
+  }
+
+  private async assertNotLocked(user: User): Promise<void> {
+    if (!user.lockedUntil) return;
+    if (user.lockedUntil > new Date()) {
+      throw Errors.unauthorized('Account is temporarily locked. Try again later.');
+    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lockedUntil: null, failedLoginAttempts: 0 },
+    });
+  }
+
+  private async recordFailedLogin(userId: string): Promise<void> {
+    const policy = await passwordPolicyService.getPolicy();
+    if (policy.maxFailedLoginAttempts <= 0) return;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return;
+    const attempts = user.failedLoginAttempts + 1;
+    const data: { failedLoginAttempts: number; lockedUntil?: Date } = {
+      failedLoginAttempts: attempts,
+    };
+    if (attempts >= policy.maxFailedLoginAttempts) {
+      data.lockedUntil = new Date(Date.now() + policy.lockoutDurationMinutes * 60_000);
+    }
+    await prisma.user.update({ where: { id: userId }, data });
+  }
+
+  private async clearFailedLogin(userId: string): Promise<void> {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
   }
 
   private async issueSession(

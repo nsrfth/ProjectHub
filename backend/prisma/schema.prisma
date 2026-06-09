@@ -228,6 +228,10 @@ model User {
   jobTitle        String?
   managerName     String?
   ldapSyncedAt    DateTime?
+  // Local-password policy tracking (ignored for LDAP/SCIM users).
+  passwordChangedAt   DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
   // Set when the user is soft-disabled. Login + refresh both reject when
   // this is non-null. SCIM deprovision (PATCH active=false) sets this and
   // revokes outstanding refresh tokens; reprovision (active=true) clears it.
@@ -275,8 +279,32 @@ model User {
   uploads            Attachment[]
   recoveryCodes      RecoveryCode[]
   apiTokens          ApiToken[]
+  passwordHistory    PasswordHistory[]
 
   @@index([email])
+}
+
+// Previous password hashes for local users — enforces password history policy.
+model PasswordHistory {
+  id           String   @id @default(cuid())
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// Security and server configuration audit trail (distinct from task Activity).
+model SecurityAuditEvent {
+  id        String   @id @default(cuid())
+  kind      String
+  actorId   String?
+  details   Json
+  createdAt DateTime @default(now())
+
+  @@index([kind, createdAt])
+  @@index([createdAt])
 }
 
 model RefreshToken {

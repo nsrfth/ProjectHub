@@ -52,6 +52,12 @@ const NAV: NavItem[] = [
     roles: ['ADMIN'],
   },
   {
+    to: '/settings/taskhub',
+    labelKey: 'settings.nav.taskhub',
+    descriptionKey: 'settings.nav.taskhubDesc',
+    roles: ['ADMIN'],
+  },
+  {
     to: '/settings/security',
     labelKey: 'settings.nav.security',
     descriptionKey: 'settings.nav.securityDesc',

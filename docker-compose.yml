@@ -80,9 +80,11 @@ services:
       BACKUP_ENABLED: ${BACKUP_ENABLED:-false}
       BACKUP_DIR: ${BACKUP_DIR:-/app/backups}
       BACKUP_CHECK_INTERVAL_MIN: ${BACKUP_CHECK_INTERVAL_MIN:-15}
+      CERT_DIR: ${CERT_DIR:-/app/certs}
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
+      - caddy_custom_certs:/app/certs
     expose:
       - "4000"
 
@@ -117,6 +119,7 @@ services:
       - frontend_dist:/srv/www:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_custom_certs:/etc/caddy/custom:ro
 
   # v1.23: throwaway Postgres for the integration test suite. Gated by the
   # `test` profile so a stock `docker compose up` doesn't start it. Bring up
@@ -190,3 +193,4 @@ volumes:
   frontend_dist:
   caddy_data:
   caddy_config:
+  caddy_custom_certs:
