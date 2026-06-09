@@ -232,6 +232,7 @@ export class ProjectsService {
     // v1.39: same as update() — the get() gate makes the v1.23
     // `project.delete` permission check below dead code, removed.
     await this.get(teamId, projectId, callerId, callerGlobalRole);
+    await prisma.userProjectBucketItem.deleteMany({ where: { projectId } });
     await prisma.project.delete({ where: { id: projectId } });
   }
 

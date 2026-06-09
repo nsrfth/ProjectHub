@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.45.0** (2026-06-09)
+Version **v1.46.0** (2026-06-10)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -10,21 +10,22 @@ This manual covers everything a member, manager, or admin needs to do day-to-day
 
 1. [Concepts](#concepts)
 2. [Signing in](#signing-in)
-3. [The corner buttons (About / Help / Notifications)](#the-corner-buttons-about--help--notifications)
-4. [Teams and projects](#teams-and-projects)
+3. [Dashboard](#dashboard-v146)
+4. [The corner buttons (About / Help / Notifications)](#the-corner-buttons-about--help--notifications)
+5. [Teams and projects](#teams-and-projects)
    - [Team colours](#team-colours)
-5. [Tasks — the basics](#tasks--the-basics)
-6. [The three dates: Due by, Planned on, Completed on](#the-three-dates-due-by-planned-on-completed-on)
-7. [Labels, subtasks, attachments, comments](#labels-subtasks-attachments-comments)
-8. [Recurring tasks](#recurring-tasks)
-9. [Planner](#planner-v144)
-10. [Calendar views](#calendar-views)
-11. [Reports](#reports)
-12. [Notifications](#notifications)
-13. [Two-factor authentication (2FA)](#two-factor-authentication-2fa)
-14. [Display preferences (calendar / theme / language)](#display-preferences-calendar--theme--language)
-15. [Personal API tokens](#personal-api-tokens)
-16. [Admin / manager — Settings](#admin--manager--settings)
+6. [Tasks — the basics](#tasks--the-basics)
+7. [The three dates: Due by, Planned on, Completed on](#the-three-dates-due-by-planned-on-completed-on)
+8. [Labels, subtasks, attachments, comments](#labels-subtasks-attachments-comments)
+9. [Recurring tasks](#recurring-tasks)
+10. [Planner](#planner-v144)
+11. [Calendar views](#calendar-views)
+12. [Reports](#reports)
+13. [Notifications](#notifications)
+14. [Two-factor authentication (2FA)](#two-factor-authentication-2fa)
+15. [Display preferences (calendar / theme / language)](#display-preferences-calendar--theme--language)
+16. [Personal API tokens](#personal-api-tokens)
+17. [Admin / manager — Settings](#admin--manager--settings)
     - [Workweek (off-days)](#workweek-off-days)
     - [Security — password policy](#security--password-policy-v143-admin)
     - [TaskHub server](#taskhub-server-v143-admin)
@@ -32,7 +33,7 @@ This manual covers everything a member, manager, or admin needs to do day-to-day
     - [SCIM provisioning](#scim-provisioning)
     - [Webhooks](#webhooks)
     - [Audit log](#audit-log)
-17. [Troubleshooting](#troubleshooting)
+18. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -58,9 +59,34 @@ You can be a global `MEMBER` and a team `MANAGER` at the same time — these are
 1. Open the URL your admin gave you (usually `https://taskhub.<your-org>/`).
 2. Enter email + password.
 3. If 2FA is enabled on your account, you'll see a second step asking for a 6-digit code from your authenticator app — enter it. (You can substitute a single-use recovery code in the same field.)
-4. After signing in, the **Dashboard** shows your name, your global role, your teams, and quick links to **Admin** (admins only) and **Settings** (everyone).
+4. After signing in, the **Dashboard** aggregates KPIs, charts, workload, upcoming deadlines, and recent activity across **every team you belong to** — not just one team.
 
 If your account is owned by an LDAP directory, you log in with your LDAP password — the form is identical.
+
+---
+
+## Dashboard (v1.46)
+
+The **Dashboard** (`/dashboard`) is your cross-team home screen:
+
+- **KPI cards** — open tasks, overdue, in progress, and completed (last 7 days), summed across all your teams.
+- **Completion trend** — bar chart scoped by the period tabs (week / month / quarter).
+- **Task status** — pie-style breakdown of TODO / In progress / Review / Done.
+- **Team workload** — open tasks per assignee (assignees merged across teams).
+- **Upcoming deadlines** — your nearest due tasks across teams.
+- **Recent activity** — latest events from all teams you belong to.
+
+The subtitle under the greeting shows how many teams are included (e.g. “Across 4 teams · all projects you can access”). Join at least one team to see data; otherwise a prompt links to **Teams**.
+
+> **Reports** (`/reports`) remain **team-scoped** — pick a team in the Reports header to drill into CSV exports and timeliness detail.
+
+---
+
+## Left sidebar & top bar
+
+The **left sidebar** (always visible on desktop) links to **Dashboard**, **Teams**, **Projects**, **Planner**, **Reports**, and **Settings**. Your avatar and name appear at the bottom (links to **Settings → Preferences**).
+
+The **top bar** adds global search, notifications, and **+ New Task**.
 
 ---
 
@@ -69,10 +95,9 @@ If your account is owned by an LDAP directory, you log in with your LDAP passwor
 Once you're signed in, a sticky **navigation bar** sits at the top of every page:
 
 - **TaskHub** (brand link, far left) — jumps to the Dashboard.
-- **Dashboard / Projects / Planner / Reports / Teams** — your primary destinations. The active page is highlighted in dark.
-- **Admin** — visible only for global `ADMIN` accounts.
-- **Settings** (right side) — opens whichever Settings sub-page you last visited (defaults to **Preferences**).
-- **Sign out** (far right) — ends the session.
+- **Dashboard / Projects / Planner / Reports / Teams** — your primary destinations in the left sidebar. The active page is highlighted.
+- **Settings** — left sidebar (opens **Preferences** by default). **Admin** and **Trash** live inside Settings for users with access.
+- **Sign out** — user menu in the top bar.
 
 The corner buttons (ℹ️ About / 📖 Help / 🔔 Notifications) stay in the top-right; the nav bar leaves room for them.
 
@@ -217,11 +242,12 @@ The **Planner** hub (`/planner`) groups every way to *see* tasks without changin
 
 ## Calendar views
 
-The **Planner → Calendar** tab (`/planner/calendar`; `/calendar` redirects here) shows tasks from every project in the selected team(s) laid out on a date grid. Three view modes:
+The **Planner → Calendar** tab (`/planner/calendar`; `/calendar` redirects here) shows tasks from every project in the selected team(s) laid out on a date grid or timeline. Four view modes:
 
 - **Work-week** — 5 cells starting on the first non-off-day. With Sat+Sun off, the first column is Monday; with Thu+Fri off, it's Saturday. The off-day setting drives both *which* 5 days appear and *where* the cursor lands.
 - **Week** — 7 cells, Sunday-leading. Off-days are still tinted red.
 - **Month** — full 6-week grid (42 cells). Days outside the current month are dimmed. Each cell shows up to 3 tasks + "+N more".
+- **Timeline** (v1.46) — vertical list of the current week, one section per day. Each task row shows title, project, assignee, status badge, and team colour strip. Best when a day has many tasks and grid cells would truncate them.
 
 Each task appears as a coloured pill — the pill colour is the **team accent** ([Team colours](#team-colours) above). Click the pill to jump to the task.
 
@@ -354,14 +380,19 @@ The token authenticates as you — it sees what you see. Scopes are advisory in 
 
 ## Admin / manager — Settings
 
-The **Settings** link in the dashboard header opens the Settings shell. The sidebar items you see depend on your role:
+The **Settings** link in the left sidebar opens the Settings shell. The sidebar items you see depend on your role:
 
 - **Preferences** — everyone (personal calendar + theme + language). Admins additionally see the Workweek section.
-- **Security** — everyone (change password, 2FA). Global ADMIN additionally configures the **local password policy** (min length, complexity, lockout).
+- **Trash** — everyone (restore or purge soft-deleted projects and tasks).
+- **Roles** — team role templates and permission matrix.
+- **Labels** — team-scoped label management.
+- **Security** — everyone (change password, 2FA). Global ADMIN additionally configures the **local password policy** (min length, complexity, lockout). Directory-linked accounts cannot change password here.
 - **TaskHub** — global ADMIN only (public HTTPS/port, upload TLS certificate for Caddy).
 - **Directories** — global ADMIN only (LDAP / SCIM config).
 - **Audit** — global ADMIN or team MANAGER.
 - **API & Webhooks** — everyone (tokens) + MANAGER (webhooks for that team).
+- **Backups** — global ADMIN only (scheduled DB backups, download/restore).
+- **Admin** — global ADMIN only (user accounts, instance management).
 
 ### Workweek (off-days)
 

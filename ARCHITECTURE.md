@@ -166,6 +166,7 @@ over the same rows without duplicating business logic:
   ├── my-tasks   → GET /api/me/tasks (assignee-scoped, paginated)
   ├── board      → project picker → /projects/:id/tasks (kanban + grouping)
   ├── calendar   → GET /api/teams/:teamId/calendar (unchanged)
+  │                views: work-week | week | month | timeline (v1.46)
   ├── charts     → client aggregation + /reports/summary|workload fallback
   │                (status, member, due-date filters via PlannerFilterBar)
   └── grid       → fan-out listTasks per visible project, client filter/sort
@@ -207,6 +208,30 @@ PUT  /api/me/project-buckets/assignments  → replace memberships for one projec
 UI: `features/projectBuckets/` — `ProjectBucketBoard` (dnd-kit), filters,
 `localStorage` for view mode + collapsed columns. Future: shared buckets,
 smart/rule-based buckets can extend the same tables with a `scope` column.
+
+## Dashboard (v1.46)
+
+The dashboard (`DashboardPage.tsx`) fans out `/reports/summary`, `/done`,
+`/workload`, `/upcoming`, and `/activity` **per team membership** and merges
+client-side (same pattern as Planner Charts cross-team mode). KPIs therefore
+reflect all projects/tasks visible within every team the user belongs to.
+Reports page remains team-scoped via the team picker.
+
+## Settings shell (v1.46)
+
+Administration surfaces live under `/settings/*`:
+
+- `/settings/trash` — soft-deleted items (was `/trash` in main nav).
+- `/settings/admin` — user management (was `/admin` in main nav).
+
+Legacy paths redirect. Main sidebar links to `/settings` (highlights for any
+settings sub-route).
+
+## IT demo seed (v1.46)
+
+`prisma/seed-it-demo.ts` — optional dataset for demos/training. Activated via
+`SEED_IT_DEMO=1` in `seed-router.ts` or `npm run prisma:seed:it`. Preserves
+existing admin credentials from `SEED_ADMIN_EMAIL`; task dates use UTC today.
 
 ## LDAP authentication (v1.43)
 

@@ -7,6 +7,56 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.46.0] — 2026-06-10
+
+**Dashboard, calendar timeline, IT demo seed, navigation polish, and bug fixes.**
+
+### Dashboard
+
+- KPIs, completion trend, status breakdown, workload, upcoming deadlines, and
+  recent activity now aggregate **all teams** the signed-in user belongs to
+  (not only the “current team”).
+- Subtitle shows team count (e.g. “Across 4 teams · all projects you can access”).
+
+### Calendar
+
+- New **Timeline** view on **Planner → Calendar** — vertical day-by-day list
+  with full task rows (status, priority, assignee, project, team colour).
+  Week navigation matches the existing Week view.
+
+### Navigation & settings
+
+- **Admin** and **Trash** moved from the main sidebar into **Settings**
+  (`/settings/admin`, `/settings/trash`; legacy `/admin` and `/trash` redirect).
+- Main sidebar **Settings** link highlights on any `/settings/*` page.
+- Sidebar user footer shows name only (team name line removed).
+
+### IT demo seed
+
+- `backend/prisma/seed-it-demo.ts` — four IT teams (Network, Security,
+  Datacenter, Service Desk), 12 projects, ~180 dated tasks, 13 fictional users
+  (`*@itdemo.local` / `Demo2026!`). Dates anchor to **today (UTC)**.
+- Reuses existing admin from `SEED_ADMIN_EMAIL` (password unchanged).
+- `SEED_IT_DEMO=1 npx prisma db seed` via `seed-router.ts`, or
+  `npm run prisma:seed:it` directly.
+
+### Bug fixes
+
+- **My Tasks:** `GET /api/me/tasks?teamId=…` returns **403** when the caller is
+  not a member (was 200 with empty list).
+- **Password:** users with `directoryId` set cannot change a local password
+  (even if `authSource` is still `LOCAL`).
+- **Personal buckets:** drag-and-drop onto an empty bucket column works.
+- **Project delete:** removes orphaned `UserProjectBucketItem` rows.
+- **Planner Grid:** no longer silently caps at 15 projects when “All projects”
+  is selected.
+
+### Verified
+
+- Integration tests: `meTasks.test.ts`, `passwordManagement.test.ts` (403 cases).
+
+---
+
 ## [1.45.0] — 2026-06-09
 
 **Personal project buckets on the Projects page.** Per-user organizational

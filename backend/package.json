@@ -1,6 +1,6 @@
 {
   "name": "taskhub-backend",
-  "version": "1.45.0",
+  "version": "1.46.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -14,13 +14,14 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed:it": "tsx prisma/seed-it-demo.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:setup": "DATABASE_URL=postgresql://taskhub:taskhub@postgres-test:5432/taskhub_test?schema=public prisma migrate deploy",
     "typecheck": "tsc --noEmit"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed-router.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^9.3.1",

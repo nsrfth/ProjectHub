@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTeams } from '@/features/teams/TeamsContext';
+import { formatShamsiCalendarDate } from '@/lib/shamsi';
+import { useT } from '@/lib/i18n';
 import { fetchCalendar, type CalendarTask } from '@/features/calendar/api';
+import CalendarTimelineView from '@/features/calendar/CalendarTimelineView';
 import { getWeekStartDay, getWeekendDays, isWeekend } from '@/lib/calendar';
 import {
   addDaysUtc,
@@ -15,7 +18,6 @@ import {
   utcDay,
   type CalendarViewMode,
 } from '@/lib/calendarWeek';
-import { formatShamsiCalendarDate } from '@/lib/shamsi';
 
 // v1.12: Calendar views page. Reads tasks across every project in the
 // current team and lays them out on a date grid. Three modes:
@@ -28,6 +30,8 @@ import { formatShamsiCalendarDate } from '@/lib/shamsi';
 //               (Saturday for Sat+Sun and Thu+Fri presets). Off-days red.
 //   month     — 6-row grid (42 cells) with the same week-start column.
 //               Off-days red, days outside the current month dimmed.
+//   timeline  — vertical list of days in the current week with full task
+//               rows (status, assignee, project) instead of grid chips.
 //
 // Task fetch uses the `dueDate` field by default — that's the date most
 // teams plan against. The picker on the toolbar lets a user switch to
@@ -54,6 +58,7 @@ function shortLabel(d: Date, monthMode: boolean): string {
 const TEAM_STORAGE_KEY = 'calendar.selectedTeam';
 
 export default function CalendarPage(): JSX.Element {
+  const t = useT();
   // Rendered inside PlannerLayout — no duplicate page padding.
   const { teams, currentTeam } = useTeams();
   const nav = useNavigate();
@@ -186,7 +191,7 @@ export default function CalendarPage(): JSX.Element {
   function shift(n: number): void {
     if (view === 'month') {
       setCursor((c) => addMonthsUtc(c, n));
-    } else if (view === 'week') {
+    } else if (view === 'week' || view === 'timeline') {
       setCursor((c) => addDaysUtc(c, 7 * n));
     } else {
       // work-week — jump by 7 calendar days; rangeFor re-aligns to the
@@ -218,7 +223,7 @@ export default function CalendarPage(): JSX.Element {
   return (
     <div>
       <div className="mb-4">
-        <h1 className="text-2xl font-semibold">Calendar</h1>
+        <h1 className="text-2xl font-semibold">{t('planner.nav.calendar')}</h1>
         <p className="text-sm text-slate-500">
           {isAllTeams ? (
             <>
@@ -261,13 +266,19 @@ export default function CalendarPage(): JSX.Element {
 
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <div className="flex border rounded overflow-hidden text-sm">
-          {(['work-week', 'week', 'month'] as ViewMode[]).map((v) => (
+          {(['work-week', 'week', 'month', 'timeline'] as ViewMode[]).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`px-3 py-1 ${view === v ? 'bg-slate-900 text-white' : 'bg-white hover:bg-slate-100'}`}
+              className={`px-3 py-1 ${view === v ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
             >
-              {v === 'work-week' ? 'Work-week' : v === 'week' ? 'Week' : 'Month'}
+              {v === 'work-week'
+                ? t('planner.calendar.workWeek')
+                : v === 'week'
+                  ? t('planner.calendar.week')
+                  : v === 'month'
+                    ? t('planner.calendar.month')
+                    : t('planner.calendar.timeline')}
             </button>
           ))}
         </div>
@@ -310,6 +321,10 @@ export default function CalendarPage(): JSX.Element {
         </div>
       )}
 
+      {view === 'timeline' ? (
+        <CalendarTimelineView cells={cells} byDay={byDay} field={field} />
+      ) : (
+        <>
       {/* Header row of weekday names — only meaningful in week + month modes. */}
       {view !== 'work-week' && (
         <div className="grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 text-xs text-slate-600">
@@ -377,6 +392,8 @@ export default function CalendarPage(): JSX.Element {
           );
         })}
       </div>
+        </>
+      )}
     </div>
   );
 }

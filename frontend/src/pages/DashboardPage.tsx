@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
 import {
@@ -9,7 +9,9 @@ import {
   fetchTeamActivity,
   fetchUpcoming,
   fetchWorkload,
+  type DoneReport,
   type DoneTaskRow,
+  type SummaryReport,
   type TeamActivityRow,
   type UpcomingTaskRow,
   type WorkloadRow,
@@ -34,39 +36,74 @@ const PERIOD_DAYS: Record<Period, number> = { week: 7, month: 30, quarter: 90 };
 
 export default function DashboardPage(): JSX.Element {
   const { user } = useAuth();
-  const { currentTeam, loading: teamsLoading } = useTeams();
+  const { teams, loading: teamsLoading } = useTeams();
   const t = useT();
   const [period, setPeriod] = useState<Period>('week');
 
-  const { data: summary } = useQuery({
-    queryKey: ['reports', 'summary', currentTeam?.id],
-    queryFn: () => fetchSummary(currentTeam!.id),
-    enabled: !!currentTeam,
+  const summaryQueries = useQueries({
+    queries: teams.map((tm) => ({
+      queryKey: ['reports', 'summary', tm.id],
+      queryFn: () => fetchSummary(tm.id),
+    })),
   });
-  const { data: done } = useQuery({
-    queryKey: ['reports', 'done', currentTeam?.id, PERIOD_DAYS[period]],
-    queryFn: () => fetchDoneReport(currentTeam!.id, PERIOD_DAYS[period]),
-    enabled: !!currentTeam,
-    staleTime: 60_000,
+  const doneQueries = useQueries({
+    queries: teams.map((tm) => ({
+      queryKey: ['reports', 'done', tm.id, PERIOD_DAYS[period]],
+      queryFn: () => fetchDoneReport(tm.id, PERIOD_DAYS[period]),
+      staleTime: 60_000,
+    })),
   });
-  const { data: workload } = useQuery({
-    queryKey: ['reports', 'workload', currentTeam?.id],
-    queryFn: () => fetchWorkload(currentTeam!.id),
-    enabled: !!currentTeam,
-    staleTime: 60_000,
+  const workloadQueries = useQueries({
+    queries: teams.map((tm) => ({
+      queryKey: ['reports', 'workload', tm.id],
+      queryFn: () => fetchWorkload(tm.id),
+      staleTime: 60_000,
+    })),
   });
-  const { data: upcoming } = useQuery({
-    queryKey: ['reports', 'upcoming', currentTeam?.id],
-    queryFn: () => fetchUpcoming(currentTeam!.id, 7),
-    enabled: !!currentTeam,
-    staleTime: 60_000,
+  const upcomingQueries = useQueries({
+    queries: teams.map((tm) => ({
+      queryKey: ['reports', 'upcoming', tm.id],
+      queryFn: () => fetchUpcoming(tm.id, 7),
+      staleTime: 60_000,
+    })),
   });
-  const { data: activity } = useQuery({
-    queryKey: ['reports', 'activity', currentTeam?.id],
-    queryFn: () => fetchTeamActivity(currentTeam!.id, 8),
-    enabled: !!currentTeam,
-    staleTime: 30_000,
+  const activityQueries = useQueries({
+    queries: teams.map((tm) => ({
+      queryKey: ['reports', 'activity', tm.id],
+      queryFn: () => fetchTeamActivity(tm.id, 8),
+      staleTime: 30_000,
+    })),
   });
+
+  const hasTeams = teams.length > 0;
+  const summary = useMemo(
+    () => mergeSummaries(summaryQueries.map((q) => q.data).filter(Boolean) as SummaryReport[]),
+    [summaryQueries],
+  );
+  const done = useMemo(
+    () => mergeDoneReports(doneQueries.map((q) => q.data).filter(Boolean) as DoneReport[]),
+    [doneQueries],
+  );
+  const workload = useMemo(
+    () => ({ items: mergeWorkload(workloadQueries.flatMap((q) => q.data?.items ?? [])) }),
+    [workloadQueries],
+  );
+  const upcoming = useMemo(
+    () => ({ items: mergeUpcoming(upcomingQueries.flatMap((q) => q.data?.items ?? [])) }),
+    [upcomingQueries],
+  );
+  const activity = useMemo(
+    () => ({ items: mergeActivity(activityQueries.flatMap((q) => q.data?.items ?? [])) }),
+    [activityQueries],
+  );
+
+  const reportsLoading =
+    hasTeams &&
+    (summaryQueries.some((q) => q.isLoading) ||
+      doneQueries.some((q) => q.isLoading) ||
+      workloadQueries.some((q) => q.isLoading) ||
+      upcomingQueries.some((q) => q.isLoading) ||
+      activityQueries.some((q) => q.isLoading));
 
   // Shared sparkline series — last 7 days of completions. We don't have
   // per-metric histories, so every KPI card shows the same throughput
@@ -91,13 +128,17 @@ export default function DashboardPage(): JSX.Element {
             {t('dashboard.greeting').replace('{name}', greetingName)}
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            {currentTeam?.name ?? (teamsLoading ? '' : t('dashboard.selectTeamHint'))}
+            {teamsLoading
+              ? ''
+              : hasTeams
+                ? t('dashboard.allTeamsSubtitle').replace('{n}', String(teams.length))
+                : t('dashboard.selectTeamHint')}
           </p>
         </div>
         <PeriodTabs value={period} onChange={setPeriod} />
       </div>
 
-      {!currentTeam && !teamsLoading && (
+      {!hasTeams && !teamsLoading && (
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-6 text-sm text-slate-600 dark:text-slate-300">
           {t('dashboard.selectTeamHint')}{' '}
           <Link to="/teams" className="text-indigo-600 dark:text-indigo-400 underline">
@@ -107,7 +148,7 @@ export default function DashboardPage(): JSX.Element {
       )}
 
       {/* KPI cards. Open Tasks gets the primary accent. */}
-      {currentTeam && (
+      {hasTeams && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <KpiCard
             label={t('dashboard.kpi.open')}
@@ -137,17 +178,17 @@ export default function DashboardPage(): JSX.Element {
       )}
 
       {/* Trend chart (2 cols) + status breakdown (1 col) */}
-      {currentTeam && (
+      {hasTeams && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Panel className="lg:col-span-2" title={t('dashboard.trend.title')}>
-            {done ? (
+            {done && !reportsLoading ? (
               <BigTrend rows={done.items} days={PERIOD_DAYS[period]} t={t} />
             ) : (
               <Skeleton h={180} />
             )}
           </Panel>
           <Panel title={t('dashboard.statusBreakdown')}>
-            {summary ? (
+            {summary && !summaryQueries.some((q) => q.isLoading) ? (
               <StatusList byStatus={summary.byStatus} t={t} />
             ) : (
               <Skeleton h={180} />
@@ -157,13 +198,17 @@ export default function DashboardPage(): JSX.Element {
       )}
 
       {/* Workload + upcoming + activity */}
-      {currentTeam && (
+      {hasTeams && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Panel title={t('dashboard.workload.title')} subtitle={t('dashboard.workload.subtitle')}>
-            {workload ? <WorkloadList rows={workload.items} /> : <Skeleton h={150} />}
+            {workload && !workloadQueries.some((q) => q.isLoading) ? (
+              <WorkloadList rows={workload.items} />
+            ) : (
+              <Skeleton h={150} />
+            )}
           </Panel>
           <Panel title={t('dashboard.upcoming.title')}>
-            {upcoming ? (
+            {upcoming && !upcomingQueries.some((q) => q.isLoading) ? (
               <UpcomingList items={upcoming.items} t={t} />
             ) : (
               <Skeleton h={150} />
@@ -177,7 +222,7 @@ export default function DashboardPage(): JSX.Element {
               </Link>
             }
           >
-            {activity ? (
+            {activity && !activityQueries.some((q) => q.isLoading) ? (
               <ActivityList items={activity.items} t={t} />
             ) : (
               <Skeleton h={150} />
@@ -675,6 +720,80 @@ function Skeleton({ h }: { h: number }): JSX.Element {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+
+function mergeSummaries(rows: SummaryReport[]): SummaryReport | undefined {
+  if (rows.length === 0) return undefined;
+  const merged: SummaryReport = {
+    doneLast7Days: 0,
+    overdueCount: 0,
+    openCount: 0,
+    byStatus: { TODO: 0, IN_PROGRESS: 0, REVIEW: 0, DONE: 0 },
+  };
+  for (const s of rows) {
+    merged.doneLast7Days += s.doneLast7Days;
+    merged.overdueCount += s.overdueCount;
+    merged.openCount += s.openCount;
+    merged.byStatus.TODO += s.byStatus.TODO;
+    merged.byStatus.IN_PROGRESS += s.byStatus.IN_PROGRESS;
+    merged.byStatus.REVIEW += s.byStatus.REVIEW;
+    merged.byStatus.DONE += s.byStatus.DONE;
+  }
+  return merged;
+}
+
+function mergeDoneReports(reports: DoneReport[]): DoneReport | undefined {
+  if (reports.length === 0) return undefined;
+  const byTask = new Map<string, DoneTaskRow>();
+  for (const r of reports) {
+    for (const item of r.items) byTask.set(item.taskId, item);
+  }
+  return {
+    windowDays: Math.max(...reports.map((r) => r.windowDays)),
+    items: [...byTask.values()],
+  };
+}
+
+function mergeWorkload(rows: WorkloadRow[]): WorkloadRow[] {
+  const byAssignee = new Map<string, WorkloadRow>();
+  for (const r of rows) {
+    const key = r.assigneeId ?? '__unassigned__';
+    const existing = byAssignee.get(key);
+    if (!existing) {
+      byAssignee.set(key, {
+        assigneeId: r.assigneeId,
+        assigneeName: r.assigneeName,
+        total: r.total,
+        byStatus: { ...r.byStatus },
+      });
+      continue;
+    }
+    existing.total += r.total;
+    existing.byStatus.TODO += r.byStatus.TODO;
+    existing.byStatus.IN_PROGRESS += r.byStatus.IN_PROGRESS;
+    existing.byStatus.REVIEW += r.byStatus.REVIEW;
+    if (!existing.assigneeName && r.assigneeName) existing.assigneeName = r.assigneeName;
+  }
+  return [...byAssignee.values()];
+}
+
+function mergeUpcoming(items: UpcomingTaskRow[]): UpcomingTaskRow[] {
+  const byTask = new Map<string, UpcomingTaskRow>();
+  for (const item of items) {
+    const prev = byTask.get(item.taskId);
+    if (!prev || item.daysUntil < prev.daysUntil) byTask.set(item.taskId, item);
+  }
+  return [...byTask.values()]
+    .sort((a, b) => a.daysUntil - b.daysUntil || a.dueDate.localeCompare(b.dueDate))
+    .slice(0, 10);
+}
+
+function mergeActivity(items: TeamActivityRow[]): TeamActivityRow[] {
+  const byId = new Map<string, TeamActivityRow>();
+  for (const item of items) byId.set(item.id, item);
+  return [...byId.values()]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 8);
+}
 
 function buildDailyCounts(rows: DoneTaskRow[], days: number): number[] {
   const today = new Date();

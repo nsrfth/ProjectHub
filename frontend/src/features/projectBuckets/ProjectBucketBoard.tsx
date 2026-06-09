@@ -248,17 +248,24 @@ export default function ProjectBucketBoard({
       return;
     }
 
-    const overId = String(over.id);
-    if (!overId.startsWith('project:')) return;
-
     if (activeData?.kind !== 'project') return;
 
     const sourceBucketId = activeData.bucketId;
     const projectId = activeData.projectId;
+
+    if (overData?.kind === 'column') {
+      if (overData.bucketId !== sourceBucketId) {
+        onAddToBucket(overData.bucketId, projectId);
+      }
+      return;
+    }
+
+    const overId = String(over.id);
+    if (!overId.startsWith('project:')) return;
+
     let targetBucketId = sourceBucketId;
 
-    if (overData?.kind === 'column') targetBucketId = overData.bucketId;
-    else if (overData?.kind === 'project') targetBucketId = overData.bucketId;
+    if (overData?.kind === 'project') targetBucketId = overData.bucketId;
     else if (overId.startsWith('project:')) {
       targetBucketId = overId.split(':')[1]!;
     }

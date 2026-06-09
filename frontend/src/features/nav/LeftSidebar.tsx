@@ -1,6 +1,5 @@
 import { NavLink, Link } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
-import { useTeams } from '@/features/teams/TeamsContext';
 import { useT } from '@/lib/i18n';
 import {
   IconCalendar,
@@ -40,7 +39,6 @@ function initials(name: string | undefined, email: string | undefined): string {
 
 export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
   const { user } = useAuth();
-  const { currentTeam } = useTeams();
   const t = useT();
 
   const items: NavItem[] = [
@@ -49,7 +47,7 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
     { to: '/projects', label: t('nav.projects'), icon: IconProjects },
     { to: '/planner/my-tasks', label: t('nav.planner'), icon: IconCalendar },
     { to: '/reports', label: t('nav.reports'), icon: IconReports },
-    { to: '/settings/preferences', label: t('nav.settings'), icon: IconSettings },
+    { to: '/settings', label: t('nav.settings'), icon: IconSettings },
   ];
   const visible = items;
 
@@ -150,8 +148,7 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
           </ul>
         </nav>
 
-        {/* User profile footer — avatar + name + current team. Click goes
-            to Settings → Preferences (closest "your profile" page today). */}
+        {/* User profile footer — avatar + name. Links to Settings → Preferences. */}
         <Link
           to="/settings/preferences"
           onClick={onClose}
@@ -160,13 +157,8 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
           <span className="w-9 h-9 rounded-full bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center">
             {initials(user?.name, user?.email)}
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm text-slate-900 dark:text-slate-100 truncate">
-              {user?.name || user?.email}
-            </span>
-            <span className="block text-xs text-slate-500 dark:text-slate-400 truncate">
-              {currentTeam?.name ?? ''}
-            </span>
+          <span className="min-w-0 flex-1 text-sm text-slate-900 dark:text-slate-100 truncate">
+            {user?.name || user?.email}
           </span>
         </Link>
       </aside>

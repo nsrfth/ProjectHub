@@ -38,7 +38,7 @@ export function startOfWeekUtc(date: Date, weekStart = getWeekStartDay()): Date 
   return addDaysUtc(c, -delta);
 }
 
-export type CalendarViewMode = 'work-week' | 'week' | 'month';
+export type CalendarViewMode = 'work-week' | 'week' | 'month' | 'timeline';
 
 function firstWorkdayOnOrAfter(from: Date, off: number[]): Date {
   let d = utcDay(from);
@@ -69,7 +69,7 @@ export function rangeForCalendarView(
     return { start, end, cells };
   }
 
-  if (view === 'week') {
+  if (view === 'week' || view === 'timeline') {
     const start = startOfWeekUtc(cursor, weekStart);
     const cells = Array.from({ length: 7 }, (_, i) => addDaysUtc(start, i));
     return { start, end: addDaysUtc(start, 7), cells };

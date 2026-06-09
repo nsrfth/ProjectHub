@@ -598,7 +598,7 @@ export class AuthService {
   ): Promise<void> {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw Errors.unauthorized();
-    if (user.authSource !== 'LOCAL' || !user.passwordHash) {
+    if (user.authSource !== 'LOCAL' || user.directoryId || !user.passwordHash) {
       throw Errors.forbidden(
         'Password is managed by your directory and cannot be changed here',
       );

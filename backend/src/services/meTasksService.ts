@@ -137,11 +137,11 @@ export class MeTasksService {
       select: { teamId: true },
     });
     const teamIds = memberships.map((m: { teamId: string }) => m.teamId);
-    if (teamIds.length === 0) {
-      return { items: [], nextCursor: null, total: 0 };
-    }
     if (query.teamId && !teamIds.includes(query.teamId)) {
       throw Errors.forbidden('Not a member of this team');
+    }
+    if (teamIds.length === 0) {
+      return { items: [], nextCursor: null, total: 0 };
     }
 
     const now = new Date();

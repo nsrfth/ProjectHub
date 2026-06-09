@@ -30,6 +30,9 @@ cp .env.example .env
 # Edit .env: secrets, SITE_HOST, ACME_EMAIL, CORS_ORIGINS, POSTGRES_PASSWORD.
 docker compose up -d --build
 docker compose exec backend npx prisma db seed
+# Optional IT demo dataset (4 teams, ~180 tasks):
+# docker compose exec -e SEED_IT_DEMO=1 backend npx prisma db seed
+# Or after migrations only: docker compose exec backend npm run prisma:seed:it
 ```
 
 Caddy listens on ports 80 and 443. Set `SITE_HOST` to your public hostname and
@@ -73,7 +76,11 @@ Two options:
 1. **Seed**: `npx prisma db seed` creates `admin@taskhub.local` /
    `admin` (override with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`).
    **Change the password immediately** in production.
-2. **Admin-only provisioning** (v1.30.11, S-9): public self-registration is
+2. **IT demo seed** (optional): `SEED_IT_DEMO=1 npx prisma db seed` or
+   `npm run prisma:seed:it` — four IT teams, 12 projects, ~180 tasks dated
+   from today. Demo users: `*@itdemo.local` / `Demo2026!`. Keeps your admin
+   email; does not rotate an existing admin password.
+3. **Admin-only provisioning** (v1.30.11, S-9): public self-registration is
    removed. The seeded admin is the only bootstrap path; subsequent accounts are
    created by an admin via **Settings → Admin → New user**
    (`POST /api/admin/users`), or appear via LDAP/SCIM JIT. There is no

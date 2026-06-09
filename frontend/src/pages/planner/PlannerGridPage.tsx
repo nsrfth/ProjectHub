@@ -26,7 +26,7 @@ export default function PlannerGridPage(): JSX.Element {
 
   const targetProjects = useMemo(() => {
     if (projectId) return projects.filter((p) => p.id === projectId);
-    return projects.slice(0, 15);
+    return projects;
   }, [projects, projectId]);
 
   const taskQueries = useQueries({
