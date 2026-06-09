@@ -13,6 +13,7 @@ export const directoryCreateBody = z.object({
   host: z.string().min(1).max(255).optional(),
   port: z.number().int().positive().max(65535).optional(),
   useTLS: z.boolean().default(true),
+  tlsInsecure: z.boolean().default(false),
   bindDN: z.string().min(1).max(500).optional(),
   bindPassword: z.string().min(1).max(500).optional(),
   baseDN: z.string().min(1).max(500).optional(),
@@ -39,6 +40,7 @@ export const directoryResponse = z.object({
   host: z.string().nullable(),
   port: z.number().int().nullable(),
   useTLS: z.boolean(),
+  tlsInsecure: z.boolean(),
   bindDN: z.string().nullable(),
   // A boolean projection of bindPasswordEnc — surfaces whether the password
   // is set without exposing the value. Lets the UI distinguish "no password"

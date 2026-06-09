@@ -1,4 +1,5 @@
 import type { Directory } from '@prisma/client';
+import type { ConnectionOptions } from 'node:tls';
 import { Client } from 'ldapts';
 import { decrypt } from '../lib/crypto.js';
 import { Errors } from '../lib/errors.js';
@@ -32,11 +33,64 @@ export function escapeFilter(value: string): string {
   return out;
 }
 
-function buildUrl(d: Directory): string {
-  if (!d.host) throw Errors.badRequest('Directory has no host configured');
-  const port = d.port ?? (d.useTLS ? 636 : 389);
-  const scheme = d.useTLS ? 'ldaps' : 'ldap';
-  return `${scheme}://${d.host}:${port}`;
+export type LdapTransport = 'plain' | 'starttls' | 'ldaps';
+
+// Strip accidental ldap:// / ldaps:// prefixes from the host field.
+export function normaliseLdapHost(host: string): string {
+  return host.trim().replace(/^ldaps?:\/\//i, '').replace(/\/$/, '');
+}
+
+// Resolve how we connect:
+//   plain    — ldap://host:389, no encryption (OpenLDAP dev; AD rejects)
+//   starttls — ldap://host:389 then TLS upgrade (typical AD on port 389)
+//   ldaps    — ldaps://host:636 implicit TLS
+export function resolveLdapTransport(directory: Pick<Directory, 'useTLS' | 'port'>): LdapTransport {
+  if (!directory.useTLS) return 'plain';
+  const port = directory.port ?? 636;
+  return port === 389 ? 'starttls' : 'ldaps';
+}
+
+function buildUrl(directory: Directory, transport: LdapTransport): string {
+  if (!directory.host) throw Errors.badRequest('Directory has no host configured');
+  const host = normaliseLdapHost(directory.host);
+  const port = directory.port ?? (transport === 'ldaps' ? 636 : 389);
+  const scheme = transport === 'ldaps' ? 'ldaps' : 'ldap';
+  return `${scheme}://${host}:${port}`;
+}
+
+function tlsOptions(directory: Directory): ConnectionOptions | undefined {
+  const insecure =
+    directory.tlsInsecure || process.env.LDAP_TLS_INSECURE === 'true';
+  if (!insecure) return undefined;
+  return { rejectUnauthorized: false };
+}
+
+async function openClient(directory: Directory): Promise<Client> {
+  const transport = resolveLdapTransport(directory);
+  const url = buildUrl(directory, transport);
+  const tls = tlsOptions(directory);
+  const client = new Client({
+    url,
+    timeout: 5000,
+    connectTimeout: 5000,
+    ...(transport === 'ldaps' && tls ? { tlsOptions: tls } : {}),
+  });
+  if (transport === 'starttls') {
+    await client.startTLS(tls ?? {});
+  }
+  return client;
+}
+
+async function withClient<T>(
+  directory: Directory,
+  fn: (client: Client) => Promise<T>,
+): Promise<T> {
+  const client = await openClient(directory);
+  try {
+    return await fn(client);
+  } finally {
+    await client.unbind().catch(() => undefined);
+  }
 }
 
 export class LdapService {
@@ -56,14 +110,12 @@ export class LdapService {
     }
 
     const bindPassword = decrypt(directory.bindPasswordEnc);
-    const url = buildUrl(directory);
 
     // Step 1: bind as the service account and search for the user.
-    const adminClient = new Client({ url, timeout: 5000, connectTimeout: 5000 });
-    let userDn: string;
-    let attrs: { email: string; name: string };
-    try {
-      await adminClient.bind(directory.bindDN, bindPassword);
+    let userDn = '';
+    let attrs: { email: string; name: string } = { email, name: email };
+    await withClient(directory, async (adminClient) => {
+      await adminClient.bind(directory.bindDN!, bindPassword);
 
       const escaped = escapeFilter(email);
       const baseFilter = `(${directory.emailAttr}=${escaped})`;
@@ -71,7 +123,7 @@ export class LdapService {
         ? `(&${directory.userFilter}${baseFilter})`
         : baseFilter;
 
-      const { searchEntries } = await adminClient.search(directory.baseDN, {
+      const { searchEntries } = await adminClient.search(directory.baseDN!, {
         scope: 'sub',
         filter,
         attributes: [
@@ -80,10 +132,10 @@ export class LdapService {
           directory.nameAttr,
           'dn',
         ],
-        sizeLimit: 2, // We only ever expect one match; two means misconfig.
+        sizeLimit: 2,
       });
 
-      if (searchEntries.length === 0) return null;
+      if (searchEntries.length === 0) return;
       if (searchEntries.length > 1) {
         throw Errors.internal(
           `Ambiguous LDAP search: multiple entries for ${email}. Check userFilter.`,
@@ -95,27 +147,19 @@ export class LdapService {
         email: String(entry[directory.emailAttr] ?? email),
         name: String(entry[directory.nameAttr] ?? email),
       };
-    } finally {
-      await adminClient.unbind().catch(() => undefined);
-    }
+    });
 
-    // Step 2: rebind as the user with the supplied password. This is the
-    // actual credential check — a successful search proves the user exists,
-    // not that they typed the right password.
-    const userClient = new Client({ url, timeout: 5000, connectTimeout: 5000 });
+    if (!userDn) return null;
+
+    // Step 2: rebind as the user with the supplied password.
     try {
-      await userClient.bind(userDn, password);
+      await withClient(directory, async (userClient) => {
+        await userClient.bind(userDn, password);
+      });
     } catch {
-      // Invalid credentials — return null. Don't leak the specific reason
-      // (account locked, password expired) so we keep the "invalid
-      // credentials" response symmetric with the local-password path.
-      await userClient.unbind().catch(() => undefined);
       return null;
     }
-    await userClient.unbind().catch(() => undefined);
 
-    // Step 3: enumerate groups the user belongs to. Best-effort: a failure
-    // here doesn't block login, it just leaves `groups: []`.
     const groups = await this.fetchGroups(directory, userDn).catch(() => [] as string[]);
 
     return {
@@ -126,35 +170,26 @@ export class LdapService {
     };
   }
 
-  // Look up which groups contain the given user DN as a member. Re-uses the
-  // service-account bind. Filter is `(<groupMemberAttr>=<dn>)`, optionally
-  // ANDed with the directory's groupFilter.
   async fetchGroups(directory: Directory, userDn: string): Promise<string[]> {
     if (!directory.host || !directory.baseDN || !directory.bindDN || !directory.bindPasswordEnc) {
       return [];
     }
     const bindPassword = decrypt(directory.bindPasswordEnc);
-    const url = buildUrl(directory);
-    const client = new Client({ url, timeout: 5000, connectTimeout: 5000 });
-    try {
-      await client.bind(directory.bindDN, bindPassword);
+    return withClient(directory, async (client) => {
+      await client.bind(directory.bindDN!, bindPassword);
       const memberFilter = `(${directory.groupMemberAttr}=${escapeFilter(userDn)})`;
       const filter = directory.groupFilter
         ? `(&${directory.groupFilter}${memberFilter})`
         : memberFilter;
-      const { searchEntries } = await client.search(directory.baseDN, {
+      const { searchEntries } = await client.search(directory.baseDN!, {
         scope: 'sub',
         filter,
         attributes: ['dn'],
       });
       return searchEntries.map((e) => e.dn);
-    } finally {
-      await client.unbind().catch(() => undefined);
-    }
+    });
   }
 
-  // Connection test — used by the directory CRUD UI to validate config
-  // without persisting. Returns a tuple { ok, sampleUserCount } or { ok:false, message }.
   async testConnection(
     directory: Directory,
     plaintextPasswordOverride?: string,
@@ -166,21 +201,33 @@ export class LdapService {
       ?? (directory.bindPasswordEnc ? decrypt(directory.bindPasswordEnc) : null);
     if (!bindPassword) return { ok: false, message: 'bindPassword not configured' };
 
-    const client = new Client({ url: buildUrl(directory), timeout: 5000, connectTimeout: 5000 });
     try {
-      await client.bind(directory.bindDN, bindPassword);
-      const filter = directory.userFilter ?? `(${directory.userIdAttr}=*)`;
-      const { searchEntries } = await client.search(directory.baseDN, {
-        scope: 'sub',
-        filter,
-        attributes: [directory.userIdAttr],
-        sizeLimit: 5,
+      return await withClient(directory, async (client) => {
+        await client.bind(directory.bindDN!, bindPassword);
+        const filter = directory.userFilter ?? `(${directory.userIdAttr}=*)`;
+        const { searchEntries } = await client.search(directory.baseDN!, {
+          scope: 'sub',
+          filter,
+          attributes: [directory.userIdAttr],
+          sizeLimit: 5,
+        });
+        return { ok: true, sampleUserCount: searchEntries.length };
       });
-      return { ok: true, sampleUserCount: searchEntries.length };
     } catch (e) {
-      return { ok: false, message: (e as Error).message };
-    } finally {
-      await client.unbind().catch(() => undefined);
+      const message = (e as Error).message;
+      if (
+        !directory.useTLS
+        && message.includes('integrity checking')
+      ) {
+        return {
+          ok: false,
+          message:
+            `${message} — Active Directory requires an encrypted connection. `
+            + 'Enable "Encrypt connection", keep port 389 (STARTTLS), and if needed '
+            + 'enable "Skip TLS certificate verification".',
+        };
+      }
+      return { ok: false, message };
     }
   }
 }

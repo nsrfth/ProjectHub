@@ -12,6 +12,7 @@ export interface Directory {
   host: string | null;
   port: number | null;
   useTLS: boolean;
+  tlsInsecure: boolean;
   bindDN: string | null;
   // Server-side projection of bindPasswordEnc — true if a ciphertext is
   // stored, never the plaintext. Used to show "Password set" vs "Not set".
@@ -36,6 +37,7 @@ export interface DirectoryCreateInput {
   host?: string;
   port?: number;
   useTLS?: boolean;
+  tlsInsecure?: boolean;
   bindDN?: string;
   bindPassword?: string;
   baseDN?: string;

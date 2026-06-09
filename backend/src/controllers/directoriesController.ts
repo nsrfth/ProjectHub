@@ -20,6 +20,7 @@ function serialise(d: {
   host: string | null;
   port: number | null;
   useTLS: boolean;
+  tlsInsecure: boolean;
   bindDN: string | null;
   hasBindPassword: boolean;
   baseDN: string | null;

@@ -108,6 +108,9 @@ model Directory {
   host        String?
   port        Int?
   useTLS      Boolean       @default(true)
+  // When true, LDAPS / STARTTLS skips TLS certificate chain verification.
+  // Use only with internal AD CAs; prefer installing the CA in the container.
+  tlsInsecure Boolean       @default(false)
   bindDN      String?
   // Bind password ciphertext (AES-256-GCM via lib/crypto). NEVER surface in
   // any API response — Zod response schemas must not include this field.

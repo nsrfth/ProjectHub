@@ -19,6 +19,7 @@ export interface DirectoryView {
   host: string | null;
   port: number | null;
   useTLS: boolean;
+  tlsInsecure: boolean;
   bindDN: string | null;
   hasBindPassword: boolean;
   baseDN: string | null;
@@ -43,6 +44,7 @@ function toView(d: Directory): DirectoryView {
     host: d.host,
     port: d.port,
     useTLS: d.useTLS,
+    tlsInsecure: d.tlsInsecure,
     bindDN: d.bindDN,
     hasBindPassword: !!d.bindPasswordEnc,
     baseDN: d.baseDN,
@@ -82,6 +84,7 @@ export class DirectoryService {
         host: input.host ?? null,
         port: input.port ?? null,
         useTLS: input.useTLS,
+        tlsInsecure: input.tlsInsecure,
         bindDN: input.bindDN ?? null,
         bindPasswordEnc: input.bindPassword ? encrypt(input.bindPassword) : null,
         baseDN: input.baseDN ?? null,
@@ -116,6 +119,7 @@ export class DirectoryService {
     if (input.host !== undefined) data.host = input.host;
     if (input.port !== undefined) data.port = input.port;
     if (input.useTLS !== undefined) data.useTLS = input.useTLS;
+    if (input.tlsInsecure !== undefined) data.tlsInsecure = input.tlsInsecure;
     if (input.bindDN !== undefined) data.bindDN = input.bindDN;
     if (input.bindPassword !== undefined) {
       data.bindPasswordEnc = input.bindPassword === '' ? null : encrypt(input.bindPassword);

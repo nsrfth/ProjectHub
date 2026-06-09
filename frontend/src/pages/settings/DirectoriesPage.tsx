@@ -26,7 +26,8 @@ const DEFAULT_FORM: DirectoryCreateInput = {
   kind: 'LDAP',
   host: '',
   port: 389,
-  useTLS: false,
+  useTLS: true,
+  tlsInsecure: false,
   bindDN: '',
   bindPassword: '',
   baseDN: '',
@@ -93,6 +94,7 @@ export default function DirectoriesPage(): JSX.Element {
       host: d.host ?? '',
       port: d.port ?? 389,
       useTLS: d.useTLS,
+      tlsInsecure: d.tlsInsecure,
       bindDN: d.bindDN ?? '',
       // Leave password empty; only send if the admin retypes it.
       bindPassword: '',
@@ -163,8 +165,9 @@ export default function DirectoriesPage(): JSX.Element {
               <div className="min-w-0">
                 <p className="font-medium truncate">{d.name}</p>
                 <p className="text-xs text-slate-500 truncate">
-                  {d.kind} · {d.host}:{d.port} · base {d.baseDN ?? '—'} ·{' '}
-                  {d.useTLS ? 'TLS' : 'plain'} ·{' '}
+                  {d.kind} · {d.host}:{d.port ?? '—'} · base {d.baseDN ?? '—'} ·{' '}
+                  {!d.useTLS ? 'plain' : d.port === 389 ? 'STARTTLS' : 'LDAPS'}
+                  {d.tlsInsecure ? ' (insecure)' : ''} ·{' '}
                   {d.hasBindPassword ? 'password set' : 'no password'} ·{' '}
                   JIT {d.allowJIT ? 'on' : 'off'} ·{' '}
                   groups {d.syncRolesFromGroups ? 'sync' : 'off'}
@@ -266,10 +269,30 @@ export default function DirectoriesPage(): JSX.Element {
               <input
                 type="checkbox"
                 checked={form.useTLS ?? false}
-                onChange={(e) => setForm({ ...form, useTLS: e.target.checked })}
+                onChange={(e) => setForm({
+                  ...form,
+                  useTLS: e.target.checked,
+                  port: e.target.checked ? (form.port === 636 ? 389 : form.port ?? 389) : 389,
+                })}
               />
-              <span className="text-xs">Use TLS (ldaps)</span>
+              <span className="text-xs">Encrypt connection (required for Active Directory)</span>
             </label>
+            {form.useTLS && (
+              <label className="flex items-center gap-2 mt-5 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={form.tlsInsecure ?? false}
+                  onChange={(e) => setForm({ ...form, tlsInsecure: e.target.checked })}
+                />
+                <span className="text-xs">
+                  Skip TLS certificate verification (internal / self-signed AD certs)
+                </span>
+              </label>
+            )}
+            <p className="text-xs text-slate-500 md:col-span-2">
+              Port <strong>389</strong> uses STARTTLS (encrypted upgrade). Port <strong>636</strong> uses LDAPS.
+              Host should be an IP or hostname only — do not include <code>ldap://</code>.
+            </p>
             <label className="flex flex-col gap-1 md:col-span-2">
               <span className="text-xs text-slate-600">Bind DN</span>
               <input
