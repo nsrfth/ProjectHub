@@ -85,8 +85,8 @@ export default function TeamsPage(): JSX.Element {
   });
 
   const isManager = detail?.myRole === 'MANAGER';
-  const canEditDetails = detail?.capabilities.editDetails ?? false;
-  const canDelete = detail?.capabilities.deleteTeam ?? false;
+  const canEditDetails = detail?.capabilities?.editDetails ?? isManager;
+  const canDelete = detail?.capabilities?.deleteTeam ?? false;
 
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
