@@ -34,49 +34,56 @@ function memberIdFor(teamId: string): string {
   return `mem_${teamId}`;
 }
 
+async function ensureOneSystemRole(
+  teamId: string,
+  name: 'Manager' | 'Member',
+  preferredId: string,
+  perms: readonly string[],
+): Promise<string> {
+  // Seed + older code paths may have created Manager/Member rows with
+  // auto-generated ids. Upsert-by-id then collides on @@unique([teamId,name]).
+  const existing = await prisma.role.findUnique({
+    where: { teamId_name: { teamId, name } },
+  });
+  if (existing) {
+    await prisma.rolePermission.createMany({
+      data: perms.map((permission) => ({ roleId: existing.id, permission })),
+      skipDuplicates: true,
+    });
+    return existing.id;
+  }
+
+  await prisma.role.create({
+    data: {
+      id: preferredId,
+      teamId,
+      name,
+      description: `Default ${name} role. System-managed: editable but undeletable.`,
+      isSystem: true,
+      permissions: {
+        createMany: {
+          data: perms.map((permission) => ({ permission })),
+          skipDuplicates: true,
+        },
+      },
+    },
+  });
+  return preferredId;
+}
+
 export async function ensureSystemRoles(teamId: string): Promise<SystemRoleIds> {
-  const managerId = managerIdFor(teamId);
-  const memberId = memberIdFor(teamId);
-
-  // The system Manager role.
-  await prisma.role.upsert({
-    where: { id: managerId },
-    update: {},
-    create: {
-      id: managerId,
-      teamId,
-      name: 'Manager',
-      description: 'Default Manager role. System-managed: editable but undeletable.',
-      isSystem: true,
-      permissions: {
-        // createMany with skipDuplicates is idempotent on retries.
-        createMany: {
-          data: DEFAULT_MANAGER_PERMISSIONS.map((p) => ({ permission: p })),
-          skipDuplicates: true,
-        },
-      },
-    },
-  });
-
-  // The system Member role.
-  await prisma.role.upsert({
-    where: { id: memberId },
-    update: {},
-    create: {
-      id: memberId,
-      teamId,
-      name: 'Member',
-      description: 'Default Member role. System-managed: editable but undeletable.',
-      isSystem: true,
-      permissions: {
-        createMany: {
-          data: DEFAULT_MEMBER_PERMISSIONS.map((p) => ({ permission: p })),
-          skipDuplicates: true,
-        },
-      },
-    },
-  });
-
+  const managerId = await ensureOneSystemRole(
+    teamId,
+    'Manager',
+    managerIdFor(teamId),
+    DEFAULT_MANAGER_PERMISSIONS,
+  );
+  const memberId = await ensureOneSystemRole(
+    teamId,
+    'Member',
+    memberIdFor(teamId),
+    DEFAULT_MEMBER_PERMISSIONS,
+  );
   return { managerId, memberId };
 }
 

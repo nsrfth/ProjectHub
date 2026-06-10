@@ -7,6 +7,14 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.49.2] — 2026-06-10
+
+### Fixed
+
+- **Backend crash on boot** — `ensureSystemRoles` failed when seed-created Manager/Member
+  roles used auto-generated ids (unique on `teamId`+`name`). Server now resolves
+  existing roles by name before creating, fixing login/API outage on localhost.
+
 ## [1.49.1] — 2026-06-10
 
 ### Fixed
