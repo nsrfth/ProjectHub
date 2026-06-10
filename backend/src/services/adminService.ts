@@ -288,17 +288,10 @@ export class AdminService {
     return { generatedPassword };
   }
 
-  async deleteTeam(teamId: string): Promise<void> {
-    // Team is the parent of memberships, projects, labels, notifications.
-    // Each cascades from Team in the schema, so this single delete tears
-    // down the entire tenant cleanly.
-    try {
-      await prisma.team.delete({ where: { id: teamId } });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
-        throw Errors.notFound('Team not found');
-      }
-      throw err;
-    }
+  async deleteTeam(teamId: string, actorId: string): Promise<void> {
+    const { TeamsService } = await import('./teamsService.js');
+    const teams = new TeamsService();
+    // Global admin may force-delete teams that still have projects/tasks.
+    await teams.delete(teamId, actorId, { force: true });
   }
 }

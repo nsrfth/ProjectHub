@@ -150,6 +150,78 @@ describe('GET /api/teams/:teamId', () => {
   });
 });
 
+describe('PATCH /api/teams/:teamId', () => {
+  it('MANAGER can rename the team', async () => {
+    const token = await registerUser('mgr@example.com');
+    const team = await createTeam(token, 'acme', 'Acme');
+    const res = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Acme Renamed' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().name).toBe('Acme Renamed');
+  });
+
+  it('MEMBER without team.edit_details cannot rename', async () => {
+    const tokenA = await registerUser('a@example.com');
+    const member = await registerUser('b@example.com');
+    const team = await createTeam(tokenA, 'acme');
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/members`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { email: 'b@example.com', role: 'MEMBER' },
+    });
+    const res = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}`,
+      headers: { authorization: `Bearer ${member}` },
+      payload: { name: 'Hijacked' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('DELETE /api/teams/:teamId', () => {
+  it('MANAGER can delete an empty team', async () => {
+    const token = await registerUser('del@example.com');
+    const team = await createTeam(token, 'empty-team');
+    const res = await inject({
+      method: 'DELETE',
+      url: `/api/teams/${team.id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(204);
+    const gone = await inject({
+      method: 'GET',
+      url: `/api/teams/${team.id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(gone.statusCode).toBe(403);
+  });
+
+  it('returns 409 when projects block deletion', async () => {
+    const token = await registerUser('blk@example.com');
+    const team = await createTeam(token, 'blocked');
+    const proj = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'P1' },
+    });
+    expect(proj.statusCode).toBe(201);
+    const res = await inject({
+      method: 'DELETE',
+      url: `/api/teams/${team.id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toMatch(/Cannot delete team/i);
+  });
+});
+
 describe('team membership', () => {
   it('MANAGER can add an existing user as MEMBER', async () => {
     const tokenA = await registerUser('a@example.com');

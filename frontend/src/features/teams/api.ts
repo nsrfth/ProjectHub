@@ -26,8 +26,23 @@ export interface TeamMember {
   joinedAt: string;
 }
 
+export interface TeamDeleteBlockers {
+  canDelete: boolean;
+  projectCount: number;
+  taskCount: number;
+  memberCount: number;
+  reasons: string[];
+}
+
+export interface TeamCapabilities {
+  editDetails: boolean;
+  deleteTeam: boolean;
+}
+
 export interface TeamDetail extends Team {
   members: TeamMember[];
+  capabilities: TeamCapabilities;
+  deleteBlockers: TeamDeleteBlockers | null;
 }
 
 export async function listMyTeams(): Promise<Team[]> {
@@ -69,4 +84,8 @@ export async function updateMemberRole(
 
 export async function removeMember(teamId: string, userId: string): Promise<void> {
   await api.delete(`/teams/${teamId}/members/${userId}`);
+}
+
+export async function deleteTeam(teamId: string): Promise<void> {
+  await api.delete(`/teams/${teamId}`);
 }

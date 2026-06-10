@@ -33,11 +33,17 @@ export class TeamsController {
     reply: FastifyReply,
   ) => {
     if (!req.user) throw Errors.unauthorized();
-    const { team, members } = await this.svc.getDetail(req.user.sub, req.params.teamId);
+    const { team, members, capabilities, deleteBlockers } = await this.svc.getDetail(
+      req.user.sub,
+      req.params.teamId,
+      req.user.globalRole,
+    );
     return reply.send({
       ...team,
       createdAt: team.createdAt.toISOString(),
       members: members.map((m) => ({ ...m, joinedAt: m.joinedAt.toISOString() })),
+      capabilities,
+      deleteBlockers,
     });
   };
 
@@ -45,8 +51,18 @@ export class TeamsController {
     req: FastifyRequest<{ Params: TeamIdParams; Body: UpdateTeamBody }>,
     reply: FastifyReply,
   ) => {
-    const team = await this.svc.update(req.params.teamId, req.body);
+    if (!req.user) throw Errors.unauthorized();
+    const team = await this.svc.update(req.params.teamId, req.user.sub, req.body);
     return reply.send({ ...team, createdAt: team.createdAt.toISOString() });
+  };
+
+  remove = async (
+    req: FastifyRequest<{ Params: TeamIdParams }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    await this.svc.delete(req.params.teamId, req.user.sub);
+    return reply.status(204).send();
   };
 
   addMember = async (

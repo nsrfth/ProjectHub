@@ -71,8 +71,23 @@ export const teamMemberResponse = z.object({
   joinedAt: z.string(),
 });
 
+export const teamDeleteBlockersResponse = z.object({
+  canDelete: z.boolean(),
+  projectCount: z.number().int(),
+  taskCount: z.number().int(),
+  memberCount: z.number().int(),
+  reasons: z.array(z.string()),
+});
+
+export const teamCapabilitiesResponse = z.object({
+  editDetails: z.boolean(),
+  deleteTeam: z.boolean(),
+});
+
 export const teamDetailResponse = teamResponse.extend({
   members: z.array(teamMemberResponse),
+  capabilities: teamCapabilitiesResponse,
+  deleteBlockers: teamDeleteBlockersResponse.nullable(),
 });
 
 export type CreateTeamBody = z.infer<typeof createTeamBody>;

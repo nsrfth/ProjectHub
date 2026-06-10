@@ -1,6 +1,9 @@
-import { Prisma, type TeamRole } from '@prisma/client';
+import { Prisma, type GlobalRole, type TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import type { Permission } from '../lib/permissions.js';
+import { listMembershipPermissions } from '../middleware/requirePermission.js';
+import { logActivity } from './activityLogger.js';
 
 // Business rules for teams + membership. Route layer enforces auth/RBAC and
 // passes the caller's userId; this layer enforces invariants like
@@ -26,6 +29,23 @@ export interface TeamMemberView {
   roleId: string | null;
   roleName: string | null;
   joinedAt: Date;
+}
+
+export interface TeamCapabilities {
+  editDetails: boolean;
+  deleteTeam: boolean;
+}
+
+export interface TeamDeleteBlockers {
+  canDelete: boolean;
+  projectCount: number;
+  taskCount: number;
+  memberCount: number;
+  reasons: string[];
+}
+
+function permGranted(perms: Set<string>, permission: Permission): boolean {
+  return perms.has('*') || perms.has(permission);
 }
 
 export class TeamsService {
@@ -77,7 +97,13 @@ export class TeamsService {
   async getDetail(
     userId: string,
     teamId: string,
-  ): Promise<{ team: TeamWithRole; members: TeamMemberView[] }> {
+    globalRole: GlobalRole = 'MEMBER',
+  ): Promise<{
+    team: TeamWithRole;
+    members: TeamMemberView[];
+    capabilities: TeamCapabilities;
+    deleteBlockers: TeamDeleteBlockers | null;
+  }> {
     const team = await prisma.team.findUnique({
       where: { id: teamId },
       include: {
@@ -91,6 +117,15 @@ export class TeamsService {
 
     const myMembership = team.memberships.find((m) => m.userId === userId);
     if (!myMembership) throw Errors.forbidden('Not a team member');
+
+    const perms = await listMembershipPermissions(myMembership, globalRole);
+    const capabilities: TeamCapabilities = {
+      editDetails: permGranted(perms, 'team.edit_details'),
+      deleteTeam: permGranted(perms, 'team.delete'),
+    };
+    const deleteBlockers = capabilities.deleteTeam
+      ? await this.getDeleteBlockers(teamId)
+      : null;
 
     return {
       team: {
@@ -110,27 +145,106 @@ export class TeamsService {
         roleName: m.customRole?.name ?? null,
         joinedAt: m.joinedAt,
       })),
+      capabilities,
+      deleteBlockers,
+    };
+  }
+
+  async getDeleteBlockers(teamId: string): Promise<TeamDeleteBlockers> {
+    const [projectCount, taskCount, memberCount] = await Promise.all([
+      prisma.project.count({ where: { teamId } }),
+      prisma.task.count({ where: { teamId, deletedAt: null } }),
+      prisma.teamMembership.count({ where: { teamId } }),
+    ]);
+    const reasons: string[] = [];
+    if (projectCount > 0) {
+      reasons.push(
+        `${projectCount} active project${projectCount === 1 ? '' : 's'} belong to this team`,
+      );
+    }
+    if (taskCount > 0) {
+      reasons.push(
+        `${taskCount} active task${taskCount === 1 ? '' : 's'} belong to this team`,
+      );
+    }
+    return {
+      canDelete: reasons.length === 0,
+      projectCount,
+      taskCount,
+      memberCount,
+      reasons,
     };
   }
 
   async update(
     teamId: string,
+    actorId: string,
     input: { name?: string; slug?: string; color?: string | null },
   ): Promise<TeamWithRole & { myRole: TeamRole }> {
     if (input.name === undefined && input.slug === undefined && input.color === undefined) {
       throw Errors.badRequest('Provide at least one field to update');
     }
+    const existing = await prisma.team.findUnique({ where: { id: teamId } });
+    if (!existing) throw Errors.notFound('Team not found');
+
     try {
       const team = await prisma.team.update({
         where: { id: teamId },
         data: input,
       });
-      // myRole is not returned here because update is gated on MANAGER already.
+      if (input.name !== undefined && input.name !== existing.name) {
+        await logActivity(prisma, {
+          teamId,
+          actorId,
+          action: 'team.renamed',
+          meta: { oldName: existing.name, newName: input.name },
+        });
+      }
       return { ...team, myRole: 'MANAGER' };
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError) {
         if (err.code === 'P2002') throw Errors.conflict('Slug already taken');
         if (err.code === 'P2025') throw Errors.notFound('Team not found');
+      }
+      throw err;
+    }
+  }
+
+  // v1.48: manager-driven delete with dependency guard. Global admins may
+  // pass force=true (Settings → Admin) to cascade-delete content.
+  async delete(
+    teamId: string,
+    actorId: string,
+    opts?: { force?: boolean },
+  ): Promise<void> {
+    const team = await prisma.team.findUnique({ where: { id: teamId } });
+    if (!team) throw Errors.notFound('Team not found');
+
+    const blockers = await this.getDeleteBlockers(teamId);
+    if (!opts?.force && !blockers.canDelete) {
+      throw Errors.conflict('Cannot delete team', blockers);
+    }
+
+    await logActivity(prisma, {
+      teamId: null,
+      actorId,
+      action: 'team.deleted',
+      meta: {
+        teamId,
+        teamName: team.name,
+        teamSlug: team.slug,
+        forced: !!opts?.force,
+        projectCount: blockers.projectCount,
+        taskCount: blockers.taskCount,
+        memberCount: blockers.memberCount,
+      },
+    });
+
+    try {
+      await prisma.team.delete({ where: { id: teamId } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw Errors.notFound('Team not found');
       }
       throw err;
     }

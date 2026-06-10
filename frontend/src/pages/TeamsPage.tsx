@@ -85,6 +85,49 @@ export default function TeamsPage(): JSX.Element {
   });
 
   const isManager = detail?.myRole === 'MANAGER';
+  const canEditDetails = detail?.capabilities.editDetails ?? false;
+  const canDelete = detail?.capabilities.deleteTeam ?? false;
+
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [showActions, setShowActions] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const renameMut = useMutation({
+    mutationFn: (name: string) => teamsApi.updateTeam(currentTeamId!, { name }),
+    onSuccess: async () => {
+      setEditingName(false);
+      setRenameError(null);
+      setShowActions(false);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['teams', 'detail', currentTeamId] }),
+        refresh(),
+      ]);
+    },
+    onError: (err) => setRenameError(errorMessage(err, 'Could not rename team')),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: () => teamsApi.deleteTeam(currentTeamId!),
+    onSuccess: async () => {
+      setShowDeleteDialog(false);
+      setDeleteError(null);
+      const remaining = teams.filter((t) => t.id !== currentTeamId);
+      await refresh();
+      setCurrentTeamId(remaining[0]?.id ?? null);
+    },
+    onError: (err) => setDeleteError(errorMessage(err, 'Could not delete team')),
+  });
+
+  function startRename(): void {
+    if (!detail) return;
+    setDraftName(detail.name);
+    setRenameError(null);
+    setEditingName(true);
+    setShowActions(false);
+  }
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
@@ -148,21 +191,163 @@ export default function TeamsPage(): JSX.Element {
           {detail && (
             <>
               <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-medium flex items-center gap-2">
-                    {detail.color && (
-                      <span
-                        aria-hidden
-                        className="inline-block w-4 h-4 rounded-full border border-slate-200"
-                        style={{ background: detail.color }}
+                <div className="flex-1 min-w-0">
+                  {editingName ? (
+                    <form
+                      className="space-y-2"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const trimmed = draftName.trim();
+                        if (!trimmed) {
+                          setRenameError('Team name cannot be empty');
+                          return;
+                        }
+                        renameMut.mutate(trimmed);
+                      }}
+                    >
+                      <label className="block text-xs text-slate-500">Team name</label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={120}
+                        value={draftName}
+                        onChange={(e) => setDraftName(e.target.value)}
+                        className="w-full rounded border-slate-300 px-2 py-1 border text-sm"
+                        autoFocus
                       />
-                    )}
-                    {detail.name}
-                  </h2>
-                  <p className="text-xs font-mono text-slate-500">{detail.slug}</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="submit"
+                          disabled={renameMut.isPending}
+                          className="bg-slate-900 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingName(false);
+                            setRenameError(null);
+                          }}
+                          className="border rounded px-3 py-1 text-sm hover:bg-slate-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {renameError && <p className="text-xs text-red-600">{renameError}</p>}
+                    </form>
+                  ) : (
+                    <>
+                      <h2 className="text-lg font-medium flex items-center gap-2">
+                        {detail.color && (
+                          <span
+                            aria-hidden
+                            className="inline-block w-4 h-4 rounded-full border border-slate-200"
+                            style={{ background: detail.color }}
+                          />
+                        )}
+                        {detail.name}
+                      </h2>
+                      <p className="text-xs font-mono text-slate-500">{detail.slug}</p>
+                    </>
+                  )}
                 </div>
-                {isManager && <TeamColourPicker team={detail} />}
+                <div className="flex items-start gap-2 shrink-0">
+                  {canEditDetails && !editingName && <TeamColourPicker team={detail} />}
+                  {(canEditDetails || canDelete) && !editingName && (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowActions((v) => !v)}
+                        className="px-2 py-1 border rounded text-sm hover:bg-slate-50"
+                        aria-label="Team actions"
+                        aria-expanded={showActions}
+                      >
+                        ⋮
+                      </button>
+                      {showActions && (
+                        <div className="absolute right-0 z-10 mt-1 w-40 rounded border border-slate-200 bg-white shadow-lg py-1 text-sm">
+                          {canEditDetails && (
+                            <button
+                              type="button"
+                              onClick={startRename}
+                              className="w-full text-left px-3 py-1.5 hover:bg-slate-50"
+                            >
+                              Rename team
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDeleteError(null);
+                                setShowDeleteDialog(true);
+                                setShowActions(false);
+                              }}
+                              className="w-full text-left px-3 py-1.5 text-red-600 hover:bg-red-50"
+                            >
+                              Delete team
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {showDeleteDialog && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="delete-team-title"
+                >
+                  <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
+                    <h3 id="delete-team-title" className="text-lg font-semibold mb-2">
+                      Delete team
+                    </h3>
+                    <p className="text-sm text-slate-600 mb-3">
+                      Are you sure you want to delete <strong>{detail.name}</strong>? This action
+                      cannot be undone.
+                    </p>
+                    {detail.deleteBlockers && !detail.deleteBlockers.canDelete && (
+                      <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        <p className="font-medium mb-1">Cannot delete team because:</p>
+                        <ul className="list-disc pl-5 space-y-0.5">
+                          {detail.deleteBlockers.reasons.map((r) => (
+                            <li key={r}>{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {deleteError && <p className="text-xs text-red-600 mb-2">{deleteError}</p>}
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteDialog(false);
+                          setDeleteError(null);
+                        }}
+                        className="border rounded px-3 py-1.5 text-sm hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          deleteMut.isPending ||
+                          (detail.deleteBlockers !== null && !detail.deleteBlockers.canDelete)
+                        }
+                        onClick={() => deleteMut.mutate()}
+                        className="bg-red-600 text-white rounded px-3 py-1.5 text-sm disabled:opacity-50"
+                      >
+                        {deleteMut.isPending ? 'Deleting…' : 'Delete team'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <h3 className="text-sm font-medium mb-2">Members</h3>
               <ul className="space-y-1 mb-4">

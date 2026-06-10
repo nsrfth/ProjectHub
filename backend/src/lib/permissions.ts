@@ -44,6 +44,9 @@ export const PERMISSIONS = [
   // bypassed the v1.23 custom-role system, so a team could not grant
   // (or withhold) team-detail edits via a custom role.
   'team.edit_details',
+  // v1.48: delete an empty team (no projects / live tasks). Managers with
+  // this permission; global ADMIN bypasses via hasPermission.
+  'team.delete',
 
   // Integrations.
   'webhooks.manage',
@@ -74,6 +77,7 @@ export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
     'team.change_role',
     'team.manage_roles',
     'team.edit_details',
+    'team.delete',
   ],
   Integrations: ['webhooks.manage'],
   Trash: ['trash.purge'],

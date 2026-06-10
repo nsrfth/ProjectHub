@@ -74,7 +74,8 @@ export class AdminController {
   };
 
   deleteTeam = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
-    await this.svc.deleteTeam(req.params.teamId);
+    if (!req.user) throw Errors.unauthorized();
+    await this.svc.deleteTeam(req.params.teamId, req.user.sub);
     return reply.status(204).send();
   };
 

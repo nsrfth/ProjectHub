@@ -7,6 +7,35 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.48.0] — 2026-06-10
+
+**Team managers can rename and delete teams** from the Teams page.
+
+### Teams (backend)
+
+- New permission **`team.delete`** (granted to system Manager roles via migration).
+- **`DELETE /api/teams/:teamId`** — managers with `team.delete` may remove a team
+  only when it has **no projects** and **no live tasks** (409 with blocker
+  details otherwise). Global admins still force-delete via Settings → Admin
+  (cascades all content).
+- **`PATCH /api/teams/:teamId`** — records `team.renamed` activity when the
+  name changes.
+- **`GET /api/teams/:teamId`** — returns `capabilities` (`editDetails`,
+  `deleteTeam`) and `deleteBlockers` for the delete confirmation UI.
+
+### Teams (frontend)
+
+- **⋮ actions menu** on team detail: **Rename team** (inline form) and
+  **Delete team** (confirmation dialog with dependency warnings).
+- Actions visible only when the API grants the matching capability.
+
+### Audit
+
+- `team.renamed` — old/new name, actor, team scope.
+- `team.deleted` — team metadata + validation snapshot (instance-scoped row).
+
+---
+
 ## [1.47.1] — 2026-06-10
 
 **Fix: invite LDAP users to teams when AD mail attribute uses mixed case.**

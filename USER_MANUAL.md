@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.47.0** (2026-06-09)
+Version **v1.48.0** (2026-06-10)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -120,6 +120,8 @@ The buttons appear on every signed-in route so you can always reach help / conte
 - **Teams** page — click the team-name dropdown on the dashboard or go to `/teams`. Lists every team you belong to and lets you switch the "current team" (drives what the kanban / reports / settings show).
 - **Create a team** — click **New team**, give it a name + slug (URL-safe, dash-delimited, e.g. `growth-eng`).
 - **Invite a member** — open the team detail, type their email, pick role `MEMBER` or `MANAGER`. (Only `MANAGER`s can invite.)
+- **Rename a team** (v1.48) — team detail → **⋮** → **Rename team**, edit the name, **Save**. Requires the `team.edit_details` permission (system Manager role by default). Members cannot rename.
+- **Delete a team** (v1.48) — **⋮** → **Delete team** → confirm. Allowed only when the team has **no projects** and **no live tasks**; otherwise the dialog lists blockers. Global admins can still force-delete teams (with all content) from **Settings → Admin**.
 - **Projects** page (`/projects`) — cross-team list of every project you can see (since v1.39, usually projects you **own**). **New project** when you belong to at least one team.
 - **Personal buckets** (v1.45) — on the Projects page, switch to **Personal buckets** to organize projects into your own columns (e.g. *My Priorities*, *This Quarter*). Buckets are private to you and never change project permissions or data.
   - **+ New bucket** — name, optional description, color.

@@ -82,6 +82,22 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
     handler: ctrl.update,
   });
 
+  r.delete('/:teamId', {
+    preHandler: [
+      requireTeamRole('MEMBER', 'MANAGER'),
+      requirePermission('team.delete'),
+      requireScope('admin'),
+    ],
+    schema: {
+      tags: ['teams'],
+      summary: 'Delete an empty team (requires team.delete; blocks when projects/tasks exist)',
+      params: z.object({ teamId: z.string() }),
+      response: { 204: z.null() },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.remove,
+  });
+
   // v1.23: membership-management endpoints now check the permission system.
   // requireTeamRole runs first (any member) so the membership is stashed on
   // the request; requirePermission then gates the specific capability.
