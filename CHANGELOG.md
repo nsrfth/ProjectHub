@@ -7,6 +7,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.47.1] — 2026-06-10
+
+**Fix: invite LDAP users to teams when AD mail attribute uses mixed case.**
+
+- `POST /api/teams/:teamId/members` now resolves users with a
+  case-insensitive email match. The invite body lowercases the address but
+  LDAP JIT stored `A.Masghali@…` verbatim — lookups failed with 404.
+- LDAP login and profile sync now normalize email to lowercase on
+  create/update so future users stay consistent.
+
+---
+
 ## [1.47.0] — 2026-06-09
 
 **Asana-style Timeline on Planner → Calendar** — replaces the v1.46 vertical

@@ -140,7 +140,11 @@ export class TeamsService {
     teamId: string,
     input: { email: string; role: TeamRole },
   ): Promise<TeamMemberView> {
-    const user = await prisma.user.findUnique({ where: { email: input.email } });
+    // Case-insensitive: LDAP JIT stores mail as returned by AD (often mixed
+    // case) while addMemberBody lowercases the invite email.
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: input.email, mode: 'insensitive' } },
+    });
     if (!user) throw Errors.notFound('No user with that email');
 
     // v1.23: also look up the matching system role for the team so the new

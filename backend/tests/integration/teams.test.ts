@@ -165,6 +165,29 @@ describe('team membership', () => {
     expect(res.json().role).toBe('MEMBER');
   });
 
+  it('adds a user when invite email differs only by case (LDAP mail attr)', async () => {
+    const tokenA = await registerUser('a@example.com');
+    await prisma.user.create({
+      data: {
+        email: 'A.Masghali@modalalco.com',
+        name: 'Alireza Masghali',
+        authSource: 'LDAP',
+        passwordHash: null,
+        globalRole: 'MEMBER',
+        emailVerifiedAt: new Date(),
+      },
+    });
+    const team = await createTeam(tokenA, 'acme');
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/members`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { email: 'a.masghali@modalalco.com', role: 'MEMBER' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().email).toBe('A.Masghali@modalalco.com');
+  });
+
   it('returns 404 when inviting an email no user has', async () => {
     const token = await registerUser('a@example.com');
     const team = await createTeam(token, 'acme');

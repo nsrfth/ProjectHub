@@ -127,7 +127,7 @@ export class AuthService {
     const user = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: identifier },
+          { email: { equals: identifier, mode: 'insensitive' } },
           {
             ldapUsername: { equals: identifier, mode: 'insensitive' },
             authSource: 'LDAP',
@@ -333,7 +333,7 @@ export class AuthService {
 
   private ldapProfileFields(result: LdapAuthResult) {
     return {
-      email: result.email,
+      email: result.email.trim().toLowerCase(),
       name: result.displayName || result.email,
       ldapUsername: result.ldapUsername,
       userPrincipalName: result.userPrincipalName,
