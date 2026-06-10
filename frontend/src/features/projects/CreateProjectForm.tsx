@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import type { Team } from '@/features/teams/api';
 import { getTeam } from '@/features/teams/api';
+import { visibleTeamMembers } from '@/lib/systemUser';
 import * as projectsApi from '@/features/projects/api';
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -36,7 +37,7 @@ export default function CreateProjectForm({
     enabled: !!effectiveFormTeamId,
     staleTime: 30_000,
   });
-  const formMembers = formTeamDetail?.members ?? [];
+  const formMembers = visibleTeamMembers(formTeamDetail?.members ?? []);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');

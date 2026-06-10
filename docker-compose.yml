@@ -67,6 +67,7 @@ services:
       # the right tag. Empty string is fine — the backend falls back to "dev".
       TASKHUB_VERSION: ${TASKHUB_VERSION:-}
       TASKHUB_BUILD_TIME: ${TASKHUB_BUILD_TIME:-}
+      SYSTEM_USER_EMAIL: ${SYSTEM_USER_EMAIL:-admin@taskhub.local}
       # v1.22: self-upgrade plumbing. Backend POSTs to UPDATER_URL on a
       # successful admin upgrade-now request. Leave both blank to disable
       # the in-app upgrade button (the API endpoint then returns 503).

@@ -5,8 +5,15 @@ import { DEFAULT_MANAGER_PERMISSIONS } from './permissions.js';
 import { ensureSystemRoles, systemRoleIdFor } from './teamRoles.js';
 import { logActivity } from '../services/activityLogger.js';
 
-/** Canonical email for the hidden system team manager. */
-export const SYSTEM_USER_EMAIL = 'admin@taskhub.local';
+/** Default hidden system team manager email. Override with SYSTEM_USER_EMAIL in .env. */
+export const DEFAULT_SYSTEM_USER_EMAIL = 'admin@taskhub.local';
+
+export function getSystemUserEmail(): string {
+  return (process.env.SYSTEM_USER_EMAIL || DEFAULT_SYSTEM_USER_EMAIL).trim().toLowerCase();
+}
+
+/** @deprecated use getSystemUserEmail() */
+export const SYSTEM_USER_EMAIL = DEFAULT_SYSTEM_USER_EMAIL;
 
 let cachedSystemUserId: string | null | undefined;
 
@@ -16,8 +23,17 @@ export function clearSystemUserCache(): void {
 
 export async function getSystemUser(): Promise<User | null> {
   return prisma.user.findFirst({
-    where: { email: { equals: SYSTEM_USER_EMAIL, mode: 'insensitive' } },
+    where: { email: { equals: getSystemUserEmail(), mode: 'insensitive' } },
   });
+}
+
+/** Ensure the configured system user row carries isSystemUser=true (idempotent). */
+export async function bootstrapSystemUserFlag(): Promise<void> {
+  await prisma.user.updateMany({
+    where: { email: { equals: getSystemUserEmail(), mode: 'insensitive' } },
+    data: { isSystemUser: true },
+  });
+  clearSystemUserCache();
 }
 
 export async function getSystemUserId(): Promise<string | null> {
@@ -31,7 +47,7 @@ export function isSystemUser(
   user: Pick<User, 'isSystemUser' | 'email'> | { isSystemUser?: boolean; email?: string },
 ): boolean {
   if (user.isSystemUser) return true;
-  return (user.email ?? '').toLowerCase() === SYSTEM_USER_EMAIL;
+  return (user.email ?? '').toLowerCase() === getSystemUserEmail();
 }
 
 export function isSystemUserId(userId: string, systemUserId: string | null): boolean {
@@ -57,12 +73,16 @@ export function maskActorName(
   return actor?.name ?? '(deleted user)';
 }
 
-export function filterVisibleMembers<T extends { userId: string }>(
+export function filterVisibleMembers<T extends { userId: string; email?: string }>(
   members: T[],
   systemUserId: string | null,
 ): T[] {
-  if (!systemUserId) return members;
-  return members.filter((m) => m.userId !== systemUserId);
+  const hiddenEmail = getSystemUserEmail();
+  return members.filter((m) => {
+    if (systemUserId && m.userId === systemUserId) return false;
+    if (m.email && m.email.toLowerCase() === hiddenEmail) return false;
+    return true;
+  });
 }
 
 /** Managers excluding the hidden system account (for last-manager guards). */

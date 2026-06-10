@@ -7,6 +7,14 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.49.1] — 2026-06-10
+
+### Fixed
+
+- **System admin still visible in Teams** — strengthened API filtering (email +
+  userId), boot-time `isSystemUser` flag sync, configurable `SYSTEM_USER_EMAIL`,
+  and frontend `visibleTeamMembers()` filter on all team-member UIs.
+
 ## [1.49.0] — 2026-06-10
 
 **Hidden system team manager** — `admin@taskhub.local` is automatically assigned

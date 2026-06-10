@@ -5,6 +5,7 @@ import * as teamsApi from '@/features/teams/api';
 import * as rolesApi from '@/features/roles/api';
 import { useTeams } from '@/features/teams/TeamsContext';
 import { formatShamsiTimestampDate } from '@/lib/shamsi';
+import { visibleTeamMembers } from '@/lib/systemUser';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -351,7 +352,7 @@ export default function TeamsPage(): JSX.Element {
 
               <h3 className="text-sm font-medium mb-2">Members</h3>
               <ul className="space-y-1 mb-4">
-                {detail.members.map((m) => (
+                {visibleTeamMembers(detail.members).map((m) => (
                   <li
                     key={m.userId}
                     className="flex items-center justify-between text-sm border-b last:border-0 py-1"

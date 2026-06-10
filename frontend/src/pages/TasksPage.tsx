@@ -18,6 +18,7 @@ import {
 } from '@/features/planner/grouping';
 import { loadBoardGroupBy, saveBoardGroupBy } from '@/features/planner/storage';
 import { getTeam } from '@/features/teams/api';
+import { visibleTeamMembers } from '@/lib/systemUser';
 const STATUS_ORDER: tasksApi.TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const STATUS_LABEL: Record<tasksApi.TaskStatus, string> = {
   TODO: 'To do',
@@ -73,7 +74,7 @@ export default function TasksPage(): JSX.Element {
 
   const assigneeNames = useMemo(() => {
     const m = new Map<string, string>();
-    for (const mem of teamDetail?.members ?? []) {
+    for (const mem of visibleTeamMembers(teamDetail?.members ?? [])) {
       m.set(mem.userId, mem.name || mem.email);
     }
     return m;

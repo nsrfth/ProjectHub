@@ -3,6 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import * as projectsApi from '@/features/projects/api';
 import * as tasksApi from '@/features/tasks/api';
 import { getTeam } from '@/features/teams/api';
+import { visibleTeamMembers } from '@/lib/systemUser';
 import type { Team } from '@/features/teams/api';
 import { buildTimelineRows, overlapsRange, utcDayMs } from './utils';
 import type { TimelineFilters, TimelineRow } from './types';
@@ -69,7 +70,7 @@ export function useTimelineData({
   const assigneeNames = useMemo(() => {
     const m = new Map<string, string>();
     for (const q of teamQueries) {
-      for (const mem of q.data?.members ?? []) {
+      for (const mem of visibleTeamMembers(q.data?.members ?? [])) {
         m.set(mem.userId, mem.name || mem.email);
       }
     }

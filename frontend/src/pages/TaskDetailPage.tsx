@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useProjectTeam } from '@/features/projects/useProjectTeam';
 import { getTeam } from '@/features/teams/api';
+import { visibleTeamMembers } from '@/lib/systemUser';
 import * as tasksApi from '@/features/tasks/api';
 import * as commentsApi from '@/features/comments/api';
 import * as activityApi from '@/features/activity/api';
@@ -126,7 +127,7 @@ export default function TaskDetailPage(): JSX.Element {
     enabled: !!teamId && canChangeTechnician,
     staleTime: 30_000,
   });
-  const teamMembers = teamDetail?.members ?? [];
+  const teamMembers = visibleTeamMembers(teamDetail?.members ?? []);
 
   const { data: comments = [], isLoading: commentsLoading } = useQuery({
     queryKey: ['comments', taskId],

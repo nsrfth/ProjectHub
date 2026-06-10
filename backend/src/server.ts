@@ -6,7 +6,7 @@ import { createRecurrenceScheduler } from './scheduler/recurrenceScheduler.js';
 import { createBackupScheduler } from './scheduler/backupScheduler.js';
 import { BackupsService } from './services/backupsService.js';
 import { clearMaintenance } from './lib/maintenance.js';
-import { bootstrapSystemManagerOnAllTeams } from './lib/systemUser.js';
+import { bootstrapSystemManagerOnAllTeams, bootstrapSystemUserFlag } from './lib/systemUser.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -93,6 +93,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
   try {
+    await bootstrapSystemUserFlag();
     const backfill = await bootstrapSystemManagerOnAllTeams();
     if (backfill.created > 0) {
       app.log.info(backfill, 'system manager backfill on existing teams');

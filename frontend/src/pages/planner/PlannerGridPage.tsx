@@ -10,6 +10,7 @@ import PlannerFilterBar, {
   collectLabelOptions,
 } from '@/features/planner/PlannerFilterBar';
 import { getTeam } from '@/features/teams/api';
+import { visibleTeamMembers } from '@/lib/systemUser';
 import { useT } from '@/lib/i18n';
 
 export default function PlannerGridPage(): JSX.Element {
@@ -46,7 +47,7 @@ export default function PlannerGridPage(): JSX.Element {
 
   const assigneeNames = useMemo(() => {
     const m = new Map<string, string>();
-    for (const mem of teamDetail?.members ?? []) {
+    for (const mem of visibleTeamMembers(teamDetail?.members ?? [])) {
       m.set(mem.userId, mem.name || mem.email);
     }
     return m;

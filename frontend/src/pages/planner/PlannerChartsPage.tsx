@@ -6,6 +6,7 @@ import * as tasksApi from '@/features/tasks/api';
 import type { TaskStatus } from '@/features/tasks/api';
 import { fetchSummary, fetchWorkload } from '@/features/reports/api';
 import { getTeam } from '@/features/teams/api';
+import { visibleTeamMembers } from '@/lib/systemUser';
 import PlannerChartsPanel from '@/features/planner/charts/PlannerChartsPanel';
 import {
   memberBarFromTasks,
@@ -80,7 +81,7 @@ export default function PlannerChartsPage(): JSX.Element {
 
   const assigneeNames = useMemo(() => {
     const m = new Map<string, string>();
-    for (const mem of memberTeamQuery.data?.members ?? []) {
+    for (const mem of visibleTeamMembers(memberTeamQuery.data?.members ?? [])) {
       m.set(mem.userId, mem.name || mem.email);
     }
     return m;
