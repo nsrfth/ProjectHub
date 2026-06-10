@@ -4,6 +4,7 @@ import { Errors } from '../lib/errors.js';
 import { hashPassword } from '../lib/hashing.js';
 import { generateCompliantPassword } from '../lib/passwordPolicy.js';
 import { passwordPolicyService } from './passwordPolicyService.js';
+import { assertNotSystemUserTarget, getSystemUserId, isSystemUser } from '../lib/systemUser.js';
 
 // Admin operations bypass team-level RBAC and instead require GlobalRole=ADMIN
 // (enforced by the route layer). The hard invariant this service guards is
@@ -82,6 +83,7 @@ export class AdminService {
       },
     });
     if (!u) throw Errors.notFound('User not found');
+    if (isSystemUser(u)) throw Errors.notFound('User not found');
     return toAdminUserView(u);
   }
 
@@ -89,6 +91,7 @@ export class AdminService {
     // Cursor pagination: fetch limit+1 to know if there's a next page without
     // a separate count query. The last item is the cursor for the next page.
     const rows = await prisma.user.findMany({
+      where: { isSystemUser: false },
       orderBy: { createdAt: 'asc' },
       take: opts.limit + 1,
       ...(opts.cursor && { cursor: { id: opts.cursor }, skip: 1 }),
@@ -116,6 +119,7 @@ export class AdminService {
       include: { _count: { select: { memberships: true } } },
     });
     if (!target) throw Errors.notFound('User not found');
+    if (isSystemUser(target)) throw Errors.conflict('Cannot change the system account role');
 
     // Demoting yourself or the last ADMIN would orphan the admin role and
     // leave the system unmanageable. Reject before mutating.
@@ -141,6 +145,7 @@ export class AdminService {
   }
 
   async listTeams(opts: { cursor?: string; limit: number }): Promise<Page<AdminTeamView>> {
+    const systemUserId = await getSystemUserId();
     const rows = await prisma.team.findMany({
       orderBy: { createdAt: 'asc' },
       take: opts.limit + 1,
@@ -151,14 +156,26 @@ export class AdminService {
     const page = hasMore ? rows.slice(0, opts.limit) : rows;
     const last = page[page.length - 1];
     return {
-      items: page.map((t) => ({
-        id: t.id,
-        name: t.name,
-        slug: t.slug,
-        createdAt: t.createdAt,
-        memberCount: t._count.memberships,
-        projectCount: t._count.projects,
-      })),
+      items: await Promise.all(
+        page.map(async (t) => {
+          let memberCount = t._count.memberships;
+          if (systemUserId) {
+            const hasSystem = await prisma.teamMembership.findUnique({
+              where: { userId_teamId: { userId: systemUserId, teamId: t.id } },
+              select: { userId: true },
+            });
+            if (hasSystem) memberCount = Math.max(0, memberCount - 1);
+          }
+          return {
+            id: t.id,
+            name: t.name,
+            slug: t.slug,
+            createdAt: t.createdAt,
+            memberCount,
+            projectCount: t._count.projects,
+          };
+        }),
+      ),
       nextCursor: hasMore && last ? last.id : null,
     };
   }
@@ -176,6 +193,7 @@ export class AdminService {
     }
     const target = await prisma.user.findUnique({ where: { id: targetUserId } });
     if (!target) throw Errors.notFound('User not found');
+    await assertNotSystemUserTarget(targetUserId, 'Cannot delete the system account');
     if (target.globalRole === 'ADMIN') {
       const adminCount = await prisma.user.count({ where: { globalRole: 'ADMIN' } });
       if (adminCount <= 1) throw Errors.conflict('Cannot delete the last ADMIN');
@@ -260,6 +278,7 @@ export class AdminService {
   ): Promise<{ generatedPassword: string | null }> {
     const target = await prisma.user.findUnique({ where: { id: targetUserId } });
     if (!target) throw Errors.notFound('User not found');
+    await assertNotSystemUserTarget(targetUserId, 'Cannot reset the system account password');
     if (target.directoryId) {
       throw Errors.conflict(
         'This account is directory-owned; reset the password in the directory instead',

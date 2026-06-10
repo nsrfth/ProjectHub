@@ -1,6 +1,7 @@
 import type { GlobalRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { isSystemUser, maskActorName } from '../lib/systemUser.js';
 import type { AuditEntry, AuditQuery } from '../schemas/audit.js';
 
 // Audit-log query surface. Authz is applied here rather than at the route
@@ -68,7 +69,7 @@ export class AuditService {
       take: query.limit + 1,
       ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
       include: {
-        actor: { select: { id: true, name: true } },
+        actor: { select: { id: true, name: true, isSystemUser: true, email: true } },
         task: { select: { id: true, title: true } },
         team: { select: { id: true, name: true } },
       },
@@ -81,8 +82,8 @@ export class AuditService {
       items: sliced.map((r) => ({
         id: r.id,
         action: r.action,
-        actorId: r.actorId,
-        actorName: r.actor?.name ?? null,
+        actorId: r.actor && isSystemUser(r.actor) ? null : r.actorId,
+        actorName: maskActorName(r.actor, r.actorId),
         taskId: r.taskId,
         taskTitle: r.task?.title ?? null,
         teamId: r.teamId,

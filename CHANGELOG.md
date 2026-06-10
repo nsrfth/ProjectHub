@@ -7,6 +7,23 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.49.0] — 2026-06-10
+
+**Hidden system team manager** — `admin@taskhub.local` is automatically assigned
+as MANAGER on every team (existing and new) but is excluded from all user-facing
+API responses and protected from admin/team mutations.
+
+### Backend
+
+- New `User.isSystemUser` flag; migration marks `admin@taskhub.local`.
+- `ensureSystemManagerOnTeam` / `bootstrapSystemManagerOnAllTeams` (idempotent;
+  runs on server boot and team create).
+- Team member lists, admin user list, SCIM group members, and audit/activity
+  actor fields filter or mask the system account.
+- System manager cannot be removed, demoted, deleted, or password-reset via API.
+- Last-human-MANAGER guards exclude the hidden system manager.
+- Audit: `system.manager_assigned` / `system.manager_backfill` with `actorId: null`.
+
 ## [1.48.0] — 2026-06-10
 
 **Team managers can rename and delete teams** from the Teams page.

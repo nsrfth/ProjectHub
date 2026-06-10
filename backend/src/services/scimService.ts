@@ -2,6 +2,11 @@ import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { ensureSystemRoles } from '../lib/teamRoles.js';
 import {
+  assertNotSystemUserTarget,
+  ensureSystemManagerOnTeam,
+  isSystemUser,
+} from '../lib/systemUser.js';
+import {
   groupResource,
   parsePagination,
   parsePatchOps,
@@ -310,6 +315,7 @@ export class ScimService {
         });
       }
     }
+    await ensureSystemManagerOnTeam(team.id);
     const reloaded = await prisma.team.findUnique({
       where: { id: team.id },
       include: { memberships: { include: { user: true } } },
@@ -352,6 +358,7 @@ export class ScimService {
       },
       include: { memberships: { include: { user: true } } },
     });
+    await ensureSystemManagerOnTeam(id);
     return this.groupToResource(updated);
   }
 
@@ -390,13 +397,19 @@ export class ScimService {
       if (op.op === 'remove' && op.path?.startsWith('members')) {
         const m = /value\s+eq\s+"([^"]+)"/.exec(op.path);
         if (m) {
-          await prisma.teamMembership
-            .delete({ where: { userId_teamId: { userId: m[1]!, teamId: id } } })
-            .catch(() => undefined);
+          try {
+            await assertNotSystemUserTarget(m[1]!, 'Cannot remove the system manager');
+            await prisma.teamMembership.delete({
+              where: { userId_teamId: { userId: m[1]!, teamId: id } },
+            });
+          } catch {
+            // Ignore invalid or protected removals.
+          }
         }
         continue;
       }
     }
+    await ensureSystemManagerOnTeam(id);
     return this.getGroup(directoryId, id);
   }
 
@@ -449,12 +462,16 @@ export class ScimService {
     id: string;
     name: string;
     createdAt: Date;
-    memberships: { userId: string; user?: { id: string; name: string } | null }[];
+    memberships: {
+      userId: string;
+      user?: { id: string; name: string; isSystemUser?: boolean; email?: string } | null;
+    }[];
   }): ScimGroupResource {
+    const visible = t.memberships.filter((m) => !m.user || !isSystemUser(m.user));
     return groupResource({
       id: t.id,
       displayName: t.name,
-      members: t.memberships.map((m): { value: string; display?: string } => ({
+      members: visible.map((m): { value: string; display?: string } => ({
         value: m.userId,
         display: m.user?.name,
       })) as ScimMemberRef[],

@@ -4,6 +4,14 @@ import { Errors } from '../lib/errors.js';
 import type { Permission } from '../lib/permissions.js';
 import { listMembershipPermissions } from '../middleware/requirePermission.js';
 import { logActivity } from './activityLogger.js';
+import {
+  assertNotSystemUserTarget,
+  countHumanManagers,
+  ensureSystemManagerOnTeam,
+  filterVisibleMembers,
+  getSystemUserId,
+  isSystemUser,
+} from '../lib/systemUser.js';
 
 // Business rules for teams + membership. Route layer enforces auth/RBAC and
 // passes the caller's userId; this layer enforces invariants like
@@ -62,6 +70,13 @@ export class TeamsService {
           memberships: { create: { userId: creatorId, role: 'MANAGER' } },
         },
       });
+      await ensureSystemManagerOnTeam(team.id);
+      await logActivity(prisma, {
+        actorId: null,
+        teamId: team.id,
+        action: 'system.manager_assigned',
+        meta: { reason: 'team_created' },
+      });
       return {
         id: team.id,
         name: team.name,
@@ -118,6 +133,9 @@ export class TeamsService {
     const myMembership = team.memberships.find((m) => m.userId === userId);
     if (!myMembership) throw Errors.forbidden('Not a team member');
 
+    const systemUserId = await getSystemUserId();
+    const visibleMemberships = team.memberships.filter((m) => !isSystemUser(m.user));
+
     const perms = await listMembershipPermissions(myMembership, globalRole);
     const capabilities: TeamCapabilities = {
       editDetails: permGranted(perms, 'team.edit_details'),
@@ -136,25 +154,34 @@ export class TeamsService {
         createdAt: team.createdAt,
         myRole: myMembership.role,
       },
-      members: team.memberships.map((m) => ({
-        userId: m.userId,
-        email: m.user.email,
-        name: m.user.name,
-        role: m.role,
-        roleId: m.roleId,
-        roleName: m.customRole?.name ?? null,
-        joinedAt: m.joinedAt,
-      })),
+      members: filterVisibleMembers(
+        visibleMemberships.map((m) => ({
+          userId: m.userId,
+          email: m.user.email,
+          name: m.user.name,
+          role: m.role,
+          roleId: m.roleId,
+          roleName: m.customRole?.name ?? null,
+          joinedAt: m.joinedAt,
+        })),
+        systemUserId,
+      ),
       capabilities,
       deleteBlockers,
     };
   }
 
   async getDeleteBlockers(teamId: string): Promise<TeamDeleteBlockers> {
+    const systemUserId = await getSystemUserId();
     const [projectCount, taskCount, memberCount] = await Promise.all([
       prisma.project.count({ where: { teamId } }),
       prisma.task.count({ where: { teamId, deletedAt: null } }),
-      prisma.teamMembership.count({ where: { teamId } }),
+      prisma.teamMembership.count({
+        where: {
+          teamId,
+          ...(systemUserId ? { userId: { not: systemUserId } } : {}),
+        },
+      }),
     ]);
     const reasons: string[] = [];
     if (projectCount > 0) {
@@ -260,6 +287,7 @@ export class TeamsService {
       where: { email: { equals: input.email, mode: 'insensitive' } },
     });
     if (!user) throw Errors.notFound('No user with that email');
+    if (isSystemUser(user)) throw Errors.conflict('This account is managed by the system');
 
     // v1.23: also look up the matching system role for the team so the new
     // membership lands with both `role` and `roleId` populated.
@@ -295,18 +323,18 @@ export class TeamsService {
   }
 
   async removeMember(teamId: string, userId: string): Promise<void> {
+    await assertNotSystemUserTarget(userId, 'Cannot remove the system manager');
+
     const membership = await prisma.teamMembership.findUnique({
       where: { userId_teamId: { userId, teamId } },
     });
     if (!membership) throw Errors.notFound('Member not found');
 
-    // Block removing the last MANAGER — would orphan the team. Caller can
-    // either promote someone else first or delete the team entirely.
+    // Block removing the last human MANAGER — the hidden system manager
+    // does not count toward this guard.
     if (membership.role === 'MANAGER') {
-      const managerCount = await prisma.teamMembership.count({
-        where: { teamId, role: 'MANAGER' },
-      });
-      if (managerCount <= 1) throw Errors.conflict('Cannot remove the last MANAGER');
+      const humanManagers = await countHumanManagers(teamId);
+      if (humanManagers <= 1) throw Errors.conflict('Cannot remove the last MANAGER');
     }
 
     await prisma.teamMembership.delete({
@@ -329,6 +357,7 @@ export class TeamsService {
       include: { user: true },
     });
     if (!membership) throw Errors.notFound('Member not found');
+    await assertNotSystemUserTarget(userId, 'Cannot change the system manager role');
 
     // Resolve the final (role, roleId) pair.
     let newRole: TeamRole = membership.role;
@@ -357,10 +386,8 @@ export class TeamsService {
     // Same "last MANAGER" guard for demotion as for removal — applies whether
     // demotion comes via legacy enum or a custom role that maps to MEMBER.
     if (membership.role === 'MANAGER' && newRole !== 'MANAGER') {
-      const managerCount = await prisma.teamMembership.count({
-        where: { teamId, role: 'MANAGER' },
-      });
-      if (managerCount <= 1) throw Errors.conflict('Cannot demote the last MANAGER');
+      const humanManagers = await countHumanManagers(teamId);
+      if (humanManagers <= 1) throw Errors.conflict('Cannot demote the last MANAGER');
     }
 
     const updated = await prisma.teamMembership.update({

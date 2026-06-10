@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply, preHandlerHookHandler } from 'fastif
 import type { GlobalRole, TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { resolveTeamMembership } from '../lib/systemUser.js';
 import { ApiTokensService } from '../services/apiTokensService.js';
 
 const _apiTokens = new ApiTokensService();
@@ -96,9 +97,7 @@ export function requireTeamRole(...allowed: TeamRole[]): preHandlerHookHandler {
     const teamId = (request.params as { teamId?: string } | undefined)?.teamId;
     if (!teamId) throw Errors.badRequest('Missing teamId in route');
 
-    const membership = await prisma.teamMembership.findUnique({
-      where: { userId_teamId: { userId: request.user.sub, teamId } },
-    });
+    const membership = await resolveTeamMembership(request.user.sub, teamId);
     if (!membership) throw Errors.forbidden('Not a team member');
     if (!allowed.includes(membership.role)) throw Errors.forbidden('Insufficient team role');
 

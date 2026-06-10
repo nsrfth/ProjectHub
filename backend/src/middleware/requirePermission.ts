@@ -4,6 +4,12 @@ import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import type { Permission } from '../lib/permissions.js';
 import { DEFAULT_MANAGER_PERMISSIONS, DEFAULT_MEMBER_PERMISSIONS } from '../lib/permissions.js';
+import {
+  getSystemUserId,
+  isSystemUserId,
+  resolveTeamMembership,
+  systemUserHasManagerPermission,
+} from '../lib/systemUser.js';
 
 // v1.23: per-permission RBAC. The route layer already runs requireTeamRole
 // upstream to validate team membership + stash the membership on the request;
@@ -86,9 +92,11 @@ export async function userHasPermission(
   permission: Permission,
 ): Promise<boolean> {
   if (globalRole === 'ADMIN') return true;
-  const m = await prisma.teamMembership.findUnique({
-    where: { userId_teamId: { userId, teamId } },
-  });
+  const systemUserId = await getSystemUserId();
+  if (isSystemUserId(userId, systemUserId) && systemUserHasManagerPermission(permission)) {
+    return true;
+  }
+  const m = await resolveTeamMembership(userId, teamId);
   if (!m) return false;
   if (m.roleId) {
     const row = await prisma.rolePermission.findUnique({

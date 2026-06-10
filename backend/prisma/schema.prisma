@@ -236,6 +236,9 @@ model User {
   // this is non-null. SCIM deprovision (PATCH active=false) sets this and
   // revokes outstanding refresh tokens; reprovision (active=true) clears it.
   disabledAt      DateTime?
+  // v1.49: built-in system identity (admin@taskhub.local). Hidden from all
+  // user-facing lists; auto-assigned as manager on every team.
+  isSystemUser    Boolean    @default(false)
   // TOTP 2FA (Phase 2C). totpSecretEnc holds the AES-256-GCM ciphertext of
   // the shared secret; totpEnabled flips true only after the user confirms
   // a code during setup. Both clear on disable.

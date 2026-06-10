@@ -50,6 +50,7 @@ export interface BootstrapInput {
   // /verification/request. Default true to match the old register-
   // path behaviour (issued an access token immediately).
   preVerify?: boolean;
+  isSystemUser?: boolean;
 }
 
 export async function bootstrapUser(
@@ -71,6 +72,7 @@ export async function bootstrapUser(
       // Mirror that. Tests exercising the verification flow opt out
       // via `preVerify: false`.
       emailVerifiedAt: input.preVerify === false ? null : new Date(),
+      isSystemUser: input.isSystemUser ?? false,
     },
   });
 

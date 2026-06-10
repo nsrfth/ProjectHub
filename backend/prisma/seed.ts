@@ -6,6 +6,7 @@ import {
   TaskPriority,
 } from '@prisma/client';
 import argon2 from 'argon2';
+import { ensureSystemManagerOnTeam } from '../src/lib/systemUser.js';
 
 const prisma = new PrismaClient();
 
@@ -46,12 +47,13 @@ async function main(): Promise<void> {
 
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
-    update: {},
+    update: { isSystemUser: adminEmail.toLowerCase() === 'admin@taskhub.local' },
     create: {
       email: adminEmail,
       passwordHash: adminHash,
       name: 'Admin',
       globalRole: GlobalRole.ADMIN,
+      isSystemUser: adminEmail.toLowerCase() === 'admin@taskhub.local',
       emailVerifiedAt: TODAY,
     },
   });
@@ -154,6 +156,8 @@ async function main(): Promise<void> {
       create: { userId: user.id, teamId: team.id, role, roleId },
     });
   }
+
+  await ensureSystemManagerOnTeam(team.id);
 
   const labels = await Promise.all(
     [

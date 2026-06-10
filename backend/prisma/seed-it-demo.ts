@@ -6,6 +6,7 @@ import {
   TaskPriority,
 } from '@prisma/client';
 import argon2 from 'argon2';
+import { ensureSystemManagerOnTeam } from '../src/lib/systemUser.js';
 
 const prisma = new PrismaClient();
 
@@ -217,6 +218,7 @@ async function main(): Promise<void> {
         passwordHash: hash,
         name: 'Admin',
         globalRole: GlobalRole.ADMIN,
+        isSystemUser: adminEmail.toLowerCase() === 'admin@taskhub.local',
         emailVerifiedAt: TODAY,
       },
     });
@@ -224,7 +226,11 @@ async function main(): Promise<void> {
   } else {
     admin = await prisma.user.update({
       where: { id: admin.id },
-      data: { globalRole: GlobalRole.ADMIN, emailVerifiedAt: admin.emailVerifiedAt ?? TODAY },
+      data: {
+        globalRole: GlobalRole.ADMIN,
+        isSystemUser: adminEmail.toLowerCase() === 'admin@taskhub.local',
+        emailVerifiedAt: admin.emailVerifiedAt ?? TODAY,
+      },
     });
     console.log(`Using existing admin ${adminEmail} (password unchanged)`);
   }
@@ -275,6 +281,8 @@ async function main(): Promise<void> {
       update: { role: TeamRole.MANAGER, roleId: managerRoleId },
       create: { userId: admin.id, teamId: row.id, role: TeamRole.MANAGER, roleId: managerRoleId },
     });
+
+    await ensureSystemManagerOnTeam(row.id);
 
     for (const l of LABEL_DEFS) {
       await prisma.label.upsert({

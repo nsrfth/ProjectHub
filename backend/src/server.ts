@@ -6,6 +6,7 @@ import { createRecurrenceScheduler } from './scheduler/recurrenceScheduler.js';
 import { createBackupScheduler } from './scheduler/backupScheduler.js';
 import { BackupsService } from './services/backupsService.js';
 import { clearMaintenance } from './lib/maintenance.js';
+import { bootstrapSystemManagerOnAllTeams } from './lib/systemUser.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -92,6 +93,10 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
   try {
+    const backfill = await bootstrapSystemManagerOnAllTeams();
+    if (backfill.created > 0) {
+      app.log.info(backfill, 'system manager backfill on existing teams');
+    }
     await app.listen({ host: '0.0.0.0', port: env.PORT });
     // v1.30.4 (S-5): once the listener is up, clear any persisted
     // maintenance flag. This is what makes the restore flow's

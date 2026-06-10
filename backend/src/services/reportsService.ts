@@ -1,5 +1,6 @@
 import type { TaskPriority, TaskStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
+import { isSystemUser, maskActorName } from '../lib/systemUser.js';
 
 export interface DoneTaskRow {
   taskId: string;
@@ -298,7 +299,7 @@ export class ReportsService {
       orderBy: { createdAt: 'desc' },
       take: limit,
       include: {
-        actor: { select: { id: true, name: true } },
+        actor: { select: { id: true, name: true, isSystemUser: true, email: true } },
         task: {
           select: {
             id: true,
@@ -310,10 +311,8 @@ export class ReportsService {
     });
     return rows.map((a) => ({
       id: a.id,
-      actorId: a.actorId,
-      // SetNull on user delete preserves audit rows — mirror the same
-      // placeholder the per-task feed uses so the UI doesn't branch.
-      actorName: a.actor?.name ?? (a.actorId ? '(deleted user)' : '(system)'),
+      actorId: a.actor && isSystemUser(a.actor) ? null : a.actorId,
+      actorName: maskActorName(a.actor, a.actorId) ?? '(system)',
       action: a.action,
       taskId: a.taskId,
       taskTitle: a.task?.title ?? null,
