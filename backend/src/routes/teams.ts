@@ -15,6 +15,8 @@ import {
   teamMemberResponse,
   teamMembersPage,
   teamResponse,
+  teamUserSearchQuery,
+  teamUserSearchResponse,
   updateMemberRoleBody,
   updateTeamBody,
 } from '../schemas/teams.js';
@@ -117,6 +119,22 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   // v1.23: membership-management endpoints now check the permission system.
   // requireTeamRole runs first (any member) so the membership is stashed on
   // the request; requirePermission then gates the specific capability.
+  r.get('/:teamId/members/user-search', {
+    preHandler: [
+      requireTeamRole('MEMBER', 'MANAGER'),
+      requirePermission('team.invite_member'),
+    ],
+    schema: {
+      tags: ['teams'],
+      summary: 'Search all users for add-member picker (requires team.invite_member)',
+      params: z.object({ teamId: z.string() }),
+      querystring: teamUserSearchQuery,
+      response: { 200: teamUserSearchResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.searchAddableUsers,
+  });
+
   r.post('/:teamId/members', {
     preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.invite_member'), requireScope('admin')],
     schema: {

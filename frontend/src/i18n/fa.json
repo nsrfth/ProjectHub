@@ -308,6 +308,13 @@
   "team.remove.ownsProjects": "این عضو مالک پروژه‌هایی در این تیم است. مالکیت را واگذار کنید یا در هر صورت حذف کنید.",
   "team.remove.reassignTo": "واگذاری مالکیت به",
   "team.remove.removeAnyway": "حذف در هر صورت (مالک فعلی پروژه‌ها حفظ شود)",
+  "team.addMember.search": "افزودن عضو",
+  "team.addMember.searchPlaceholder": "نام یا ایمیل…",
+  "team.addMember.typeHint": "حداقل ۲ کاراکتر برای جستجو وارد کنید.",
+  "team.addMember.noResults": "کاربری یافت نشد.",
+  "team.addMember.searching": "در حال جستجو…",
+  "team.addMember.alreadyMember": "از قبل عضو است",
+  "team.addMember.existingOnly": "کاربر باید از قبل حساب TaskHub داشته باشد.",
 
   "settings.nav.security": "امنیت",
   "settings.nav.securityDesc": "احراز هویت دومرحله‌ای + نشست‌ها",

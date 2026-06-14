@@ -140,9 +140,24 @@ export async function updateTeam(
   return (await api.patch<Team>(`/teams/${teamId}`, input)).data;
 }
 
+export interface TeamUserSearchHit {
+  id: string;
+  email: string;
+  name: string;
+  alreadyMember: boolean;
+}
+
+export async function searchAddableUsers(teamId: string, q: string): Promise<TeamUserSearchHit[]> {
+  const res = await api.get<{ items: TeamUserSearchHit[] }>(
+    `/teams/${teamId}/members/user-search`,
+    { params: { q } },
+  );
+  return res.data.items;
+}
+
 export async function addMember(
   teamId: string,
-  input: { email: string; role: TeamRole },
+  input: ({ role: TeamRole } & ({ email: string } | { userId: string })),
 ): Promise<TeamMember> {
   return (await api.post<TeamMember>(`/teams/${teamId}/members`, input)).data;
 }

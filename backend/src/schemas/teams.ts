@@ -27,9 +27,30 @@ export const updateTeamBody = z.object({
   color: hexColor.nullable().optional(),
 });
 
-export const addMemberBody = z.object({
-  email: z.string().email().toLowerCase(),
-  role: z.enum(['MANAGER', 'MEMBER']).default('MEMBER'),
+export const addMemberBody = z
+  .object({
+    email: z.string().email().toLowerCase().optional(),
+    userId: z.string().min(1).optional(),
+    role: z.enum(['MANAGER', 'MEMBER']).default('MEMBER'),
+  })
+  .refine(
+    (v) => (v.email !== undefined) !== (v.userId !== undefined),
+    'Provide exactly one of `email` or `userId`',
+  );
+
+export const teamUserSearchQuery = z.object({
+  q: z.string().default(''),
+});
+
+export const teamUserSearchHit = z.object({
+  id: z.string(),
+  email: z.string(),
+  name: z.string(),
+  alreadyMember: z.boolean(),
+});
+
+export const teamUserSearchResponse = z.object({
+  items: z.array(teamUserSearchHit),
 });
 
 // v1.23: PATCH /:teamId/members/:userId accepts either the legacy `role`

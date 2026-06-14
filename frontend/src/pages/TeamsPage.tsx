@@ -68,19 +68,34 @@ export default function TeamsPage(): JSX.Element {
     enabled: !!currentTeamId,
   });
 
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [addMemberQuery, setAddMemberQuery] = useState('');
+  const [debouncedAddMemberQuery, setDebouncedAddMemberQuery] = useState('');
   const [inviteRole, setInviteRole] = useState<teamsApi.TeamRole>('MEMBER');
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedAddMemberQuery(addMemberQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [addMemberQuery]);
+
+  const { data: addMemberHits = [], isFetching: addMemberSearching } = useQuery({
+    queryKey: ['teams', currentTeamId, 'add-member-search', debouncedAddMemberQuery],
+    queryFn: () => teamsApi.searchAddableUsers(currentTeamId!, debouncedAddMemberQuery),
+    enabled: !!currentTeamId && debouncedAddMemberQuery.length >= 2,
+  });
+
   const inviteMut = useMutation({
-    mutationFn: (input: { email: string; role: teamsApi.TeamRole }) =>
-      teamsApi.addMember(currentTeamId!, input),
+    mutationFn: (input: { userId: string; role: teamsApi.TeamRole }) =>
+      teamsApi.addMember(currentTeamId!, { userId: input.userId, role: input.role }),
     onSuccess: async () => {
-      setInviteEmail('');
+      setAddMemberQuery('');
+      setDebouncedAddMemberQuery('');
       setInviteError(null);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['teams', 'detail', currentTeamId] }),
         qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'members'] }),
         qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'assignees'] }),
+        qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'add-member-search'] }),
       ]);
     },
     onError: (err) => setInviteError(errorMessage(err, 'Could not add member')),
@@ -814,44 +829,64 @@ export default function TeamsPage(): JSX.Element {
               )}
 
               {isManager && (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    inviteMut.mutate({ email: inviteEmail, role: inviteRole });
-                  }}
-                  className="pt-4 border-t space-y-2"
-                >
-                  <h3 className="text-sm font-medium">Add member</h3>
-                  <div className="flex gap-2">
-                    <input
-                      type="email"
-                      required
-                      placeholder="user@example.com"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      className="flex-1 rounded border-slate-300 px-2 py-1 border text-sm"
-                    />
-                    <select
-                      value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value as teamsApi.TeamRole)}
-                      className="rounded border-slate-300 px-2 py-1 border text-sm"
-                    >
-                      <option value="MEMBER">MEMBER</option>
-                      <option value="MANAGER">MANAGER</option>
-                    </select>
-                    <button
-                      type="submit"
-                      disabled={inviteMut.isPending}
-                      className="bg-slate-900 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
-                    >
-                      Add
-                    </button>
-                  </div>
+                <div className="pt-4 border-t space-y-2">
+                  <h3 className="text-sm font-medium">{t('team.addMember.search')}</h3>
+                  <input
+                    type="search"
+                    value={addMemberQuery}
+                    onChange={(e) => setAddMemberQuery(e.target.value)}
+                    placeholder={t('team.addMember.searchPlaceholder')}
+                    className="w-full rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 px-2 py-1 text-sm"
+                    aria-label={t('team.addMember.search')}
+                  />
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value as teamsApi.TeamRole)}
+                    className="rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 px-2 py-1 text-sm"
+                    aria-label={t('team.members.filter.role')}
+                  >
+                    <option value="MEMBER">MEMBER</option>
+                    <option value="MANAGER">MANAGER</option>
+                  </select>
+                  {addMemberQuery.trim().length > 0 && addMemberQuery.trim().length < 2 && (
+                    <p className="text-xs text-slate-500">{t('team.addMember.typeHint')}</p>
+                  )}
+                  {debouncedAddMemberQuery.length >= 2 && !addMemberSearching && addMemberHits.length === 0 && (
+                    <p className="text-xs text-slate-500 italic">{t('team.addMember.noResults')}</p>
+                  )}
+                  {addMemberSearching && debouncedAddMemberQuery.length >= 2 && (
+                    <p className="text-xs text-slate-500">{t('team.addMember.searching')}</p>
+                  )}
+                  {addMemberHits.length > 0 && (
+                    <ul className="max-h-32 overflow-y-auto space-y-1 border rounded p-2 dark:border-slate-600">
+                      {addMemberHits.map((u) => (
+                        <li key={u.id}>
+                          {u.alreadyMember ? (
+                            <span
+                              className="text-xs text-slate-400 block py-0.5"
+                              title={t('team.addMember.alreadyMember')}
+                            >
+                              {u.name} ({u.email}) — {t('team.addMember.alreadyMember')}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={inviteMut.isPending}
+                              className="text-xs w-full text-left hover:underline disabled:opacity-50 py-0.5"
+                              onClick={() =>
+                                inviteMut.mutate({ userId: u.id, role: inviteRole })
+                              }
+                            >
+                              {u.name} ({u.email})
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {inviteError && <p className="text-xs text-red-600">{inviteError}</p>}
-                  <p className="text-xs text-slate-500">
-                    The user must already have a TaskHub account.
-                  </p>
-                </form>
+                  <p className="text-xs text-slate-500">{t('team.addMember.existingOnly')}</p>
+                </div>
               )}
 
               {canManageGroups && currentTeamId && (

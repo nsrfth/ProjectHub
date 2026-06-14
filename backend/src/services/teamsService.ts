@@ -2,6 +2,7 @@ import { Prisma, type GlobalRole, type TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import type { Permission } from '../lib/permissions.js';
+import { searchUsers } from '../lib/userSearch.js';
 import { listMembershipPermissions } from '../middleware/requirePermission.js';
 import { logActivity } from './activityLogger.js';
 import { systemRoleIdFor } from '../lib/teamRoles.js';
@@ -551,15 +552,35 @@ export class TeamsService {
     }
   }
 
+  async searchAddableUsers(
+    teamId: string,
+    query: string,
+  ): Promise<Array<{ id: string; email: string; name: string; alreadyMember: boolean }>> {
+    const hits = await searchUsers(query);
+    if (hits.length === 0) return [];
+
+    const memberships = await prisma.teamMembership.findMany({
+      where: { teamId, userId: { in: hits.map((h) => h.id) } },
+      select: { userId: true },
+    });
+    const memberIds = new Set(memberships.map((m) => m.userId));
+    return hits.map((h) => ({ ...h, alreadyMember: memberIds.has(h.id) }));
+  }
+
   async addMember(
     teamId: string,
-    input: { email: string; role: TeamRole },
+    input: { email?: string; userId?: string; role: TeamRole },
   ): Promise<TeamMemberView> {
-    // Case-insensitive: LDAP JIT stores mail as returned by AD (often mixed
-    // case) while addMemberBody lowercases the invite email.
-    const user = await prisma.user.findFirst({
-      where: { email: { equals: input.email, mode: 'insensitive' } },
-    });
+    let user;
+    if (input.userId) {
+      user = await prisma.user.findUnique({ where: { id: input.userId } });
+    } else {
+      // Case-insensitive: LDAP JIT stores mail as returned by AD (often mixed
+      // case) while addMemberBody lowercases the invite email.
+      user = await prisma.user.findFirst({
+        where: { email: { equals: input.email!, mode: 'insensitive' } },
+      });
+    }
     if (!user) throw Errors.notFound('No user with that email');
     if (isSystemUser(user)) throw Errors.conflict('This account is managed by the system');
 

@@ -1,6 +1,7 @@
 import type { GroupAccessLevel, GroupInviteStatus } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
+import { searchUsers as searchUsersLib } from '../lib/userSearch.js';
 import { Errors } from '../lib/errors.js';
 import { logActivity } from './activityLogger.js';
 import { notificationsHub } from './notificationsHub.js';
@@ -121,21 +122,7 @@ export class UserGroupsService {
   }
 
   async searchUsers(query: string, limit = 20): Promise<Array<{ id: string; email: string; name: string }>> {
-    const q = query.trim();
-    if (q.length < 2) return [];
-    const rows = await prisma.user.findMany({
-      where: {
-        disabledAt: null,
-        OR: [
-          { email: { contains: q, mode: 'insensitive' } },
-          { name: { contains: q, mode: 'insensitive' } },
-        ],
-      },
-      select: { id: true, email: true, name: true },
-      take: limit,
-      orderBy: { email: 'asc' },
-    });
-    return rows;
+    return searchUsersLib(query, limit);
   }
 
   async create(

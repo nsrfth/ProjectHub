@@ -77,6 +77,14 @@ export class TeamsController {
     });
   };
 
+  searchAddableUsers = async (
+    req: FastifyRequest<{ Params: TeamIdParams; Querystring: { q: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const items = await this.svc.searchAddableUsers(req.params.teamId, req.query.q ?? '');
+    return reply.send({ items });
+  };
+
   update = async (
     req: FastifyRequest<{ Params: TeamIdParams; Body: UpdateTeamBody }>,
     reply: FastifyReply,

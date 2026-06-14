@@ -7,6 +7,22 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.57.0] — 2026-06-09
+
+**Team add member — live search-all-users picker.**
+
+### Teams (backend + frontend)
+
+- New `GET /api/teams/:teamId/members/user-search?q=` — reuses shared user search
+  logic (min 2 chars, disabled excluded, cap 20); gated by `team.invite_member`
+  (not `group.manage` / not admin scope). Results include `alreadyMember` per hit.
+- `POST /api/teams/:teamId/members` accepts optional `userId` (exactly one of
+  `email` or `userId`) for backward compatibility with email-based adds.
+- Teams page **Add member** section: debounced search picker (mirrors Groups UX)
+  instead of a raw email field.
+
+---
+
 ## [1.56.0] — 2026-06-09
 
 **Team member removal — ownership warnings and reassignment.**
