@@ -41,6 +41,46 @@ export interface TeamMemberView {
   roleId: string | null;
   roleName: string | null;
   joinedAt: Date;
+  disabled: boolean;
+  locked: boolean;
+  external: boolean;
+  /** Set for external group accessors only — shows FULL vs READONLY access. */
+  groupAccessLevel: 'FULL' | 'READONLY' | null;
+}
+
+function memberStatusFromUser(
+  user: { disabledAt: Date | null; lockedUntil: Date | null },
+  now = new Date(),
+): Pick<TeamMemberView, 'disabled' | 'locked'> {
+  return {
+    disabled: user.disabledAt != null,
+    locked: user.lockedUntil != null && user.lockedUntil > now,
+  };
+}
+
+function membershipToView(
+  m: {
+    userId: string;
+    role: TeamRole;
+    roleId: string | null;
+    joinedAt: Date;
+    user: { email: string; name: string; disabledAt: Date | null; lockedUntil: Date | null };
+    customRole?: { name: string } | null;
+  },
+  now = new Date(),
+): TeamMemberView {
+  return {
+    userId: m.userId,
+    email: m.user.email,
+    name: m.user.name,
+    role: m.role,
+    roleId: m.roleId,
+    roleName: m.customRole?.name ?? null,
+    joinedAt: m.joinedAt,
+    ...memberStatusFromUser(m.user, now),
+    external: false,
+    groupAccessLevel: null,
+  };
 }
 
 export interface TeamCapabilities {
@@ -186,6 +226,49 @@ export class TeamsService {
       ? await this.getDeleteBlockers(teamId)
       : null;
 
+    const now = new Date();
+    const teamMemberRows = visibleMemberships.map((m) => membershipToView(m, now));
+    const memberUserIds = new Set(teamMemberRows.map((m) => m.userId));
+
+    const excludeExternalIds = [...memberUserIds];
+    if (systemUserId) excludeExternalIds.push(systemUserId);
+
+    const externalGroupRows = await prisma.userGroupMember.findMany({
+      where: {
+        status: 'ACCEPTED',
+        group: { teamId },
+        userId: { notIn: excludeExternalIds },
+        user: { isSystemUser: false },
+      },
+      include: { user: true },
+      orderBy: { invitedAt: 'asc' },
+    });
+
+    const externalByUser = new Map<
+      string,
+      (typeof externalGroupRows)[number]
+    >();
+    for (const row of externalGroupRows) {
+      if (isSystemUser(row.user)) continue;
+      const existing = externalByUser.get(row.userId);
+      if (!existing || (row.accessLevel === 'FULL' && existing.accessLevel === 'READONLY')) {
+        externalByUser.set(row.userId, row);
+      }
+    }
+
+    const externalMemberRows: TeamMemberView[] = [...externalByUser.values()].map((row) => ({
+      userId: row.userId,
+      email: row.user.email,
+      name: row.user.name,
+      role: 'MEMBER' as TeamRole,
+      roleId: null,
+      roleName: null,
+      joinedAt: row.respondedAt ?? row.invitedAt,
+      ...memberStatusFromUser(row.user, now),
+      external: true,
+      groupAccessLevel: row.accessLevel,
+    }));
+
     return {
       team: {
         id: team.id,
@@ -195,18 +278,7 @@ export class TeamsService {
         createdAt: team.createdAt,
         myRole: myMembership.role,
       },
-      members: filterVisibleMembers(
-        visibleMemberships.map((m) => ({
-          userId: m.userId,
-          email: m.user.email,
-          name: m.user.name,
-          role: m.role,
-          roleId: m.roleId,
-          roleName: m.customRole?.name ?? null,
-          joinedAt: m.joinedAt,
-        })),
-        systemUserId,
-      ),
+      members: filterVisibleMembers([...teamMemberRows, ...externalMemberRows], systemUserId),
       capabilities,
       deleteBlockers,
     };
@@ -346,15 +418,7 @@ export class TeamsService {
         },
         include: { user: true, customRole: { select: { name: true } } },
       });
-      return {
-        userId: m.userId,
-        email: m.user.email,
-        name: m.user.name,
-        role: m.role,
-        roleId: m.roleId,
-        roleName: m.customRole?.name ?? null,
-        joinedAt: m.joinedAt,
-      };
+      return membershipToView(m);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw Errors.conflict('User already a member of this team');
@@ -439,14 +503,6 @@ export class TeamsService {
         customRole: { select: { name: true } },
       },
     });
-    return {
-      userId: updated.userId,
-      email: updated.user.email,
-      name: updated.user.name,
-      role: updated.role,
-      roleId: updated.roleId,
-      roleName: updated.customRole?.name ?? null,
-      joinedAt: updated.joinedAt,
-    };
+    return membershipToView(updated);
   }
 }

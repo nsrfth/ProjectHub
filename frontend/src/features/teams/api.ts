@@ -24,6 +24,10 @@ export interface TeamMember {
   roleId: string | null;
   roleName: string | null;
   joinedAt: string;
+  disabled: boolean;
+  locked: boolean;
+  external: boolean;
+  groupAccessLevel: 'FULL' | 'READONLY' | null;
 }
 
 export interface TeamDeleteBlockers {

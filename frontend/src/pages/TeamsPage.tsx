@@ -6,7 +6,26 @@ import * as rolesApi from '@/features/roles/api';
 import { useTeams } from '@/features/teams/TeamsContext';
 import { formatShamsiTimestampDate } from '@/lib/shamsi';
 import { visibleTeamMembers } from '@/lib/systemUser';
+import { useT } from '@/lib/i18n';
 import TeamGroupsPanel from '@/features/groups/TeamGroupsPanel';
+
+function MemberStatusBadges({ member, t }: { member: teamsApi.TeamMember; t: (k: string) => string }): JSX.Element | null {
+  if (member.disabled) {
+    return (
+      <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">
+        {t('team.member.status.disabled')}
+      </span>
+    );
+  }
+  if (member.locked) {
+    return (
+      <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+        {t('team.member.status.locked')}
+      </span>
+    );
+  }
+  return null;
+}
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -19,6 +38,7 @@ function errorMessage(err: unknown, fallback: string): string {
 export default function TeamsPage(): JSX.Element {
   const { teams, currentTeamId, setCurrentTeamId, refresh } = useTeams();
   const qc = useQueryClient();
+  const t = useT();
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -352,63 +372,103 @@ export default function TeamsPage(): JSX.Element {
                 </div>
               )}
 
-              <h3 className="text-sm font-medium mb-2">Members</h3>
-              <ul className="space-y-1 mb-4">
-                {visibleTeamMembers(detail.members).map((m) => (
-                  <li
-                    key={m.userId}
-                    className="flex items-center justify-between text-sm border-b last:border-0 py-1"
-                  >
-                    <span>
-                      <span className="font-medium">{m.name}</span>
-                      <span className="text-slate-500 ml-2">{m.email}</span>
-                      <span className="text-xs text-slate-400 ml-2" dir="rtl">
-                        پیوست {formatShamsiTimestampDate(m.joinedAt)}
+              {(() => {
+                const roster = visibleTeamMembers(detail.members);
+                const regularMembers = roster.filter((m) => !m.external);
+                const externalMembers = roster.filter((m) => m.external);
+
+                function renderMemberRow(m: teamsApi.TeamMember, externalRow: boolean): JSX.Element {
+                  return (
+                    <li
+                      key={m.userId}
+                      className={`flex items-center justify-between text-sm border-b last:border-0 py-1 ${
+                        externalRow ? 'bg-slate-50/80 dark:bg-slate-900/30' : ''
+                      }`}
+                    >
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{m.name}</span>
+                        <span className="text-slate-500">{m.email}</span>
+                        <MemberStatusBadges member={m} t={t} />
+                        {externalRow && (
+                          <>
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200">
+                              {t('team.member.external')}
+                            </span>
+                            {m.groupAccessLevel && (
+                              <span className="text-xs text-slate-500">
+                                {m.groupAccessLevel === 'FULL'
+                                  ? t('team.member.access.full')
+                                  : t('team.member.access.readonly')}
+                              </span>
+                            )}
+                          </>
+                        )}
+                        {!externalRow && (
+                          <span className="text-xs text-slate-400" dir="rtl">
+                            {formatShamsiTimestampDate(m.joinedAt)}
+                          </span>
+                        )}
                       </span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      {/* v1.23: role-change dropdown for managers. Shows
-                          every role defined for this team; selecting one
-                          PATCHes the membership with that roleId. */}
-                      {isManager && teamRoles.length > 0 ? (
-                        <select
-                          value={m.roleId ?? ''}
-                          onChange={(e) =>
-                            updateRoleMut.mutate({
-                              userId: m.userId,
-                              roleId: e.target.value,
-                            })
-                          }
-                          disabled={updateRoleMut.isPending}
-                          className="text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-1 py-0.5"
-                          title="Change role"
-                        >
-                          {!m.roleId && <option value="">— ({m.role})</option>}
-                          {teamRoles.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.name}
-                              {r.isSystem ? ' (system)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-xs uppercase tracking-wide text-slate-500">
-                          {m.roleName ?? m.role}
-                        </span>
-                      )}
-                      {isManager && (
-                        <button
-                          onClick={() => removeMut.mutate(m.userId)}
-                          className="text-xs text-red-600 hover:underline disabled:opacity-50"
-                          disabled={removeMut.isPending}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                      <span className="flex items-center gap-2">
+                        {!externalRow && isManager && teamRoles.length > 0 ? (
+                          <select
+                            value={m.roleId ?? ''}
+                            onChange={(e) =>
+                              updateRoleMut.mutate({
+                                userId: m.userId,
+                                roleId: e.target.value,
+                              })
+                            }
+                            disabled={updateRoleMut.isPending}
+                            className="text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-1 py-0.5"
+                            title="Change role"
+                          >
+                            {!m.roleId && <option value="">— ({m.role})</option>}
+                            {teamRoles.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.name}
+                                {r.isSystem ? ' (system)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        ) : !externalRow ? (
+                          <span className="text-xs uppercase tracking-wide text-slate-500">
+                            {m.roleName ?? m.role}
+                          </span>
+                        ) : null}
+                        {!externalRow && isManager && (
+                          <button
+                            onClick={() => removeMut.mutate(m.userId)}
+                            className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                            disabled={removeMut.isPending}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </span>
+                    </li>
+                  );
+                }
+
+                return (
+                  <>
+                    <h3 className="text-sm font-medium mb-2">Members</h3>
+                    <ul className="space-y-1 mb-4">
+                      {regularMembers.map((m) => renderMemberRow(m, false))}
+                    </ul>
+                    {externalMembers.length > 0 && (
+                      <>
+                        <h3 className="text-sm font-medium mb-2 text-slate-600 dark:text-slate-300">
+                          {t('team.member.externalSection')}
+                        </h3>
+                        <ul className="space-y-1 mb-4 border-s border-slate-200 dark:border-slate-600 ps-3">
+                          {externalMembers.map((m) => renderMemberRow(m, true))}
+                        </ul>
+                      </>
+                    )}
+                  </>
+                );
+              })()}
 
               {isManager && (
                 <form

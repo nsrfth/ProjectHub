@@ -69,6 +69,10 @@ export const teamMemberResponse = z.object({
   roleId: z.string().nullable().default(null),
   roleName: z.string().nullable().default(null),
   joinedAt: z.string(),
+  disabled: z.boolean(),
+  locked: z.boolean(),
+  external: z.boolean(),
+  groupAccessLevel: z.enum(['FULL', 'READONLY']).nullable(),
 });
 
 export const teamDeleteBlockersResponse = z.object({

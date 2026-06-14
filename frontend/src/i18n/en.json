@@ -271,6 +271,14 @@
   "admin.users.profile.cancel": "Cancel",
   "admin.users.detail.title": "User — {email}",
 
+  "team.member.status.disabled": "Disabled",
+  "team.member.status.locked": "Locked",
+  "team.member.status.active": "Active",
+  "team.member.external": "External",
+  "team.member.externalSection": "External accessors (group access)",
+  "team.member.access.full": "Full access",
+  "team.member.access.readonly": "Read only",
+
   "settings.nav.security": "Security",
   "settings.nav.securityDesc": "2FA + sessions",
   "settings.nav.audit": "Audit",
