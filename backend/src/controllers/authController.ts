@@ -206,6 +206,9 @@ export class AuthController {
     if (req.body.timeZone !== undefined) data.timeZone = req.body.timeZone;
     if (req.body.timeFormat) data.timeFormat = req.body.timeFormat;
     if (req.body.dualCalendar !== undefined) data.dualCalendar = req.body.dualCalendar;
+    if (req.body.reminderLeadHours !== undefined) {
+      data.reminderLeadHours = req.body.reminderLeadHours;
+    }
     const updated = await prisma.user.update({
       where: { id: req.user.sub },
       data,
@@ -216,6 +219,7 @@ export class AuthController {
         timeZone: true,
         timeFormat: true,
         dualCalendar: true,
+        reminderLeadHours: true,
       },
     });
     return reply.send({
@@ -225,6 +229,7 @@ export class AuthController {
       timeZone: updated.timeZone,
       timeFormat: updated.timeFormat as TimeFormatValue,
       dualCalendar: updated.dualCalendar,
+      reminderLeadHours: updated.reminderLeadHours ?? 24,
     });
   };
 }

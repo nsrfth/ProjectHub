@@ -88,7 +88,7 @@ describe('TASK_DUE scheduler', () => {
     const s = await setupDueTask(inTwelveHours);
 
     const scheduler = createDueDateScheduler({
-      leadHours: 24,
+      defaultLeadHours: 24,
       intervalMin: 9999,
       logger: fakeLogger(),
     });
@@ -109,7 +109,7 @@ describe('TASK_DUE scheduler', () => {
   it('does not emit a second TASK_DUE on a follow-up tick (idempotent)', async () => {
     await setupDueTask(new Date(Date.now() + 6 * 60 * 60 * 1000));
     const scheduler = createDueDateScheduler({
-      leadHours: 24,
+      defaultLeadHours: 24,
       intervalMin: 9999,
       logger: fakeLogger(),
     });
@@ -120,7 +120,7 @@ describe('TASK_DUE scheduler', () => {
   it('does not emit for tasks beyond the lead window', async () => {
     await setupDueTask(new Date(Date.now() + 48 * 60 * 60 * 1000));
     const scheduler = createDueDateScheduler({
-      leadHours: 24,
+      defaultLeadHours: 24,
       intervalMin: 9999,
       logger: fakeLogger(),
     });
@@ -131,7 +131,7 @@ describe('TASK_DUE scheduler', () => {
     // 3 days ago — well past dueDate, still inside the 30-day floor.
     const s = await setupDueTask(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000));
     const scheduler = createDueDateScheduler({
-      leadHours: 24,
+      defaultLeadHours: 24,
       intervalMin: 9999,
       logger: fakeLogger(),
     });
@@ -148,7 +148,7 @@ describe('TASK_DUE scheduler', () => {
   it('does NOT emit for ancient overdue tasks beyond the 30-day floor', async () => {
     await setupDueTask(new Date(Date.now() - 60 * 24 * 60 * 60 * 1000));
     const scheduler = createDueDateScheduler({
-      leadHours: 24,
+      defaultLeadHours: 24,
       intervalMin: 9999,
       logger: fakeLogger(),
     });
@@ -158,7 +158,7 @@ describe('TASK_DUE scheduler', () => {
   it('re-emits after dueDate is rescheduled', async () => {
     const s = await setupDueTask(new Date(Date.now() + 6 * 60 * 60 * 1000));
     const scheduler = createDueDateScheduler({
-      leadHours: 24,
+      defaultLeadHours: 24,
       intervalMin: 9999,
       logger: fakeLogger(),
     });

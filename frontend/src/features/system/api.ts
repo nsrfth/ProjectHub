@@ -20,6 +20,8 @@ export interface SystemInfo {
   dateEditRestriction: 'open' | 'manager-only';
   schedulingRollOffdayDueDates: boolean;
   schedulingWorkingDaysOnly: boolean;
+  /** v1.65: shift TASK_DUE notify instant off weekends/holidays to prior working day. */
+  remindersSkipOffDays: boolean;
   counts: {
     users: number;
     teams: number;

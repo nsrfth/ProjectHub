@@ -114,4 +114,15 @@ export class WorkingDayCalendar {
     }
     return count;
   }
+
+  /** Last on-or-before working day strictly before off-day input (or same if already working). */
+  previousWorkingDay(d: Date): Date {
+    let cur = normalizeUtcMidnight(d);
+    if (!this.isOffDay(cur)) return cur;
+    for (let i = 0; i < 366; i++) {
+      cur = addCalendarDays(cur, -1);
+      if (!this.isOffDay(cur)) return cur;
+    }
+    return normalizeUtcMidnight(d);
+  }
 }

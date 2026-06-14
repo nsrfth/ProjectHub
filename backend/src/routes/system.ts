@@ -8,6 +8,7 @@ import { publicPasswordPolicyResponse } from '../schemas/passwordPolicy.js';
 import { HolidaysService } from '../services/holidaysService.js';
 import { holidayResponse } from '../schemas/holidays.js';
 import { readSchedulingSettings } from '../lib/schedulingSettings.js';
+import { readReminderSettings } from '../lib/reminderTiming.js';
 
 // Public read-only system metadata. Used by:
 //   - The frontend's About button (version + build + license + counts).
@@ -47,6 +48,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
           // v1.64: opt-in working-day scheduling (off = legacy calendar-day behaviour).
           schedulingRollOffdayDueDates: z.boolean(),
           schedulingWorkingDaysOnly: z.boolean(),
+          remindersSkipOffDays: z.boolean(),
           counts: z.object({
             users: z.number().int(),
             teams: z.number().int(),
@@ -90,7 +92,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
         // Leave default.
       }
 
-      const [users, teams, tasks, calendarHolidays, scheduling] = await Promise.all([
+      const [users, teams, tasks, calendarHolidays, scheduling, reminders] = await Promise.all([
         prisma.user.count().catch(() => 0),
         prisma.team.count().catch(() => 0),
         prisma.task.count().catch(() => 0),
@@ -99,6 +101,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
           rollOffdayDueDates: false,
           workingDaysOnly: false,
         })),
+        readReminderSettings().catch(() => ({ skipOffDays: false })),
       ]);
 
       return reply.send({
@@ -122,6 +125,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
         dateEditRestriction,
         schedulingRollOffdayDueDates: scheduling.rollOffdayDueDates,
         schedulingWorkingDaysOnly: scheduling.workingDaysOnly,
+        remindersSkipOffDays: reminders.skipOffDays,
         counts: { users, teams, tasks },
       });
     },

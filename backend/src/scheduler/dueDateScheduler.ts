@@ -3,21 +3,28 @@ import { notifications } from '../services/notificationsService.js';
 import { emailService } from '../services/emailService.js';
 import { mailer } from '../lib/mailer.js';
 import type { FastifyBaseLogger } from 'fastify';
+import { WorkingDayCalendar } from '../lib/workingDays.js';
+import {
+  DEFAULT_REMINDER_LEAD_HOURS,
+  readReminderSettings,
+  resolveLeadHours,
+  shouldEmitDueReminder,
+} from '../lib/reminderTiming.js';
 
 // Scheduler for TASK_DUE notifications. Runs in-process via setInterval —
 // fine for single-replica deployments (the default Docker Compose setup).
-// For multi-replica or production-grade durability, swap this for BullMQ on
-// the existing Redis container.
 //
 // One-shot per (taskId, dueDate): Task.dueNotifiedAt holds the timestamp of
 // the last emission and is reset to null whenever dueDate is changed (see
-// tasksService.update). So the scheduler only emits when:
-//   - dueDate is non-null AND in the future AND within the lead window
-//   - dueNotifiedAt is null
-// then it stamps dueNotifiedAt = now so the next tick is a no-op.
+// tasksService.update).
+//
+// v1.65: per-user reminderLeadHours (assignee, else creator) replaces the
+// fixed env lead window. Optional reminders.skipOffDays shifts the notify
+// instant to the prior working day when it would fall on a weekend/holiday.
 
 export interface DueSchedulerOptions {
-  leadHours: number;
+  /** Fallback lead when user.reminderLeadHours is unset. */
+  defaultLeadHours: number;
   intervalMin: number;
   logger: FastifyBaseLogger;
 }
@@ -25,31 +32,55 @@ export interface DueSchedulerOptions {
 export interface DueScheduler {
   start: () => void;
   stop: () => void;
-  // Exposed for tests + smoke runs — same logic as a scheduler tick.
-  runOnce: () => Promise<number>;
+  /** Optional `at` for deterministic tests. */
+  runOnce: (at?: Date) => Promise<number>;
 }
 
 export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler {
   let handle: NodeJS.Timeout | null = null;
 
-  async function tick(): Promise<number> {
-    const now = new Date();
-    const cutoff = new Date(now.getTime() + opts.leadHours * 60 * 60 * 1000);
-    // 30-day floor to avoid spamming reminders for ancient overdue tasks that
-    // get unearthed by a backfill or schema fix. Anything older than this
-    // probably needs a human to triage rather than a notification.
+  async function tick(at?: Date): Promise<number> {
+    const now = at ?? new Date();
     const floor = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    // Tasks due any time up to the cutoff (including already-overdue) that
-    // are still OPEN and haven't been notified yet. The old (now, cutoff]
-    // window silently skipped overdue tasks — bug fix.
-    const dueTasks = await prisma.task.findMany({
+    const reminderSettings = await readReminderSettings();
+    const cal = reminderSettings.skipOffDays ? await WorkingDayCalendar.load() : null;
+
+    const maxLeadMs = Math.max(opts.defaultLeadHours, DEFAULT_REMINDER_LEAD_HOURS, 168) * 3_600_000;
+    const upperDue = new Date(now.getTime() + Math.max(maxLeadMs, 14 * 24 * 3_600_000));
+
+    const candidates = await prisma.task.findMany({
       where: {
         dueNotifiedAt: null,
         status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] },
-        dueDate: { gte: floor, lte: cutoff },
+        dueDate: { not: null, gte: floor, lte: upperDue },
       },
-      select: { id: true, title: true, dueDate: true, projectId: true, teamId: true },
+      select: {
+        id: true,
+        title: true,
+        dueDate: true,
+        projectId: true,
+        teamId: true,
+        assignee: { select: { reminderLeadHours: true } },
+        creator: { select: { reminderLeadHours: true } },
+      },
+    });
+
+    const dueTasks = candidates.filter((t) => {
+      if (!t.dueDate) return false;
+      const leadHours = resolveLeadHours(
+        t.assignee?.reminderLeadHours,
+        t.creator?.reminderLeadHours,
+        opts.defaultLeadHours,
+      );
+      return shouldEmitDueReminder(
+        now,
+        t.dueDate,
+        leadHours,
+        reminderSettings.skipOffDays,
+        cal,
+        floor,
+      );
     });
 
     if (dueTasks.length === 0) return 0;
@@ -57,8 +88,6 @@ export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler 
     let emitted = 0;
     for (const t of dueTasks) {
       try {
-        // Emit + stamp in one transaction so a successful emit always pairs
-        // with a stamp (eliminates the "notified but DB roll back" risk).
         await prisma.$transaction(async (tx) => {
           await notifications.onTaskDue(tx, {
             taskId: t.id,
@@ -72,8 +101,6 @@ export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler 
             data: { dueNotifiedAt: now },
           });
         });
-        // Email fan-out is best-effort and runs after the in-app notification
-        // commits, so a transient SMTP failure doesn't suppress the bell.
         if (mailer.isEnabled()) {
           const recipients = await prisma.task
             .findUnique({
@@ -105,7 +132,7 @@ export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler 
       }
     }
     if (emitted > 0) {
-      opts.logger.info({ count: emitted, leadHours: opts.leadHours }, 'TASK_DUE notifications emitted');
+      opts.logger.info({ count: emitted }, 'TASK_DUE notifications emitted');
     }
     return emitted;
   }
@@ -114,13 +141,12 @@ export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler 
     start() {
       if (handle) return;
       const ms = opts.intervalMin * 60 * 1000;
-      // Run immediately so newly-due tasks aren't held until the first interval.
       tick().catch((err) => opts.logger.error({ err }, 'TASK_DUE tick failed'));
       handle = setInterval(() => {
         tick().catch((err) => opts.logger.error({ err }, 'TASK_DUE tick failed'));
       }, ms);
       opts.logger.info(
-        { intervalMin: opts.intervalMin, leadHours: opts.leadHours },
+        { intervalMin: opts.intervalMin, defaultLeadHours: opts.defaultLeadHours },
         'TASK_DUE scheduler started',
       );
     },

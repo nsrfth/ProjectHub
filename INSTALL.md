@@ -264,7 +264,7 @@ value crashes the process at boot with a clear message — by design.
 |---|---|---|
 | `MASTER_KEY` | _(empty)_ | 64-hex / 32-byte symmetric key. Required for LDAP bind-password storage, TOTP shared secrets, and webhook secrets. Lose it and those values are unrecoverable — back it up separately from Postgres. |
 | `TASK_DUE_ENABLED` | `false` | In-process scheduler that emits `TASK_DUE` notifications (+ emails when SMTP is on). Enable on exactly one replica. |
-| `TASK_DUE_LEAD_HOURS` | `24` | How far ahead of the due date to notify. |
+| `TASK_DUE_LEAD_HOURS` | `24` | Server fallback when a user's `reminderLeadHours` is unset (assignee → creator → this env). Users can override 1–168 h on **Settings → Preferences**. |
 | `TASK_DUE_CHECK_INTERVAL_MIN` | `15` | How often the scheduler scans. |
 | `WEBHOOK_DISPATCH_ENABLED` | `false` | Outbound webhook delivery loop. Enable on exactly one replica. |
 | `WEBHOOK_DISPATCH_INTERVAL_SEC` | `5` | Dispatcher tick interval. |

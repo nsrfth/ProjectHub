@@ -7,6 +7,24 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.65.0] — 2026-06-09
+
+**Configurable due reminders — per-user lead time + holiday-aware notify timing.**
+
+- **`User.reminderLeadHours`** (nullable, default **24**) — hours before `dueDate` to emit a one-shot
+  `TASK_DUE` notification. Resolved as assignee → creator → `TASK_DUE_LEAD_HOURS` env fallback.
+  PATCH `/api/auth/me/preferences` + login/refresh payload. **Not retroactive** — changing lead
+  time does not reset `dueNotifiedAt` (only a due-date change does).
+- Instance setting **`reminders.skipOffDays`** (admin, default **off**): when the computed notify
+  instant falls on a weekend/holiday, shift to the **prior working day** (same time-of-day). If
+  that moment is already past at tick time, fire **immediately** — `dueNotifiedAt` still prevents
+  duplicates.
+- Backend `lib/reminderTiming.ts` + reworked `dueDateScheduler.ts`. Per-task lead override deferred.
+- Settings → **Preferences**: personal lead-time control; admin **Due reminders** section for
+  skip-off-days. Bootstrap via `/api/system/info` (`remindersSkipOffDays`).
+
+---
+
 ## [1.64.0] — 2026-06-09
 
 **Opt-in working-day scheduling — roll off-day due dates + working-day durations.**

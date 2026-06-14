@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   // buildApp) so test runs don't accidentally fire background timers.
   const dueScheduler = env.TASK_DUE_ENABLED
     ? createDueDateScheduler({
-        leadHours: env.TASK_DUE_LEAD_HOURS,
+        defaultLeadHours: env.TASK_DUE_LEAD_HOURS,
         intervalMin: env.TASK_DUE_CHECK_INTERVAL_MIN,
         logger: app.log,
       })

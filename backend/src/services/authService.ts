@@ -42,6 +42,7 @@ export interface IssuedSession {
     timeZone: string | null;
     timeFormat: TimeFormatValue;
     dualCalendar: boolean;
+    reminderLeadHours: number;
     createdAt: Date;
   };
   // Set on `register` only — the raw email-verification token the controller
@@ -740,6 +741,7 @@ export class AuthService {
         timeZone: user.timeZone,
         timeFormat: user.timeFormat,
         dualCalendar: user.dualCalendar,
+        reminderLeadHours: user.reminderLeadHours ?? 24,
         createdAt: user.createdAt,
       },
     };

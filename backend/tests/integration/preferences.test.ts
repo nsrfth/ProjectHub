@@ -208,4 +208,34 @@ describe('PATCH /api/auth/me/preferences — datetime (v1.63)', () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it('defaults reminderLeadHours to 24 and accepts PATCH (v1.65)', async () => {
+    const { token } = await register();
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'pref@example.com', password: 'CorrectHorseBattery9' },
+    });
+    expect(login.json().user.reminderLeadHours).toBe(24);
+
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me/preferences',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { reminderLeadHours: 48 },
+    });
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json().reminderLeadHours).toBe(48);
+  });
+
+  it('rejects reminderLeadHours outside 1–168', async () => {
+    const { token } = await register();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me/preferences',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { reminderLeadHours: 200 },
+    });
+    expect(res.statusCode).toBe(400);
+  });
 });

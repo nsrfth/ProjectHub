@@ -24,6 +24,8 @@ export interface AuthUser {
   timeZone: string | null;
   timeFormat: 'H12' | 'H24';
   dualCalendar: boolean;
+  /** v1.65: hours before dueDate to emit TASK_DUE (1–168, default 24). */
+  reminderLeadHours: number;
   createdAt: string;
 }
 
@@ -90,6 +92,7 @@ export interface PreferencesResponse {
   timeZone: string | null;
   timeFormat: 'H12' | 'H24';
   dualCalendar: boolean;
+  reminderLeadHours: number;
 }
 export async function updatePreferences(input: {
   calendar?: 'SHAMSI' | 'GREGORIAN';
@@ -98,6 +101,7 @@ export async function updatePreferences(input: {
   timeZone?: string | null;
   timeFormat?: 'H12' | 'H24';
   dualCalendar?: boolean;
+  reminderLeadHours?: number;
 }): Promise<PreferencesResponse> {
   return (await api.patch<PreferencesResponse>('/auth/me/preferences', input)).data;
 }

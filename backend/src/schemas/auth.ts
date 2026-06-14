@@ -70,6 +70,7 @@ export const userResponse = z.object({
   timeZone: z.string().nullable().default(null),
   timeFormat: timeFormatEnum.default('H24'),
   dualCalendar: z.boolean().default(false),
+  reminderLeadHours: z.number().int().min(1).max(168).default(24),
   createdAt: z.string(),
 });
 
@@ -82,6 +83,7 @@ export const updatePreferencesBody = z.object({
   timeZone: timeZonePreference,
   timeFormat: timeFormatEnum.optional(),
   dualCalendar: z.boolean().optional(),
+  reminderLeadHours: z.number().int().min(1).max(168).optional(),
 });
 
 export const preferencesResponse = z.object({
@@ -91,6 +93,7 @@ export const preferencesResponse = z.object({
   timeZone: z.string().nullable(),
   timeFormat: timeFormatEnum,
   dualCalendar: z.boolean(),
+  reminderLeadHours: z.number().int().min(1).max(168),
 });
 
 export type UpdatePreferencesBody = z.infer<typeof updatePreferencesBody>;

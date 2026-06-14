@@ -193,7 +193,7 @@ Tasks have three independent date fields. The split matters:
 
 | Field | Meaning | What uses it |
 |-------|---------|--------------|
-| **Due by** | Hard deadline. "This must be done by …" | Triggers `TASK_DUE` reminders 24 h before. Drives the Overdue report. |
+| **Due by** | Hard deadline. "This must be done by …" | Triggers `TASK_DUE` reminders (default **24 h** before; configurable per user on **Settings → Preferences**). Drives the Overdue report. |
 | **Planned on** | Team's target completion date. "We plan to finish by …" | Drives the **Timeliness** report (on-time rate, avg variance). Does NOT trigger reminders. |
 | **Completed on** | Actual finish date. Auto-fills on first transition to **Done**. | Drives the **Tasks completed** report. Can be backdated manually. |
 
@@ -330,7 +330,7 @@ The bell icon (top-right after sign-in) lights up when you have unread notificat
 | Type | When it fires |
 |------|---------------|
 | `TASK_ASSIGNED` | You were assigned a task. |
-| `TASK_DUE` | A task with you as assignee is due within the lead window (default 24 h). Also fires for already-overdue tasks within a 30-day floor. |
+| `TASK_DUE` | A task with you as assignee is due within your lead window (default 24 h; set on **Settings → Preferences**). Also fires for already-overdue tasks within a 30-day floor. When the admin enables **Skip off-days for due reminders**, a reminder that would land on a weekend/holiday is sent on the prior working day instead (or immediately if that moment is already past). |
 | `TASK_COMMENT` | Someone commented on a task you're involved in. |
 | `MENTION` | Someone used `@your-handle` in a comment. |
 | `TASK_STATUS` | A task you watch changed status. |
@@ -447,7 +447,7 @@ The token authenticates as you — it sees what you see. Scopes are advisory in 
 
 The **Settings** link in the left sidebar opens the Settings shell. Sidebar items are ordered alphabetically by their English label (same order in the Persian UI). The items you see depend on your role:
 
-- **Preferences** — everyone (personal calendar + theme + language). Admins additionally see the Workweek and Holidays sections.
+- **Preferences** — everyone (personal calendar + theme + language + **due reminder lead time**). Admins additionally see the Workweek, Holidays, Working-day scheduling, and **Due reminders** sections.
 - **Trash** — everyone (restore or purge soft-deleted projects and tasks).
 - **Roles** — team role templates and permission matrix.
 - **Labels** — team-scoped label management.
@@ -509,6 +509,14 @@ Two **opt-in** instance toggles under **Settings → Preferences → Working-day
 - **Not retroactive** — toggling a setting does not rewrite existing stored due dates. Rolls apply only on the next create, due-date edit, or recurrence spawn.
 - **UTC midnight preserved** — all date math stays on UTC calendar-day anchors (same rule as task due dates).
 - **Recurrence idempotency** — `spawnedForPeriod` is keyed on the template's spawn date, not the rolled due date, so rolling cannot collide with the unique constraint.
+
+### Due reminders (v1.65)
+
+**Personal lead time** — on **Settings → Preferences**, set **Due reminder lead time** (1–168 hours, default 24). The scheduler uses the **assignee's** value when set, otherwise the **creator's**, otherwise the server default (`TASK_DUE_LEAD_HOURS`, 24). Each task due date gets **one** `TASK_DUE` notification; `dueNotifiedAt` is stamped after send and reset only when the due date changes. Changing your lead time does **not** re-notify tasks already reminded.
+
+**Skip off-days (admin)** — under **Settings → Preferences → Due reminders**, enable **Skip off-days for due reminders**. When the computed notify instant would fall on a weekend or holiday, TaskHub shifts it to the **prior working day** (same clock time). If that shifted moment is already in the past when the scheduler runs, the reminder fires **immediately** — still once per due date.
+
+Per-task lead override is planned for a future release.
 
 ### Security — password policy (v1.43, admin)
 

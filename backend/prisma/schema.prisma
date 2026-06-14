@@ -306,6 +306,8 @@ model User {
   timeZone           String?
   timeFormat         TimeFormat         @default(H24)
   dualCalendar       Boolean            @default(false)
+  // v1.65: hours before dueDate to emit TASK_DUE (assignee preference).
+  reminderLeadHours  Int?               @default(24)
   emailVerifiedAt DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt

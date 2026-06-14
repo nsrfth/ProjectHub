@@ -45,6 +45,7 @@ export default function PreferencesPage(): JSX.Element {
   const initialTimeZone: string | null = user?.timeZone ?? null;
   const initialTimeFormat: TimeFormat = user?.timeFormat ?? 'H24';
   const initialDualCalendar = user?.dualCalendar ?? false;
+  const initialReminderLeadHours = user?.reminderLeadHours ?? 24;
 
   const [calendar, setLocalCalendar] = useState<Calendar>(initialCalendar);
   const [theme, setLocalTheme] = useState<ThemePreference>(initialTheme);
@@ -52,11 +53,20 @@ export default function PreferencesPage(): JSX.Element {
   const [timeZone, setLocalTimeZone] = useState<string | null>(initialTimeZone);
   const [timeFormat, setLocalTimeFormat] = useState<TimeFormat>(initialTimeFormat);
   const [dualCalendar, setLocalDualCalendar] = useState(initialDualCalendar);
+  const [reminderLeadHours, setLocalReminderLeadHours] = useState(initialReminderLeadHours);
   const [error, setError] = useState<string | null>(null);
 
   const saveMut = useMutation({
     mutationFn: () =>
-      updatePreferences({ calendar, theme, language, timeZone, timeFormat, dualCalendar }),
+      updatePreferences({
+        calendar,
+        theme,
+        language,
+        timeZone,
+        timeFormat,
+        dualCalendar,
+        reminderLeadHours,
+      }),
     onSuccess: (res) => {
       patchUser({
         calendarPreference: res.calendar,
@@ -65,6 +75,7 @@ export default function PreferencesPage(): JSX.Element {
         timeZone: res.timeZone,
         timeFormat: res.timeFormat,
         dualCalendar: res.dualCalendar,
+        reminderLeadHours: res.reminderLeadHours,
       });
       const calChanged = setCalendar(res.calendar);
       const themeChanged = setThemePreference(res.theme);
@@ -85,7 +96,8 @@ export default function PreferencesPage(): JSX.Element {
     language !== initialLanguage ||
     timeZone !== initialTimeZone ||
     timeFormat !== initialTimeFormat ||
-    dualCalendar !== initialDualCalendar;
+    dualCalendar !== initialDualCalendar ||
+    reminderLeadHours !== initialReminderLeadHours;
 
   function submit(e: FormEvent): void {
     e.preventDefault();
@@ -200,6 +212,30 @@ export default function PreferencesPage(): JSX.Element {
           </label>
         </fieldset>
 
+        <fieldset>
+          <legend className="font-medium">{t('reminders.leadHours')}</legend>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 mb-2">
+            {t('reminders.leadHoursSubtitle')}
+          </p>
+          <label className="flex flex-wrap items-center gap-2 text-sm">
+            <input
+              type="number"
+              min={1}
+              max={168}
+              step={1}
+              value={reminderLeadHours}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10);
+                if (!Number.isNaN(n)) setLocalReminderLeadHours(Math.min(168, Math.max(1, n)));
+              }}
+              className="w-20 border border-border rounded px-2 py-1 bg-surface text-slate-900 dark:text-slate-100"
+              dir="ltr"
+            />
+            <span className="text-slate-700 dark:text-slate-200">{t('reminders.leadHoursUnit')}</span>
+          </label>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t('reminders.leadHoursHint')}</p>
+        </fieldset>
+
         {error && <p className="text-xs text-red-600">{error}</p>}
 
         <div className="flex gap-2 pt-1">
@@ -224,6 +260,8 @@ export default function PreferencesPage(): JSX.Element {
       {user?.globalRole === 'ADMIN' && <HolidaysSection />}
 
       {user?.globalRole === 'ADMIN' && <SchedulingSection />}
+
+      {user?.globalRole === 'ADMIN' && <RemindersSection />}
 
       {/* v1.18: admin-only date-edit restriction. Instance-wide. */}
       {user?.globalRole === 'ADMIN' && <DateEditRestrictionSection />}
@@ -314,6 +352,70 @@ function SchedulingSection(): JSX.Element {
           className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
         >
           {saveMut.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function RemindersSection(): JSX.Element {
+  const qc = useQueryClient();
+  const t = useT();
+  const { data, isLoading } = useQuery({
+    queryKey: ['system', 'info'],
+    queryFn: fetchSystemInfo,
+    staleTime: 5 * 60_000,
+  });
+  const [skipOffDays, setSkipOffDays] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data) setSkipOffDays(data.remindersSkipOffDays);
+  }, [data]);
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      await api.put('/settings/instance/reminders.skipOffDays', { value: skipOffDays });
+    },
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ['system', 'info'] });
+    },
+    onError: (err) => setError(errorMessage(err, 'Could not save')),
+  });
+
+  const dirty = data !== undefined && skipOffDays !== data.remindersSkipOffDays;
+
+  return (
+    <form
+      onSubmit={(e: FormEvent) => { e.preventDefault(); saveMut.mutate(); }}
+      className="border border-slate-200 dark:border-slate-700 rounded p-4 space-y-3"
+    >
+      <h3 className="font-medium">{t('reminders.title')}</h3>
+      <p className="text-sm text-slate-600 dark:text-slate-400">{t('reminders.subtitle')}</p>
+      {isLoading && <p className="text-xs text-slate-400">Loading…</p>}
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={skipOffDays}
+          onChange={(e) => setSkipOffDays(e.target.checked)}
+          className="mt-1"
+        />
+        <span className="text-slate-700 dark:text-slate-200">
+          <span className="font-medium">{t('reminders.skipOffDays')}</span>
+          <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            {t('reminders.skipOffDaysHint')}
+          </span>
+        </span>
+      </label>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex gap-2 pt-1">
+        <button
+          type="submit"
+          disabled={saveMut.isPending || !dirty}
+          className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
+        >
+          {saveMut.isPending ? t('preferences.saving') : t('preferences.save')}
         </button>
       </div>
     </form>
