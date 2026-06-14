@@ -12,6 +12,7 @@ import { emailService } from './emailService.js';
 import { groupDnsMatch } from '../lib/ldapDn.js';
 import { systemRoleIdFor } from '../lib/teamRoles.js';
 import { passwordPolicyService } from './passwordPolicyService.js';
+import type { ThemePreferenceValue } from '../schemas/themePreference.js';
 
 // All token lifecycle logic lives here. Routes/controllers don't talk to Prisma directly.
 
@@ -35,7 +36,7 @@ export interface IssuedSession {
     authSource: 'LOCAL' | 'LDAP' | 'SCIM';
     totpEnabled: boolean;
     calendarPreference: 'SHAMSI' | 'GREGORIAN';
-    themePreference: 'LIGHT' | 'DARK';
+    themePreference: ThemePreferenceValue;
     languagePreference: 'EN' | 'FA';
     createdAt: Date;
   };

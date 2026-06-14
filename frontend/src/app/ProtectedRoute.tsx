@@ -19,7 +19,7 @@ export default function ProtectedRoute(): JSX.Element | null {
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="min-h-screen bg-bg text-text">
       <TopNav />
       <main className="md:ps-64">
         <Outlet />

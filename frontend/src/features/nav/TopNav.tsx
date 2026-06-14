@@ -53,14 +53,14 @@ export default function TopNav(): JSX.Element {
       <header
         className={[
           'sticky top-0 z-30 h-14 flex items-center gap-3',
-          'bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800',
+          'bg-surface border-b border-border text-text',
           'px-4 md:ps-72',
         ].join(' ')}
       >
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}
-          className="md:hidden p-2 rounded text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          className="md:hidden p-2 rounded text-text-muted hover:bg-bg-elevated"
           aria-label="Open menu"
         >
           <IconMenu size={20} />
@@ -68,7 +68,7 @@ export default function TopNav(): JSX.Element {
 
         {/* Page title — inline-start of the bar. */}
         {titleKey && (
-          <h1 className="hidden sm:block text-lg font-semibold text-slate-900 dark:text-slate-100 truncate">
+          <h1 className="hidden sm:block text-lg font-semibold text-text truncate">
             {t(titleKey)}
           </h1>
         )}

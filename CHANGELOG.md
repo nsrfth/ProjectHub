@@ -7,6 +7,21 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.61.0] — 2026-06-09
+
+**Multiple themes — CSS-variable token system with 7 user-selectable themes.**
+
+- **Theme preference** extended from Light/Dark to seven options: Light, Dark, System (auto),
+  Midnight, Solarized, High-Contrast, and Nord. Stored per user on the server and mirrored to
+  `localStorage` at login.
+- **CSS-variable token system** on `<html class="theme-*">` (`--color-bg`, `--color-text`,
+  `--color-primary`, …) with Tailwind utilities wired to semantic tokens. Legacy `dark:` variants
+  remain on dark-family themes during incremental migration.
+- **System** follows the OS light/dark setting via `matchMedia` and re-applies live without reload.
+- Settings → **Preferences** theme picker with swatch previews (EN + FA).
+
+---
+
 ## [1.60.1] — 2026-06-09
 
 **Projects page — per-row actions menu (edit project, edit budget, delete).**

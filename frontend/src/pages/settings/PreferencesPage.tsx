@@ -4,7 +4,8 @@ import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
 import { updatePreferences } from '@/features/auth/api';
 import { setCalendar, setWeekendDays, type Calendar } from '@/lib/calendar';
-import { setTheme, type Theme } from '@/lib/theme';
+import { setThemePreference, type ThemePreference } from '@/lib/theme';
+import ThemePicker from '@/features/settings/ThemePicker';
 import { setLanguage, useT, type Language } from '@/lib/i18n';
 import { fetchSystemInfo } from '@/features/system/api';
 import { api } from '@/lib/api';
@@ -31,11 +32,11 @@ export default function PreferencesPage(): JSX.Element {
   const t = useT();
 
   const initialCalendar: Calendar = (user?.calendarPreference ?? 'SHAMSI') as Calendar;
-  const initialTheme: Theme = (user?.themePreference ?? 'LIGHT') as Theme;
+  const initialTheme: ThemePreference = (user?.themePreference ?? 'LIGHT') as ThemePreference;
   const initialLanguage: Language = (user?.languagePreference ?? 'EN') as Language;
 
   const [calendar, setLocalCalendar] = useState<Calendar>(initialCalendar);
-  const [theme, setLocalTheme] = useState<Theme>(initialTheme);
+  const [theme, setLocalTheme] = useState<ThemePreference>(initialTheme);
   const [language, setLocalLanguage] = useState<Language>(initialLanguage);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +49,7 @@ export default function PreferencesPage(): JSX.Element {
         languagePreference: res.language,
       });
       const calChanged = setCalendar(res.calendar);
-      const themeChanged = setTheme(res.theme);
+      const themeChanged = setThemePreference(res.theme);
       const langChanged = setLanguage(res.language);
       if (calChanged || themeChanged || langChanged) {
         window.location.reload();
@@ -76,7 +77,7 @@ export default function PreferencesPage(): JSX.Element {
         </p>
       </header>
 
-      <form onSubmit={submit} className="border border-slate-200 dark:border-slate-700 rounded p-4 space-y-5">
+      <form onSubmit={submit} className="border border-border rounded p-4 space-y-5 bg-surface">
         {/* Calendar */}
         <fieldset>
           <legend className="font-medium">{t('preferences.calendar')}</legend>
@@ -102,23 +103,10 @@ export default function PreferencesPage(): JSX.Element {
         </fieldset>
 
         {/* Theme */}
-        <fieldset className="border-t border-slate-200 dark:border-slate-700 pt-4">
-          <legend className="font-medium">{t('preferences.theme')}</legend>
-          <div className="space-y-2 mt-2">
-            <Radio
-              name="theme"
-              value="LIGHT"
-              checked={theme === 'LIGHT'}
-              onChange={() => setLocalTheme('LIGHT')}
-              label={t('preferences.theme.light')}
-            />
-            <Radio
-              name="theme"
-              value="DARK"
-              checked={theme === 'DARK'}
-              onChange={() => setLocalTheme('DARK')}
-              label={t('preferences.theme.dark')}
-            />
+        <fieldset className="border-t border-border pt-4">
+          <legend className="font-medium">{t('preferences.theme.title')}</legend>
+          <div className="mt-2">
+            <ThemePicker value={theme} onChange={setLocalTheme} />
           </div>
         </fieldset>
 

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { themePreferenceEnum } from './themePreference.js';
+
 // Route-level shape only — full policy enforced in PasswordPolicyService.
 export const passwordInputSchema = z.string().min(1).max(200);
 
@@ -62,7 +64,7 @@ export const userResponse = z.object({
   // v1.13: per-user theme + UI language. Mirrored to localStorage at
   // every signed-in entry point so a user changing their pref on one
   // device sees it on another after login.
-  themePreference: z.enum(['LIGHT', 'DARK']).default('LIGHT'),
+  themePreference: themePreferenceEnum.default('LIGHT'),
   languagePreference: z.enum(['EN', 'FA']).default('EN'),
   createdAt: z.string(),
 });
@@ -71,7 +73,7 @@ export const userResponse = z.object({
 // left as-is. New per-user toggles add a field here without an URL change.
 export const updatePreferencesBody = z.object({
   calendar: z.enum(['SHAMSI', 'GREGORIAN']).optional(),
-  theme: z.enum(['LIGHT', 'DARK']).optional(),
+  theme: themePreferenceEnum.optional(),
   language: z.enum(['EN', 'FA']).optional(),
 });
 

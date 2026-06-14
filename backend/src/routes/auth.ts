@@ -16,6 +16,7 @@ import {
   verificationPerformBody,
   verificationRequestBody,
 } from '../schemas/auth.js';
+import { themePreferenceEnum } from '../schemas/themePreference.js';
 // v1.30.11 (S-9): public self-registration was removed because the
 // "Email already registered" 409 was an account-enumeration channel.
 // New accounts come from `prisma db seed` (first admin) and the v1.26
@@ -139,13 +140,13 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
       summary: 'Update per-user preferences (calendar, theme, language)',
       body: z.object({
         calendar: z.enum(['SHAMSI', 'GREGORIAN']).optional(),
-        theme: z.enum(['LIGHT', 'DARK']).optional(),
+        theme: themePreferenceEnum.optional(),
         language: z.enum(['EN', 'FA']).optional(),
       }),
       response: {
         200: z.object({
           calendar: z.enum(['SHAMSI', 'GREGORIAN']),
-          theme: z.enum(['LIGHT', 'DARK']),
+          theme: themePreferenceEnum,
           language: z.enum(['EN', 'FA']),
         }),
       },

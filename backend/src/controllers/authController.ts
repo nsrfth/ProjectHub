@@ -9,6 +9,7 @@ import type {
   VerificationPerformBody,
   VerificationRequestBody,
 } from '../schemas/auth.js';
+import type { ThemePreferenceValue } from '../schemas/themePreference.js';
 import { Errors } from '../lib/errors.js';
 import { TwoFactorService } from '../services/twoFactorService.js';
 
@@ -193,7 +194,7 @@ export class AuthController {
   updatePreferences = async (
     req: FastifyRequest<{ Body: {
       calendar?: 'SHAMSI' | 'GREGORIAN';
-      theme?: 'LIGHT' | 'DARK';
+      theme?: ThemePreferenceValue;
       language?: 'EN' | 'FA';
     } }>,
     reply: FastifyReply,

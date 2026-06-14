@@ -387,8 +387,19 @@ Affects every date + timestamp the UI renders — kanban cards, reports, audit l
 
 ### Theme
 
-- **Light** — the original look. Default.
-- **Dark** — slate-900 surface, slate-100 text. Powered by Tailwind's `dark:` variant class on `<html>`. Pre-React bootstrap in `index.html` applies the cached theme before first paint, so no light-flash on dark accounts.
+Seven options on **Settings → Preferences** (v1.61). Your choice is stored on the server and mirrored to `localStorage` at login; the inline script in `index.html` applies it before first paint to avoid a flash.
+
+| Preference | What you see |
+|---|---|
+| **Light** | Original TaskHub look (default). |
+| **Dark** | Slate dark surfaces — same as pre-v1.61 Dark. |
+| **System (auto)** | Follows your OS light/dark setting; updates live without reload. |
+| **Midnight** | Deep blue-black palette. |
+| **Solarized** | Warm cream / teal Solarized Light-inspired palette. |
+| **High contrast** | Accessibility theme — black on white, WCAG AA contrast. |
+| **Nord** | Cool Nord palette. |
+
+Under the hood, the app sets a single `theme-*` class on `<html>` from a CSS-variable token system (`--color-bg`, `--color-text`, `--color-primary`, …). Tailwind utilities such as `bg-bg` and `text-text` read those tokens. Dark-family themes (Dark, Midnight, Nord, and System when the OS is dark) also keep Tailwind's legacy `dark` class so older `dark:` styles still work during migration.
 
 ### Language
 

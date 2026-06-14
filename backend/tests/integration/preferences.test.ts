@@ -96,3 +96,45 @@ describe('PATCH /api/auth/me/preferences', () => {
     expect(noop.json().calendar).toBe('GREGORIAN');
   });
 });
+
+describe('PATCH /api/auth/me/preferences — theme (v1.61)', () => {
+  const ALL_THEMES = [
+    'LIGHT',
+    'DARK',
+    'SYSTEM',
+    'MIDNIGHT',
+    'SOLARIZED',
+    'HIGH_CONTRAST',
+    'NORD',
+  ] as const;
+
+  it.each(ALL_THEMES)('persists theme=%s and survives fresh login', async (theme) => {
+    const { token } = await register();
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me/preferences',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { theme },
+    });
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json().theme).toBe(theme);
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'pref@example.com', password: 'CorrectHorseBattery9' },
+    });
+    expect(login.json().user.themePreference).toBe(theme);
+  });
+
+  it('rejects an unknown theme value with 400', async () => {
+    const { token } = await register();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me/preferences',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { theme: 'PLAID' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

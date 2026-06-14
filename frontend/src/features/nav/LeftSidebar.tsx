@@ -71,8 +71,7 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
           // original mockup-faithful `bg-slate-900` was always-dark; users
           // on light theme found the dark rail jarring against the white
           // content area.
-          'bg-white text-slate-900 border-e border-slate-200',
-          'dark:bg-slate-900 dark:text-slate-100 dark:border-slate-800',
+          'bg-surface text-text border-e border-border',
           'transition-transform duration-200',
           // Drawer behaviour. v1.32.1: the previous form
           // `rtl:translate-x-full ltr:-translate-x-full md:translate-x-0`
@@ -92,10 +91,10 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
         {/* v1.38: brand header uses the new Quad mark + split wordmark
             ("Task" + indigo "Hub"). Persian renders the localised name
             unsplit — see BrandWordmark. */}
-        <div className="h-14 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800">
+        <div className="h-14 flex items-center justify-between px-4 border-b border-border">
           <Link
             to="/dashboard"
-            className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white"
+            className="flex items-center gap-2 text-base font-semibold text-text"
             onClick={onClose}
           >
             <BrandMark variant="filled" size={28} />
@@ -105,7 +104,7 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="md:hidden p-1 rounded text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            className="md:hidden p-1 rounded text-text-muted hover:bg-bg-elevated"
           >
             <IconClose size={20} />
           </button>
@@ -123,8 +122,8 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
                     [
                       'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
                       isActive
-                        ? 'bg-indigo-50 text-indigo-700 font-medium dark:bg-indigo-500/15 dark:text-white'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100',
+                        ? 'bg-primary/10 text-primary font-medium'
+                        : 'text-text-muted hover:bg-bg-elevated hover:text-text',
                     ].join(' ')
                   }
                 >
@@ -132,9 +131,7 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
                     <>
                       <span
                         className={
-                          isActive
-                            ? 'text-indigo-600 dark:text-indigo-400'
-                            : 'text-slate-400 dark:text-slate-500'
+                          isActive ? 'text-primary' : 'text-text-muted'
                         }
                       >
                         <item.icon size={18} />
@@ -152,7 +149,7 @@ export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
         <Link
           to="/settings/preferences"
           onClick={onClose}
-          className="flex items-center gap-3 px-4 py-3 border-t border-slate-200 hover:bg-slate-100 dark:border-slate-800 dark:hover:bg-slate-800/60"
+          className="flex items-center gap-3 px-4 py-3 border-t border-border hover:bg-bg-elevated"
         >
           <span className="w-9 h-9 rounded-full bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center">
             {initials(user?.name, user?.email)}

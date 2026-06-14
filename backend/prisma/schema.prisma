@@ -127,6 +127,11 @@ enum CalendarPreference {
 enum ThemePreference {
   LIGHT
   DARK
+  SYSTEM
+  MIDNIGHT
+  SOLARIZED
+  HIGH_CONTRAST
+  NORD
 }
 
 // v1.13: per-user UI language. EN is the canonical key source; FA covers

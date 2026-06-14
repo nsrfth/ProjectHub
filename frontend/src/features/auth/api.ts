@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { ThemePreference } from '@/lib/theme';
 
 export interface AuthUser {
   id: string;
@@ -18,7 +19,7 @@ export interface AuthUser {
   // calendar from the next render onward.
   calendarPreference: 'SHAMSI' | 'GREGORIAN';
   // v1.13: per-user theme + UI language. Same per-login mirror pattern.
-  themePreference: 'LIGHT' | 'DARK';
+  themePreference: ThemePreference;
   languagePreference: 'EN' | 'FA';
   createdAt: string;
 }
@@ -81,12 +82,12 @@ export async function regenerateRecoveryCodes(): Promise<{ recoveryCodes: string
 // + reload the window in one step.
 export interface PreferencesResponse {
   calendar: 'SHAMSI' | 'GREGORIAN';
-  theme: 'LIGHT' | 'DARK';
+  theme: ThemePreference;
   language: 'EN' | 'FA';
 }
 export async function updatePreferences(input: {
   calendar?: 'SHAMSI' | 'GREGORIAN';
-  theme?: 'LIGHT' | 'DARK';
+  theme?: ThemePreference;
   language?: 'EN' | 'FA';
 }): Promise<PreferencesResponse> {
   return (await api.patch<PreferencesResponse>('/auth/me/preferences', input)).data;

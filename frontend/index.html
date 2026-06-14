@@ -4,31 +4,33 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TaskHub</title>
-    <!-- v1.38: favicon. Inline SVG data URI so the project doesn't carry a
-         binary asset; the design matches features/brand/BrandMark.tsx's
-         `filled` variant exactly (kept in sync by hand). -->
     <link
       rel="icon"
       type="image/svg+xml"
       href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236366f1'/%3E%3Crect x='6' y='6' width='9' height='9' rx='2' fill='white' fill-opacity='0.75'/%3E%3Crect x='17' y='6' width='9' height='9' rx='2' fill='white'/%3E%3Crect x='6' y='17' width='9' height='9' rx='2' fill='white' fill-opacity='0.75'/%3E%3Crect x='17' y='17' width='9' height='9' rx='2' fill='white' fill-opacity='0.75'/%3E%3Cpolyline points='19 10.5 21 12.3 24 8.7' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
     />
-    <!-- v1.13: pre-React bootstrap. Read the cached theme + language from
-         localStorage and apply them to <html> BEFORE the SPA paints, so
-         users with dark theme or fa locale don't see a light-mode /
-         English flash. Wrapped in a try/catch for private-mode Safari. -->
     <script>
       try {
-        var theme = localStorage.getItem('taskhub.theme');
-        if (theme === 'DARK') document.documentElement.classList.add('dark');
+        var prefs = ['LIGHT','DARK','SYSTEM','MIDNIGHT','SOLARIZED','HIGH_CONTRAST','NORD'];
+        var pref = localStorage.getItem('taskhub.theme') || 'LIGHT';
+        if (prefs.indexOf(pref) < 0) pref = 'LIGHT';
+        var resolved = pref;
+        if (pref === 'SYSTEM') {
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'DARK' : 'LIGHT';
+        }
+        var themeClass = 'theme-' + resolved.toLowerCase().replace(/_/g, '-');
+        var darkFamily = resolved === 'DARK' || resolved === 'MIDNIGHT' || resolved === 'NORD';
+        document.documentElement.classList.add(themeClass);
+        if (darkFamily) document.documentElement.classList.add('dark');
         var lang = localStorage.getItem('taskhub.language');
         if (lang === 'FA') {
           document.documentElement.lang = 'fa';
           document.documentElement.dir = 'rtl';
         }
-      } catch (_) { /* private-mode storage block — fall through */ }
+      } catch (_) {}
     </script>
   </head>
-  <body class="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+  <body class="bg-bg text-text">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

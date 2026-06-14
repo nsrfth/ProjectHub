@@ -1,0 +1,112 @@
+/**
+ * Semantic design tokens per resolved theme. Applied as `.theme-*` on `<html>`.
+ * Tailwind utilities (`bg-bg`, `text-text`, …) and the legacy slate safety net
+ * in index.css both consume these variables.
+ */
+
+/* Default fallback before JS runs (matches LIGHT). */
+:root {
+  --color-bg: #f8fafc;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+  --color-primary: #6366f1;
+  --color-primary-contrast: #ffffff;
+  --color-success: #16a34a;
+  --color-warning: #ca8a04;
+  --color-danger: #dc2626;
+  --color-accent: #6366f1;
+}
+
+.theme-light {
+  --color-bg: #f8fafc;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+  --color-primary: #6366f1;
+  --color-primary-contrast: #ffffff;
+  --color-success: #16a34a;
+  --color-warning: #ca8a04;
+  --color-danger: #dc2626;
+  --color-accent: #6366f1;
+}
+
+.theme-dark {
+  --color-bg: #020617;
+  --color-bg-elevated: #0f172a;
+  --color-surface: #1e293b;
+  --color-border: #334155;
+  --color-text: #f1f5f9;
+  --color-text-muted: #94a3b8;
+  --color-primary: #818cf8;
+  --color-primary-contrast: #0f172a;
+  --color-success: #4ade80;
+  --color-warning: #facc15;
+  --color-danger: #f87171;
+  --color-accent: #818cf8;
+}
+
+.theme-midnight {
+  --color-bg: #0a0e1a;
+  --color-bg-elevated: #111827;
+  --color-surface: #1a2236;
+  --color-border: #2d3a52;
+  --color-text: #e2e8f0;
+  --color-text-muted: #94a3b8;
+  --color-primary: #6366f1;
+  --color-primary-contrast: #ffffff;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #fb7185;
+  --color-accent: #818cf8;
+}
+
+.theme-solarized {
+  --color-bg: #fdf6e3;
+  --color-bg-elevated: #eee8d5;
+  --color-surface: #fdf6e3;
+  --color-border: #93a1a1;
+  --color-text: #073642;
+  --color-text-muted: #657b83;
+  --color-primary: #268bd2;
+  --color-primary-contrast: #fdf6e3;
+  --color-success: #859900;
+  --color-warning: #b58900;
+  --color-danger: #dc322f;
+  --color-accent: #2aa198;
+}
+
+/* WCAG AA: #000 on #fff = 21:1; #fff on #000 = 21:1; muted #333 on #fff = 12.6:1 */
+.theme-high-contrast {
+  --color-bg: #ffffff;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-border: #000000;
+  --color-text: #000000;
+  --color-text-muted: #333333;
+  --color-primary: #0000ee;
+  --color-primary-contrast: #ffffff;
+  --color-success: #006400;
+  --color-warning: #8b4513;
+  --color-danger: #cc0000;
+  --color-accent: #0000ee;
+}
+
+.theme-nord {
+  --color-bg: #2e3440;
+  --color-bg-elevated: #3b4252;
+  --color-surface: #434c5e;
+  --color-border: #4c566a;
+  --color-text: #eceff4;
+  --color-text-muted: #d8dee9;
+  --color-primary: #88c0d0;
+  --color-primary-contrast: #2e3440;
+  --color-success: #a3be8c;
+  --color-warning: #ebcb8b;
+  --color-danger: #bf616a;
+  --color-accent: #81a1c1;
+}
