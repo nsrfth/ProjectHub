@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { BudgetCurrency } from '@/lib/formatBudget';
 import type { TaskCustomFieldValue } from '@/features/customFields/api';
 
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
@@ -55,6 +56,7 @@ export interface Task {
   // budgets — fixed-2 string when set, null when unset.
   plannedBudget: string | null;
   actualSpent: string | null;
+  budgetCurrency: BudgetCurrency;
   position: number;
   createdAt: string;
   updatedAt: string;

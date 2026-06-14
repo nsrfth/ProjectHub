@@ -21,6 +21,9 @@ import {
   formatShamsiTimestamp,
 } from '@/lib/shamsi';
 import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
+import type { BudgetCurrency } from '@/lib/formatBudget';
+import { budgetLocaleFromLanguage, formatBudget } from '@/lib/formatBudget';
+import { getLanguage, useT } from '@/lib/i18n';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -434,6 +437,7 @@ export default function TaskDetailPage(): JSX.Element {
             <TaskBudgetSection
               plannedBudget={task.plannedBudget}
               actualSpent={task.actualSpent}
+              budgetCurrency={task.budgetCurrency}
               pending={updateTaskMut.isPending}
               onSave={(planned, actual) =>
                 updateTaskMut.mutate({ plannedBudget: planned, actualSpent: actual })
@@ -547,14 +551,18 @@ export default function TaskDetailPage(): JSX.Element {
 function TaskBudgetSection({
   plannedBudget,
   actualSpent,
+  budgetCurrency,
   pending,
   onSave,
 }: {
   plannedBudget: string | null;
   actualSpent: string | null;
+  budgetCurrency: BudgetCurrency;
   pending: boolean;
   onSave: (plannedBudget: string | null, actualSpent: string | null) => void;
 }): JSX.Element {
+  const t = useT();
+  const locale = budgetLocaleFromLanguage(getLanguage());
   const [editing, setEditing] = useState(false);
   const [planned, setPlanned] = useState(plannedBudget ?? '');
   const [actual, setActual] = useState(actualSpent ?? '');
@@ -572,13 +580,7 @@ function TaskBudgetSection({
       ? (Number(actualSpent) / Number(plannedBudget)) * 100
       : null;
 
-  const fmt = (s: string | null): string =>
-    s === null
-      ? '—'
-      : Number(s).toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
+  const fmt = (s: string | null): string => formatBudget(s, budgetCurrency, locale);
 
   const validNumber = (v: string): boolean =>
     v.trim().length === 0 || (/^\d+(\.\d{1,2})?$/.test(v.trim()) && Number(v) >= 0);
@@ -587,9 +589,11 @@ function TaskBudgetSection({
 
   if (!editing) {
     return (
-      <div className="flex items-center gap-2 text-sm text-slate-700">
-        <span>
-          Planned <code>{fmt(plannedBudget)}</code> · Spent <code>{fmt(actualSpent)}</code>
+      <div>
+        <p className="text-xs text-slate-500 mb-2">{t('budget.taskUsesProjectCurrency')}</p>
+        <div className="flex items-center gap-2 text-sm text-slate-700">
+          <span dir="ltr" className="inline-block">
+            Planned <code>{fmt(plannedBudget)}</code> · Spent <code>{fmt(actualSpent)}</code>
           {utilization !== null && (
             <span
               className={
@@ -613,6 +617,7 @@ function TaskBudgetSection({
         >
           {plannedBudget || actualSpent ? 'Edit' : 'Add budget'}
         </button>
+        </div>
       </div>
     );
   }

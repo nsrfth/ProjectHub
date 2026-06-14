@@ -7,6 +7,24 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.59.0] — 2026-06-09
+
+**Budget currency — IRR / EUR / USD on project budgets with team default.**
+
+### Budget currency (backend + frontend)
+
+- Projects carry a **budget currency** (`IRR`, `EUR`, or `USD`). Task budgets display in
+  the parent project's currency — tasks do not store a separate currency column.
+- Teams have a **default currency** that pre-fills new projects (editable per project).
+  Existing projects backfill to `IRR` (or the team default at migration time).
+- Locale-aware display via `Intl.NumberFormat` (EN / FA): IRR shows **0** decimal places;
+  EUR and USD show **2**. Stored amounts remain `Decimal(18,2)` — no conversion or exchange
+  rates. Changing a project's currency relabels amounts only.
+- Team settings: default currency selector (requires `team.edit_details`). Activity log
+  records `team.default_currency_changed`.
+
+---
+
 ## [1.58.0] — 2026-06-09
 
 **Custom fields — team-defined typed metadata on tasks (Tier A foundation).**

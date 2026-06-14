@@ -1,4 +1,4 @@
-import { Prisma, type GlobalRole, type TeamRole } from '@prisma/client';
+import { Prisma, type Currency, type GlobalRole, type TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import type { Permission } from '../lib/permissions.js';
@@ -27,6 +27,7 @@ export interface TeamWithRole {
   name: string;
   slug: string;
   color: string | null;
+  defaultCurrency: Currency;
   createdAt: Date;
   myRole: TeamRole;
 }
@@ -299,6 +300,7 @@ export class TeamsService {
         name: team.name,
         slug: team.slug,
         color: team.color,
+        defaultCurrency: team.defaultCurrency,
         createdAt: team.createdAt,
         myRole: 'MANAGER',
       };
@@ -325,6 +327,7 @@ export class TeamsService {
         name: t.name,
         slug: t.slug,
         color: t.color,
+        defaultCurrency: t.defaultCurrency,
         createdAt: t.createdAt,
         myRole: roleByTeam.get(t.id) ?? 'MANAGER',
       }));
@@ -340,6 +343,7 @@ export class TeamsService {
       name: m.team.name,
       slug: m.team.slug,
       color: m.team.color,
+      defaultCurrency: m.team.defaultCurrency,
       createdAt: m.team.createdAt,
       myRole: m.role,
     }));
@@ -440,6 +444,7 @@ export class TeamsService {
         name: team.name,
         slug: team.slug,
         color: team.color,
+        defaultCurrency: team.defaultCurrency,
         createdAt: team.createdAt,
         myRole: myMembership.role,
       },
@@ -483,9 +488,14 @@ export class TeamsService {
   async update(
     teamId: string,
     actorId: string,
-    input: { name?: string; slug?: string; color?: string | null },
+    input: { name?: string; slug?: string; color?: string | null; defaultCurrency?: Currency },
   ): Promise<TeamWithRole & { myRole: TeamRole }> {
-    if (input.name === undefined && input.slug === undefined && input.color === undefined) {
+    if (
+      input.name === undefined
+      && input.slug === undefined
+      && input.color === undefined
+      && input.defaultCurrency === undefined
+    ) {
       throw Errors.badRequest('Provide at least one field to update');
     }
     const existing = await prisma.team.findUnique({ where: { id: teamId } });
@@ -502,6 +512,20 @@ export class TeamsService {
           actorId,
           action: 'team.renamed',
           meta: { oldName: existing.name, newName: input.name },
+        });
+      }
+      if (
+        input.defaultCurrency !== undefined
+        && input.defaultCurrency !== existing.defaultCurrency
+      ) {
+        await logActivity(prisma, {
+          teamId,
+          actorId,
+          action: 'team.default_currency_changed',
+          meta: {
+            oldCurrency: existing.defaultCurrency,
+            newCurrency: input.defaultCurrency,
+          },
         });
       }
       return { ...team, myRole: 'MANAGER' };

@@ -1,4 +1,4 @@
-import { Prisma, type GlobalRole, type TaskPriority, type TaskStatus, type TeamRole } from '@prisma/client';
+import { Prisma, type Currency, type GlobalRole, type TaskPriority, type TaskStatus, type TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { assertCanWriteProject } from '../lib/projectAccess.js';
@@ -122,6 +122,7 @@ export interface TaskView {
   // (Decimal serializes to string to preserve precision); null when unset.
   plannedBudget: string | null;
   actualSpent: string | null;
+  budgetCurrency: Currency;
   position: number;
   createdAt: Date;
   updatedAt: Date;
@@ -139,6 +140,7 @@ export interface TaskView {
 // subtasks[] fields are always populated on TaskView. A separate type alias
 // keeps the includes hardcoded in one place.
 const TASK_INCLUDE = {
+  project: { select: { budgetCurrency: true } },
   labels: { include: { label: true } },
   // v1.19: pull subtask technician name in the same query so the UI doesn't
   // need to look up users separately. Same for the task itself below.
@@ -181,6 +183,7 @@ function toView(
     // v1.42: Decimal → fixed-2 string. Mirrors v1.41 Project.toView.
     plannedBudget: row.plannedBudget === null ? null : row.plannedBudget.toFixed(2),
     actualSpent: row.actualSpent === null ? null : row.actualSpent.toFixed(2),
+    budgetCurrency: row.project.budgetCurrency,
     position: row.position,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

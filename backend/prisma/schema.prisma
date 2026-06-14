@@ -63,6 +63,14 @@ enum GroupAccessLevel {
   READONLY
 }
 
+// v1.59: budget currency codes. IRR displays with 0 decimal places;
+// EUR/USD with 2. Storage stays Decimal(18,2) for all currencies.
+enum Currency {
+  IRR
+  EUR
+  USD
+}
+
 // v1.58: custom field types for team-scoped task metadata.
 enum CustomFieldType {
   TEXT
@@ -424,8 +432,10 @@ model Team {
   directoryId   String?
   // v1.12: per-team accent colour shown on kanban cards + calendar views.
   // Hex like "#3b82f6"; null = default slate. Admins / team managers set it.
-  color         String?
-  createdAt     DateTime         @default(now())
+  color           String?
+  // v1.59: pre-fills budget currency on newly created projects (editable per project).
+  defaultCurrency Currency         @default(IRR)
+  createdAt       DateTime         @default(now())
   memberships   TeamMembership[]
   projects      Project[]
   labels        Label[]
@@ -512,9 +522,12 @@ model Project {
   // decimal point + 2 after (currency-grade precision in any unit).
   // Non-negative is enforced by DB CHECK + Zod; nullable so existing
   // projects stay valid without backfill.
-  plannedBudget Decimal?      @db.Decimal(18, 2)
-  actualSpent   Decimal?      @db.Decimal(18, 2)
-  createdAt     DateTime      @default(now())
+  plannedBudget  Decimal?  @db.Decimal(18, 2)
+  actualSpent    Decimal?  @db.Decimal(18, 2)
+  // v1.59: currency label for budget amounts (no conversion). Task budgets
+  // inherit this currency — tasks do not store their own currency column.
+  budgetCurrency Currency    @default(IRR)
+  createdAt      DateTime  @default(now())
   updatedAt     DateTime      @updatedAt
   team          Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
   // ownerId is nullable + SetNull so admins can delete a user without

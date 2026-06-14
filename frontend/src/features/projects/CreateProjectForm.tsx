@@ -1,10 +1,13 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import type { Team } from '@/features/teams/api';
 import { listTeamMembersForAssignees } from '@/features/teams/api';
 import { visibleTeamMembers } from '@/lib/systemUser';
 import * as projectsApi from '@/features/projects/api';
+import CurrencySelector from '@/features/budget/CurrencySelector';
+import type { BudgetCurrency } from '@/lib/formatBudget';
+import { useT } from '@/lib/i18n';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -28,6 +31,7 @@ export default function CreateProjectForm({
   onCancel,
 }: CreateProjectFormProps): JSX.Element {
   const qc = useQueryClient();
+  const t = useT();
 
   const [formTeamId, setFormTeamId] = useState<string>(() => currentTeamId ?? '');
   const effectiveFormTeamId = formTeamId || currentTeamId || '';
@@ -44,7 +48,17 @@ export default function CreateProjectForm({
   const [accountableId, setAccountableId] = useState<string>('');
   const [plannedBudget, setPlannedBudget] = useState('');
   const [actualSpent, setActualSpent] = useState('');
+  const selectedTeam = teams.find((tm) => tm.id === effectiveFormTeamId);
+  const [budgetCurrency, setBudgetCurrency] = useState<BudgetCurrency>(
+    () => selectedTeam?.defaultCurrency ?? 'IRR',
+  );
   const [createError, setCreateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedTeam?.defaultCurrency) {
+      setBudgetCurrency(selectedTeam.defaultCurrency);
+    }
+  }, [selectedTeam?.id, selectedTeam?.defaultCurrency]);
 
   const createMut = useMutation({
     mutationFn: (input: {
@@ -53,6 +67,7 @@ export default function CreateProjectForm({
       accountableId?: string | null;
       plannedBudget?: string;
       actualSpent?: string;
+      budgetCurrency?: BudgetCurrency;
     }) => projectsApi.createProject(effectiveFormTeamId, input),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['projects', 'all'] });
@@ -70,6 +85,7 @@ export default function CreateProjectForm({
       accountableId: accountableId || null,
       plannedBudget: plannedBudget.trim() ? plannedBudget.trim() : undefined,
       actualSpent: actualSpent.trim() ? actualSpent.trim() : undefined,
+      budgetCurrency,
     });
   }
 
@@ -132,6 +148,10 @@ export default function CreateProjectForm({
         </select>
       </label>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label className="block sm:col-span-2">
+          <span className="block text-xs text-slate-500 dark:text-slate-400 mb-1">{t('budget.currency')}</span>
+          <CurrencySelector value={budgetCurrency} onChange={setBudgetCurrency} />
+        </label>
         <label className="block">
           <span className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Planned budget</span>
           <input

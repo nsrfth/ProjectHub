@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { currencyEnum } from './currency.js';
+
 // Slugs go in URLs and are unique. Restrict to lowercase letters, digits, and
 // hyphens; reject leading/trailing/double hyphens. 3–60 chars is plenty for a
 // team identifier and short enough for clean URLs.
@@ -25,6 +27,8 @@ export const updateTeamBody = z.object({
   slug: slugSchema.optional(),
   // Accept `null` to explicitly clear the colour.
   color: hexColor.nullable().optional(),
+  // v1.59: team default for new project budget currency.
+  defaultCurrency: currencyEnum.optional(),
 });
 
 export const addMemberBody = z
@@ -75,6 +79,7 @@ export const teamResponse = z.object({
   name: z.string(),
   slug: z.string(),
   color: z.string().nullable(),
+  defaultCurrency: currencyEnum,
   createdAt: z.string(),
   myRole: z.enum(['MANAGER', 'MEMBER']),
 });

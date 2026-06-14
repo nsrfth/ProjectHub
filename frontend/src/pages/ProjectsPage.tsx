@@ -24,6 +24,10 @@ import {
 import { formatShamsiTimestampDate } from '@/lib/shamsi';
 import CreateProjectForm from '@/features/projects/CreateProjectForm';
 import Modal from '@/features/ui/Modal';
+import CurrencySelector from '@/features/budget/CurrencySelector';
+import type { BudgetCurrency } from '@/lib/formatBudget';
+import { budgetLocaleFromLanguage, formatBudget } from '@/lib/formatBudget';
+import { getLanguage, useT } from '@/lib/i18n';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -192,10 +196,12 @@ export default function ProjectsPage(): JSX.Element {
       projectId: string;
       plannedBudget: string | null;
       actualSpent: string | null;
+      budgetCurrency?: BudgetCurrency;
     }) =>
       projectsApi.updateProject(args.teamId, args.projectId, {
         plannedBudget: args.plannedBudget,
         actualSpent: args.actualSpent,
+        ...(args.budgetCurrency !== undefined && { budgetCurrency: args.budgetCurrency }),
       }),
     onSuccess: async (_d, vars) => {
       await qc.invalidateQueries({ queryKey: ['projects', 'all'] });
@@ -431,12 +437,13 @@ export default function ProjectsPage(): JSX.Element {
                   }
                 }}
                 deletePending={deleteMut.isPending}
-                onSaveBudget={(planned, actual) =>
+                onSaveBudget={(planned, actual, currency) =>
                   updateBudgetMut.mutate({
                     teamId: p.teamId,
                     projectId: p.id,
                     plannedBudget: planned,
                     actualSpent: actual,
+                    budgetCurrency: currency,
                   })
                 }
                 budgetPending={updateBudgetMut.isPending}
@@ -577,7 +584,7 @@ function ProjectListRow({
   renamePending: boolean;
   onDelete: () => void;
   deletePending: boolean;
-  onSaveBudget: (planned: string | null, actual: string | null) => void;
+  onSaveBudget: (planned: string | null, actual: string | null, currency?: BudgetCurrency) => void;
   budgetPending: boolean;
   bucketMenu: React.ReactNode;
 }): JSX.Element {
@@ -699,18 +706,22 @@ function BudgetRow({
   project: projectsApi.Project;
   canEdit: boolean;
   pending: boolean;
-  onSave: (plannedBudget: string | null, actualSpent: string | null) => void;
+  onSave: (plannedBudget: string | null, actualSpent: string | null, budgetCurrency?: BudgetCurrency) => void;
 }): JSX.Element | null {
+  const t = useT();
+  const locale = budgetLocaleFromLanguage(getLanguage());
   const [editing, setEditing] = useState(false);
   const [planned, setPlanned] = useState(project.plannedBudget ?? '');
   const [actual, setActual] = useState(project.actualSpent ?? '');
+  const [currency, setCurrency] = useState<BudgetCurrency>(project.budgetCurrency);
 
   useEffect(() => {
     if (editing) {
       setPlanned(project.plannedBudget ?? '');
       setActual(project.actualSpent ?? '');
+      setCurrency(project.budgetCurrency);
     }
-  }, [editing, project.plannedBudget, project.actualSpent]);
+  }, [editing, project.plannedBudget, project.actualSpent, project.budgetCurrency]);
 
   const hasBudget = !!(project.plannedBudget || project.actualSpent);
   if (!hasBudget && !canEdit) return null;
@@ -721,17 +732,26 @@ function BudgetRow({
       : null;
 
   const fmt = (s: string | null): string =>
-    s === null ? '—' : Number(s).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    formatBudget(s, project.budgetCurrency, locale);
 
   const validNumber = (v: string): boolean =>
     v.trim().length === 0 || (/^\d+(\.\d{1,2})?$/.test(v.trim()) && Number(v) >= 0);
 
+  function saveBudget(): void {
+    const currencyChanged = currency !== project.budgetCurrency;
+    if (currencyChanged && !window.confirm(t('budget.currencyChangeNote'))) {
+      return;
+    }
+    onSave(planned.trim() || null, actual.trim() || null, currency);
+    setEditing(false);
+  }
+
   return (
     <div className="mt-2 ml-7 text-xs">
       {!editing ? (
-        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300 flex-wrap">
           <span className="font-medium">Budget:</span>
-          <span>
+          <span dir="ltr" className="inline-block">
             Planned <code>{fmt(project.plannedBudget)}</code> · Spent{' '}
             <code>{fmt(project.actualSpent)}</code>
             {utilization !== null && <span className="ml-2">({utilization.toFixed(1)}%)</span>}
@@ -744,15 +764,16 @@ function BudgetRow({
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1">
+            <span className="text-slate-500">{t('budget.currency')}</span>
+            <CurrencySelector value={currency} onChange={setCurrency} className="rounded border px-1 py-0.5 dark:bg-slate-700 text-xs" />
+          </label>
           <input type="number" min="0" step="0.01" value={planned} onChange={(e) => setPlanned(e.target.value)} className="w-28 rounded border px-1 py-0.5 dark:bg-slate-700" />
           <input type="number" min="0" step="0.01" value={actual} onChange={(e) => setActual(e.target.value)} className="w-28 rounded border px-1 py-0.5 dark:bg-slate-700" />
           <button
             type="button"
             disabled={pending || !validNumber(planned) || !validNumber(actual)}
-            onClick={() => {
-              onSave(planned.trim() || null, actual.trim() || null);
-              setEditing(false);
-            }}
+            onClick={saveBudget}
             className="bg-slate-900 text-white rounded px-2 py-0.5 disabled:opacity-50"
           >
             Save

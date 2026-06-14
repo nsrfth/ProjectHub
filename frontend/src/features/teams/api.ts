@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { BudgetCurrency } from '@/lib/formatBudget';
 
 export type TeamRole = 'MANAGER' | 'MEMBER';
 
@@ -9,6 +10,7 @@ export interface Team {
   // v1.12: per-team accent colour shown on kanban cards + calendar views.
   // Hex (#RRGGBB); null = default slate.
   color: string | null;
+  defaultCurrency: BudgetCurrency;
   createdAt: string;
   myRole: TeamRole;
 }
@@ -136,7 +138,7 @@ export async function listTeamMembersForAssignees(teamId: string): Promise<TeamM
 // v1.12: PATCH team metadata. color: null explicitly clears it.
 export async function updateTeam(
   teamId: string,
-  input: { name?: string; slug?: string; color?: string | null },
+  input: { name?: string; slug?: string; color?: string | null; defaultCurrency?: BudgetCurrency },
 ): Promise<Team> {
   return (await api.patch<Team>(`/teams/${teamId}`, input)).data;
 }

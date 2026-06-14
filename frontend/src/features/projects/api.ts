@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { BudgetCurrency } from '@/lib/formatBudget';
 
 export type ProjectStatus = 'ACTIVE' | 'ARCHIVED' | 'ON_HOLD';
 
@@ -19,6 +20,7 @@ export interface Project {
   // set; null when unset.
   plannedBudget: string | null;
   actualSpent: string | null;
+  budgetCurrency: BudgetCurrency;
   createdAt: string;
   updatedAt: string;
 }
@@ -48,6 +50,7 @@ export async function createProject(
     // v1.41: optional budgets at create time. number | string | null.
     plannedBudget?: number | string | null;
     actualSpent?: number | string | null;
+    budgetCurrency?: BudgetCurrency;
   },
 ): Promise<Project> {
   return (await api.post<Project>(`/teams/${teamId}/projects`, input)).data;
@@ -64,6 +67,7 @@ export async function updateProject(
     // v1.41: budget PATCH. undefined leaves the field; null clears it.
     plannedBudget?: number | string | null;
     actualSpent?: number | string | null;
+    budgetCurrency?: BudgetCurrency;
   },
 ): Promise<Project> {
   return (await api.patch<Project>(`/teams/${teamId}/projects/${projectId}`, input)).data;

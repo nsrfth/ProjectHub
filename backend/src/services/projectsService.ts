@@ -1,4 +1,4 @@
-import { Prisma, type GlobalRole, type ProjectStatus } from '@prisma/client';
+import { Prisma, type Currency, type GlobalRole, type ProjectStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import {
@@ -26,6 +26,7 @@ export interface ProjectView {
   status: ProjectStatus;
   plannedBudget: string | null;
   actualSpent: string | null;
+  budgetCurrency: Currency;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +55,7 @@ function toView(
     status: p.status,
     plannedBudget: p.plannedBudget === null ? null : p.plannedBudget.toFixed(2),
     actualSpent: p.actualSpent === null ? null : p.actualSpent.toFixed(2),
+    budgetCurrency: p.budgetCurrency,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -93,6 +95,7 @@ function updateTouchesNonNameFields(input: {
   accountableId?: string | null;
   plannedBudget?: number | string | null;
   actualSpent?: number | string | null;
+  budgetCurrency?: Currency;
 }): boolean {
   return (
     input.description !== undefined
@@ -100,6 +103,7 @@ function updateTouchesNonNameFields(input: {
     || input.accountableId !== undefined
     || input.plannedBudget !== undefined
     || input.actualSpent !== undefined
+    || input.budgetCurrency !== undefined
   );
 }
 
@@ -113,6 +117,7 @@ export class ProjectsService {
       accountableId?: string | null;
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
+      budgetCurrency?: Currency;
     },
   ): Promise<ProjectView> {
     if (input.accountableId !== undefined) {
@@ -120,6 +125,14 @@ export class ProjectsService {
     }
     const planned = normaliseBudget(input.plannedBudget);
     const spent = normaliseBudget(input.actualSpent);
+    let budgetCurrency = input.budgetCurrency;
+    if (budgetCurrency === undefined) {
+      const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        select: { defaultCurrency: true },
+      });
+      budgetCurrency = team?.defaultCurrency ?? 'IRR';
+    }
     const p = await prisma.project.create({
       data: {
         teamId,
@@ -127,6 +140,7 @@ export class ProjectsService {
         accountableId: input.accountableId ?? null,
         name: input.name,
         description: input.description ?? null,
+        budgetCurrency,
         ...(planned !== undefined && { plannedBudget: planned }),
         ...(spent !== undefined && { actualSpent: spent }),
       },
@@ -178,6 +192,7 @@ export class ProjectsService {
       accountableId?: string | null;
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
+      budgetCurrency?: Currency;
     },
   ): Promise<ProjectView> {
     const p = await prisma.project.findUnique({
@@ -218,6 +233,7 @@ export class ProjectsService {
           ...(input.accountableId !== undefined && { accountableId: input.accountableId }),
           ...(plannedPatch !== undefined && { plannedBudget: plannedPatch }),
           ...(spentPatch !== undefined && { actualSpent: spentPatch }),
+          ...(input.budgetCurrency !== undefined && { budgetCurrency: input.budgetCurrency }),
         },
         include: { accountable: { select: { name: true } } },
       });

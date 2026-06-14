@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { currencyEnum } from './currency.js';
+
 export const projectStatusEnum = z.enum(['ACTIVE', 'ARCHIVED', 'ON_HOLD']);
 
 // v1.41: budget fields are optional positive decimals serialized as
@@ -39,6 +41,8 @@ export const createProjectBody = z.object({
   // v1.41: optional budget fields.
   plannedBudget: budgetSchema,
   actualSpent: budgetSchema,
+  // v1.59: budget currency (defaults to team defaultCurrency on create).
+  budgetCurrency: currencyEnum.optional(),
 });
 
 export const updateProjectBody = z
@@ -50,6 +54,7 @@ export const updateProjectBody = z
     accountableId: z.string().nullable().optional(),
     plannedBudget: budgetSchema,
     actualSpent: budgetSchema,
+    budgetCurrency: currencyEnum.optional(),
   })
   .refine(
     (v) =>
@@ -58,7 +63,8 @@ export const updateProjectBody = z
       v.status !== undefined ||
       v.accountableId !== undefined ||
       v.plannedBudget !== undefined ||
-      v.actualSpent !== undefined,
+      v.actualSpent !== undefined ||
+      v.budgetCurrency !== undefined,
     'Provide at least one field to update',
   );
 
@@ -79,6 +85,7 @@ export const projectResponse = z.object({
   // precision past JS number limits).
   plannedBudget: z.string().nullable(),
   actualSpent: z.string().nullable(),
+  budgetCurrency: currencyEnum,
   createdAt: z.string(),
   updatedAt: z.string(),
 });

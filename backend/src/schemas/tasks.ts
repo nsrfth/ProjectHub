@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { taskCustomFieldValueResponse } from './customFields.js';
+import { currencyEnum } from './currency.js';
 
 export const taskStatusEnum = z.enum(['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE']);
 export const taskPriorityEnum = z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
@@ -134,6 +135,8 @@ export const taskResponse = z.object({
   // v1.42: optional task budget fields (fixed-2 strings, null when unset).
   plannedBudget: z.string().nullable(),
   actualSpent: z.string().nullable(),
+  // v1.59: inherited from parent project — tasks do not store currency.
+  budgetCurrency: currencyEnum,
   position: z.number().int(),
   createdAt: z.string(),
   updatedAt: z.string(),

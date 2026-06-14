@@ -144,6 +144,14 @@ Each team can carry an accent colour that shows up on kanban cards (as a left st
 
 Colours are purely visual — they don't change permissions or filtering.
 
+### Budget currency (v1.59)
+
+Each team can set a **default currency** (`IRR`, `EUR`, or `USD`) on the team detail page (requires `team.edit_details`). New projects inherit this default; you can pick a different currency when creating or editing a project.
+
+- **Currency of record = the project.** Task budgets always display in the parent project's currency — tasks do not have their own currency picker.
+- Amounts are **not converted** when you change a currency — only the display label changes. The UI warns you before saving a currency change.
+- **IRR** shows whole numbers (no decimal places); **EUR** and **USD** show two decimal places. English and Persian UI locales format digits and grouping accordingly.
+
 ---
 
 ## Tasks — the basics

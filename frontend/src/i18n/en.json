@@ -430,5 +430,13 @@
   "about.tech": "Tech",
   "about.userManual": "User manual",
   "about.changelog": "CHANGELOG",
-  "about.helpHint": "Need help? Open the user manual via the 📖 button (top-right), or contact your TaskHub administrator."
+  "about.helpHint": "Need help? Open the user manual via the 📖 button (top-right), or contact your TaskHub administrator.",
+
+  "budget.currency": "Currency",
+  "budget.currency.irr": "IRR (Iranian Rial)",
+  "budget.currency.eur": "EUR (Euro)",
+  "budget.currency.usd": "USD (US Dollar)",
+  "budget.currencyChangeNote": "Changing the currency does not convert amounts — only the displayed currency label changes. Continue?",
+  "budget.taskUsesProjectCurrency": "Amounts use the parent project's currency (not converted).",
+  "team.defaultCurrency": "Default currency"
 }
