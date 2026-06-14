@@ -101,6 +101,17 @@ export default function AdminPage(): JSX.Element {
       window.alert(errorMessage(err, 'Could not update role'));
     },
   });
+  const [roleUpdatingId, setRoleUpdatingId] = useState<string | null>(null);
+
+  function changeUserRole(u: adminApi.AdminUser, role: adminApi.GlobalRole): void {
+    if (role === u.globalRole) return;
+    if (!window.confirm(`Change ${u.email} to ${role}?`)) return;
+    setRoleUpdatingId(u.id);
+    updateRoleMut.mutate(
+      { userId: u.id, role },
+      { onSettled: () => setRoleUpdatingId(null) },
+    );
+  }
 
   const deleteUserMut = useMutation({
     mutationFn: (userId: string) => adminApi.deleteUser(userId),
@@ -329,8 +340,12 @@ export default function AdminPage(): JSX.Element {
         )}
       </section>
 
-      <section className="bg-white rounded shadow p-4 mb-6">
+      <section className="bg-white dark:bg-slate-800 rounded shadow p-4 mb-6">
         <h2 className="font-medium mb-3">Users</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+          Change a user&apos;s instance role with the dropdown in the Role column.
+          Admin can access Settings and manage users; Member is the default for everyone else.
+        </p>
         {usersLoading && <p className="text-sm text-slate-500">Loading…</p>}
         {!usersLoading && users.length === 0 && (
           <p className="text-sm text-slate-500">No users.</p>
@@ -351,11 +366,11 @@ export default function AdminPage(): JSX.Element {
           <tbody>
             {users.map((u) => {
               const isSelf = u.id === user?.id;
-              const otherRole: adminApi.GlobalRole = u.globalRole === 'ADMIN' ? 'MEMBER' : 'ADMIN';
+              const roleBusy = roleUpdatingId === u.id && updateRoleMut.isPending;
               return (
-                <tr key={u.id} className="border-t">
+                <tr key={u.id} className="border-t dark:border-slate-700">
                   <td className="py-2 pr-4">{u.name}</td>
-                  <td className="py-2 pr-4 text-slate-600">{u.email}</td>
+                  <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{u.email}</td>
                   <td className="py-2 pr-4">
                     <span className={`text-xs px-1.5 py-0.5 rounded ${authSourceBadgeClass(u.authSource)}`}>
                       {authSourceLabel(u.authSource)}
@@ -370,27 +385,33 @@ export default function AdminPage(): JSX.Element {
                     {u.ldapUsername ?? '—'}
                   </td>
                   <td className="py-2 pr-4">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">
-                      {u.globalRole}
-                    </span>
+                    {isSelf ? (
+                      <span
+                        className="text-xs uppercase tracking-wide text-slate-500"
+                        title="You cannot change your own role — ask another admin"
+                      >
+                        {u.globalRole}
+                      </span>
+                    ) : (
+                      <select
+                        value={u.globalRole}
+                        disabled={roleBusy}
+                        onChange={(e) =>
+                          changeUserRole(u, e.target.value as adminApi.GlobalRole)
+                        }
+                        aria-label={`Role for ${u.email}`}
+                        className="rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1 text-xs uppercase tracking-wide disabled:opacity-50"
+                      >
+                        <option value="MEMBER">Member</option>
+                        <option value="ADMIN">Admin</option>
+                      </select>
+                    )}
                   </td>
                   <td className="py-2 pr-4 text-slate-500">{u.membershipCount}</td>
                   <td className="py-2 pr-4 text-slate-500 text-xs" dir="rtl">
                     {formatShamsiTimestampDate(u.createdAt)}
                   </td>
                   <td className="py-2">
-                    <button
-                      disabled={isSelf || updateRoleMut.isPending}
-                      onClick={() => {
-                        if (window.confirm(`Change ${u.email} → ${otherRole}?`)) {
-                          updateRoleMut.mutate({ userId: u.id, role: otherRole });
-                        }
-                      }}
-                      className="text-xs underline disabled:opacity-40 mr-3"
-                      title={isSelf ? 'You cannot change your own role' : undefined}
-                    >
-                      {u.globalRole === 'ADMIN' ? 'Demote' : 'Promote'}
-                    </button>
                     <button
                       disabled={u.authSource !== 'LOCAL'}
                       onClick={() => openReset(u)}
@@ -567,7 +588,7 @@ export default function AdminPage(): JSX.Element {
         )}
       </section>
 
-      <section className="bg-white rounded shadow p-4">
+      <section className="bg-white dark:bg-slate-800 rounded shadow p-4">
         <h2 className="font-medium mb-3">Teams</h2>
         {teamsLoading && <p className="text-sm text-slate-500">Loading…</p>}
         {!teamsLoading && teams.length === 0 && (
