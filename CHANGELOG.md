@@ -7,6 +7,23 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.63.0] — 2026-06-09
+
+**Per-user timezone, 12h/24h time format, and dual-calendar display.**
+
+- New **`User.timeZone`** (nullable IANA name), **`User.timeFormat`** (`H12`/`H24`, default
+  `H24`), **`User.dualCalendar`** (default `false`). PATCH `/api/auth/me/preferences` accepts
+  all three; login/refresh user payload includes them.
+- Frontend **`lib/datetime.ts`**: `formatTimestamp()` / `formatTimestampDate()` apply the user's
+  timezone + time format to **timestamps only** (comments, audit, created/updated, notifications).
+  **Calendar dates** (`dueDate`, `startDate`, `plannedDate`, holidays) remain **UTC-midnight
+  zone-neutral** via `lib/shamsi.ts` — timezone must not shift these.
+- Settings → **Preferences**: searchable IANA timezone picker (defaults to browser zone when
+  unset), 12h/24h toggle, dual-calendar switch (Jalali + Gregorian on key task dates).
+- Invalid IANA timezone strings rejected with **400**.
+
+---
+
 ## [1.62.0] — 2026-06-09
 
 **Instance holiday calendar — specific-date off-days shown in red.**

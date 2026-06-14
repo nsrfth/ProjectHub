@@ -21,6 +21,9 @@ export interface AuthUser {
   // v1.13: per-user theme + UI language. Same per-login mirror pattern.
   themePreference: ThemePreference;
   languagePreference: 'EN' | 'FA';
+  timeZone: string | null;
+  timeFormat: 'H12' | 'H24';
+  dualCalendar: boolean;
   createdAt: string;
 }
 
@@ -84,11 +87,17 @@ export interface PreferencesResponse {
   calendar: 'SHAMSI' | 'GREGORIAN';
   theme: ThemePreference;
   language: 'EN' | 'FA';
+  timeZone: string | null;
+  timeFormat: 'H12' | 'H24';
+  dualCalendar: boolean;
 }
 export async function updatePreferences(input: {
   calendar?: 'SHAMSI' | 'GREGORIAN';
   theme?: ThemePreference;
   language?: 'EN' | 'FA';
+  timeZone?: string | null;
+  timeFormat?: 'H12' | 'H24';
+  dualCalendar?: boolean;
 }): Promise<PreferencesResponse> {
   return (await api.patch<PreferencesResponse>('/auth/me/preferences', input)).data;
 }

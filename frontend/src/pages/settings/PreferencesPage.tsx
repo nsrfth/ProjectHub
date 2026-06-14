@@ -6,8 +6,15 @@ import { updatePreferences } from '@/features/auth/api';
 import { setCalendar, setWeekendDays, type Calendar } from '@/lib/calendar';
 import { setThemePreference, type ThemePreference } from '@/lib/theme';
 import ThemePicker from '@/features/settings/ThemePicker';
+import TimeZonePicker from '@/features/settings/TimeZonePicker';
 import HolidaysSection from '@/features/settings/HolidaysSection';
 import { setLanguage, useT, type Language } from '@/lib/i18n';
+import {
+  setDualCalendar,
+  setTimeFormat,
+  setTimeZone,
+  type TimeFormat,
+} from '@/lib/datetime';
 import { fetchSystemInfo } from '@/features/system/api';
 import { api } from '@/lib/api';
 
@@ -35,24 +42,37 @@ export default function PreferencesPage(): JSX.Element {
   const initialCalendar: Calendar = (user?.calendarPreference ?? 'SHAMSI') as Calendar;
   const initialTheme: ThemePreference = (user?.themePreference ?? 'LIGHT') as ThemePreference;
   const initialLanguage: Language = (user?.languagePreference ?? 'EN') as Language;
+  const initialTimeZone: string | null = user?.timeZone ?? null;
+  const initialTimeFormat: TimeFormat = user?.timeFormat ?? 'H24';
+  const initialDualCalendar = user?.dualCalendar ?? false;
 
   const [calendar, setLocalCalendar] = useState<Calendar>(initialCalendar);
   const [theme, setLocalTheme] = useState<ThemePreference>(initialTheme);
   const [language, setLocalLanguage] = useState<Language>(initialLanguage);
+  const [timeZone, setLocalTimeZone] = useState<string | null>(initialTimeZone);
+  const [timeFormat, setLocalTimeFormat] = useState<TimeFormat>(initialTimeFormat);
+  const [dualCalendar, setLocalDualCalendar] = useState(initialDualCalendar);
   const [error, setError] = useState<string | null>(null);
 
   const saveMut = useMutation({
-    mutationFn: () => updatePreferences({ calendar, theme, language }),
+    mutationFn: () =>
+      updatePreferences({ calendar, theme, language, timeZone, timeFormat, dualCalendar }),
     onSuccess: (res) => {
       patchUser({
         calendarPreference: res.calendar,
         themePreference: res.theme,
         languagePreference: res.language,
+        timeZone: res.timeZone,
+        timeFormat: res.timeFormat,
+        dualCalendar: res.dualCalendar,
       });
       const calChanged = setCalendar(res.calendar);
       const themeChanged = setThemePreference(res.theme);
       const langChanged = setLanguage(res.language);
-      if (calChanged || themeChanged || langChanged) {
+      const tzChanged = setTimeZone(res.timeZone);
+      const tfChanged = setTimeFormat(res.timeFormat);
+      const dcChanged = setDualCalendar(res.dualCalendar);
+      if (calChanged || themeChanged || langChanged || tzChanged || tfChanged || dcChanged) {
         window.location.reload();
       }
     },
@@ -62,7 +82,10 @@ export default function PreferencesPage(): JSX.Element {
   const dirty =
     calendar !== initialCalendar ||
     theme !== initialTheme ||
-    language !== initialLanguage;
+    language !== initialLanguage ||
+    timeZone !== initialTimeZone ||
+    timeFormat !== initialTimeFormat ||
+    dualCalendar !== initialDualCalendar;
 
   function submit(e: FormEvent): void {
     e.preventDefault();
@@ -130,6 +153,51 @@ export default function PreferencesPage(): JSX.Element {
               label={t('preferences.language.fa')}
             />
           </div>
+        </fieldset>
+
+        {/* Timezone + time format + dual calendar (v1.63) */}
+        <fieldset className="border-t border-border pt-4">
+          <legend className="font-medium">{t('prefs.timezone')}</legend>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 mb-2">
+            {t('prefs.timezone.subtitle')}
+          </p>
+          <TimeZonePicker value={timeZone} onChange={setLocalTimeZone} />
+        </fieldset>
+
+        <fieldset className="border-t border-border pt-4">
+          <legend className="font-medium">{t('prefs.timeFormat')}</legend>
+          <div className="space-y-2 mt-2">
+            <Radio
+              name="timeFormat"
+              value="H24"
+              checked={timeFormat === 'H24'}
+              onChange={() => setLocalTimeFormat('H24')}
+              label={t('prefs.timeFormat.h24')}
+            />
+            <Radio
+              name="timeFormat"
+              value="H12"
+              checked={timeFormat === 'H12'}
+              onChange={() => setLocalTimeFormat('H12')}
+              label={t('prefs.timeFormat.h12')}
+            />
+          </div>
+        </fieldset>
+
+        <fieldset className="border-t border-border pt-4">
+          <legend className="font-medium">{t('prefs.dualCalendar')}</legend>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 mb-2">
+            {t('prefs.dualCalendar.subtitle')}
+          </p>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={dualCalendar}
+              onChange={(e) => setLocalDualCalendar(e.target.checked)}
+              className="mt-1"
+            />
+            <span className="text-slate-700 dark:text-slate-200">{t('prefs.dualCalendar.enable')}</span>
+          </label>
         </fieldset>
 
         {error && <p className="text-xs text-red-600">{error}</p>}

@@ -11,7 +11,7 @@ import {
   fetchWorkload,
   type DoneTaskRow,
 } from '@/features/reports/api';
-import { formatShamsiDate } from '@/lib/shamsi';
+import { formatShamsiDate, formatShamsiTimestampDate } from '@/lib/shamsi';
 
 const WINDOWS: { days: number; label: string }[] = [
   { days: 7, label: 'Last 7 days' },
@@ -178,7 +178,7 @@ export default function ReportsPage(): JSX.Element {
                         {r.taskTitle}
                       </button>
                       <span className="text-xs text-slate-500" dir="rtl">
-                        {formatShamsiDate(r.completedAt)}
+                        {formatShamsiTimestampDate(r.completedAt)}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500">

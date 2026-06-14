@@ -5,7 +5,7 @@ import axios from 'axios';
 import { useProjectTeam } from '@/features/projects/useProjectTeam';
 import * as tasksApi from '@/features/tasks/api';
 import * as labelsApi from '@/features/labels/api';
-import { formatShamsiDate } from '@/lib/shamsi';
+import { formatShamsiDate, formatShamsiTimestampDate } from '@/lib/shamsi';
 import { LabelChip } from '@/features/labels/LabelChip';
 import { useT } from '@/lib/i18n';
 import PlannerNav from '@/features/planner/PlannerNav';
@@ -653,7 +653,7 @@ function TaskList({
                 className="px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300 hidden xl:table-cell"
                 dir="rtl"
               >
-                {row.completedAt ? formatShamsiDate(row.completedAt) : ''}
+                {row.completedAt ? formatShamsiTimestampDate(row.completedAt) : ''}
               </td>
               <td className="px-3 py-2 hidden md:table-cell">
                 {row.labels.length > 0 && (

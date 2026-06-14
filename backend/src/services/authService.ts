@@ -13,6 +13,7 @@ import { groupDnsMatch } from '../lib/ldapDn.js';
 import { systemRoleIdFor } from '../lib/teamRoles.js';
 import { passwordPolicyService } from './passwordPolicyService.js';
 import type { ThemePreferenceValue } from '../schemas/themePreference.js';
+import type { TimeFormatValue } from '../schemas/datetimePrefs.js';
 
 // All token lifecycle logic lives here. Routes/controllers don't talk to Prisma directly.
 
@@ -38,6 +39,9 @@ export interface IssuedSession {
     calendarPreference: 'SHAMSI' | 'GREGORIAN';
     themePreference: ThemePreferenceValue;
     languagePreference: 'EN' | 'FA';
+    timeZone: string | null;
+    timeFormat: TimeFormatValue;
+    dualCalendar: boolean;
     createdAt: Date;
   };
   // Set on `register` only — the raw email-verification token the controller
@@ -733,6 +737,9 @@ export class AuthService {
         calendarPreference: user.calendarPreference,
         themePreference: user.themePreference,
         languagePreference: user.languagePreference,
+        timeZone: user.timeZone,
+        timeFormat: user.timeFormat,
+        dualCalendar: user.dualCalendar,
         createdAt: user.createdAt,
       },
     };

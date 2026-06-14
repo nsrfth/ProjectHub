@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { themePreferenceEnum } from './themePreference.js';
+import { timeFormatEnum, timeZonePreference } from './datetimePrefs.js';
 
 // Route-level shape only — full policy enforced in PasswordPolicyService.
 export const passwordInputSchema = z.string().min(1).max(200);
@@ -66,6 +67,9 @@ export const userResponse = z.object({
   // device sees it on another after login.
   themePreference: themePreferenceEnum.default('LIGHT'),
   languagePreference: z.enum(['EN', 'FA']).default('EN'),
+  timeZone: z.string().nullable().default(null),
+  timeFormat: timeFormatEnum.default('H24'),
+  dualCalendar: z.boolean().default(false),
   createdAt: z.string(),
 });
 
@@ -75,6 +79,18 @@ export const updatePreferencesBody = z.object({
   calendar: z.enum(['SHAMSI', 'GREGORIAN']).optional(),
   theme: themePreferenceEnum.optional(),
   language: z.enum(['EN', 'FA']).optional(),
+  timeZone: timeZonePreference,
+  timeFormat: timeFormatEnum.optional(),
+  dualCalendar: z.boolean().optional(),
+});
+
+export const preferencesResponse = z.object({
+  calendar: z.enum(['SHAMSI', 'GREGORIAN']),
+  theme: themePreferenceEnum,
+  language: z.enum(['EN', 'FA']),
+  timeZone: z.string().nullable(),
+  timeFormat: timeFormatEnum,
+  dualCalendar: z.boolean(),
 });
 
 export type UpdatePreferencesBody = z.infer<typeof updatePreferencesBody>;

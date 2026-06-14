@@ -2,6 +2,7 @@ import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
 import { getCalendar } from './calendar';
+import { formatTimestamp, formatTimestampDate, getDualCalendar } from './datetime';
 
 // v1.10: every formatter below branches on the active calendar. The
 // SHAMSI path is the existing Jalali code; the GREGORIAN path delegates
@@ -17,11 +18,10 @@ import { getCalendar } from './calendar';
 //      and read UTC components when formatting (use `formatShamsiCalendarDate`
 //      / `formatShamsiCalendarLong`).
 //
-//   2. TIMESTAMPS — createdAt, updatedAt, joinedAt, comment/activity/notification
-//      timestamps. These are points in time and SHOULD shift to the viewer's
-//      local timezone — "I commented at 3pm my time" is what the reader cares
-//      about. We read local components for these (use `formatShamsiTimestamp`
-//      / `formatShamsiTimestampDate` / `formatRelativeTime`).
+//   2. TIMESTAMPS — createdAt, completedAt, comment/activity/notification times.
+//      True instants stored in UTC; rendered in the user's chosen IANA timezone
+//      + 12h/24h format via lib/datetime.ts (`formatShamsiTimestamp`,
+//      `formatShamsiTimestampDate`, `formatRelativeTime`).
 //
 // Mixing the two is the source of "wrong day" bugs — a calendar date stored
 // at 2026-05-22T00:00:00Z renders as May 21 to a PST viewer if you read
@@ -87,73 +87,54 @@ function formatGregorianCalendarLongUtc(iso: string): string | null {
   }).format(d);
 }
 
-export function formatShamsiCalendarDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  if (getCalendar() === 'GREGORIAN') return formatGregorianCalendarDateUtc(iso);
+function formatShamsiOnlyShort(iso: string): string | null {
   const j = jalaaliFromUtc(iso);
   if (!j) return null;
   return toPersianDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)}`);
 }
 
-export function formatShamsiCalendarLong(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  if (getCalendar() === 'GREGORIAN') return formatGregorianCalendarLongUtc(iso);
+function formatShamsiOnlyLong(iso: string): string | null {
   const j = jalaaliFromUtc(iso);
   if (!j) return null;
   return toPersianDigits(`${j.jd} ${FA_MONTHS[j.jm - 1]} ${j.jy}`);
 }
 
-// ------- Timestamps (local-time) ----------------------------------------
-
-function jalaaliFromLocal(d: Date): { jy: number; jm: number; jd: number; h: number; mi: number } | null {
-  if (Number.isNaN(d.getTime())) return null;
-  // Build the DateObject from local components — react-date-object then does
-  // the Gregorian→Jalali math on those numbers without any TZ shift.
-  const obj = new DateObject({
-    date: new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()),
-    calendar: persian,
-    locale: persian_fa,
-  });
-  return { jy: obj.year, jm: obj.month.number, jd: obj.day, h: d.getHours(), mi: d.getMinutes() };
+function withDualCalendar(iso: string, primary: string, long: boolean): string {
+  if (!getDualCalendar()) return primary;
+  const greg = long ? formatGregorianCalendarLongUtc(iso) : formatGregorianCalendarDateUtc(iso);
+  const shamsi = long ? formatShamsiOnlyLong(iso) : formatShamsiOnlyShort(iso);
+  if (!greg || !shamsi) return primary;
+  if (getCalendar() === 'GREGORIAN') return `${primary} (${shamsi})`;
+  return `${primary} (${greg})`;
 }
 
-// Gregorian timestamp (local components → "2026-05-22 15:30").
-function formatGregorianTimestampLocal(d: Date): string | null {
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = pad2(d.getMonth() + 1);
-  const day = pad2(d.getDate());
-  return `${y}-${m}-${day} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+export function formatShamsiCalendarDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const primary =
+    getCalendar() === 'GREGORIAN' ? formatGregorianCalendarDateUtc(iso) : formatShamsiOnlyShort(iso);
+  if (!primary) return null;
+  return withDualCalendar(iso, primary, false);
 }
 
-// Gregorian date-only timestamp ("2026-05-22").
-function formatGregorianTimestampDateLocal(d: Date): string | null {
-  if (Number.isNaN(d.getTime())) return null;
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+export function formatShamsiCalendarLong(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const primary =
+    getCalendar() === 'GREGORIAN' ? formatGregorianCalendarLongUtc(iso) : formatShamsiOnlyLong(iso);
+  if (!primary) return null;
+  return withDualCalendar(iso, primary, true);
 }
 
-// `2026-05-22T15:30:00Z` → "۱۴۰۵/۰۳/۰۱ ۱۹:۰۰" (in Iran) under SHAMSI,
-// "2026-05-22 19:00" under GREGORIAN. Use for timestamp fields where the
-// time-of-day matters (comments, activity, notifications).
+// ------- Timestamps (category b — user timezone via lib/datetime.ts) ----
+
 export function formatShamsiTimestamp(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (getCalendar() === 'GREGORIAN') return formatGregorianTimestampLocal(d);
-  const j = jalaaliFromLocal(d);
-  if (!j) return null;
-  return toPersianDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)} ${pad2(j.h)}:${pad2(j.mi)}`);
+  return formatTimestamp(iso);
 }
 
-// Same as formatShamsiTimestamp but without the time portion. Use for
-// "Joined on" / "Created on" rows where time is noise.
 export function formatShamsiTimestampDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (getCalendar() === 'GREGORIAN') return formatGregorianTimestampDateLocal(d);
-  const j = jalaaliFromLocal(d);
-  if (!j) return null;
-  return toPersianDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)}`);
+  return formatTimestampDate(iso);
 }
+
+export { getTimeFormat, resolveTimeZone } from './datetime';
 
 // ------- Relative time (local-time, Persian locale) ---------------------
 

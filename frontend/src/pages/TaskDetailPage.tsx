@@ -19,6 +19,7 @@ import {
   formatRelativeTime,
   formatShamsiCalendarLong,
   formatShamsiTimestamp,
+  formatShamsiTimestampDate,
 } from '@/lib/shamsi';
 import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
 import type { BudgetCurrency } from '@/lib/formatBudget';
@@ -282,7 +283,7 @@ export default function TaskDetailPage(): JSX.Element {
               )}
               {task.completedAt && (
                 <span className="text-emerald-700">
-                  Completed <span dir="rtl">{formatShamsiCalendarLong(task.completedAt)}</span>
+                  Completed <span dir="rtl">{formatShamsiTimestampDate(task.completedAt)}</span>
                 </span>
               )}
               <span>

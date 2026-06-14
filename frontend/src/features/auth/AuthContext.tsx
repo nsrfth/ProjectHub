@@ -3,6 +3,7 @@ import { setAccessToken } from '@/lib/api';
 import { adoptServerCalendar } from '@/lib/calendar';
 import { adoptServerTheme } from '@/lib/theme';
 import { adoptServerLanguage } from '@/lib/i18n';
+import { adoptServerDateTimePrefs } from '@/lib/datetime';
 import * as authApi from './api';
 
 // v1.13: shared one-liner — adopt every per-user UI preference the
@@ -12,6 +13,11 @@ function adoptUserPrefs(u: authApi.AuthUser): void {
   adoptServerCalendar(u.calendarPreference);
   adoptServerTheme(u.themePreference);
   adoptServerLanguage(u.languagePreference);
+  adoptServerDateTimePrefs({
+    timeZone: u.timeZone,
+    timeFormat: u.timeFormat,
+    dualCalendar: u.dualCalendar,
+  });
 }
 
 interface AuthState {

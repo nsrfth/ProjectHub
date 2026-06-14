@@ -138,3 +138,74 @@ describe('PATCH /api/auth/me/preferences — theme (v1.61)', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('PATCH /api/auth/me/preferences — datetime (v1.63)', () => {
+  it('defaults timeFormat=H24, dualCalendar=false, timeZone=null on login', async () => {
+    await register();
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'pref@example.com', password: 'CorrectHorseBattery9' },
+    });
+    const u = login.json().user;
+    expect(u.timeFormat).toBe('H24');
+    expect(u.dualCalendar).toBe(false);
+    expect(u.timeZone).toBeNull();
+  });
+
+  it('persists timezone, timeFormat, dualCalendar and survives fresh login', async () => {
+    const { token } = await register();
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me/preferences',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { timeZone: 'Asia/Tehran', timeFormat: 'H12', dualCalendar: true },
+    });
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json()).toMatchObject({
+      timeZone: 'Asia/Tehran',
+      timeFormat: 'H12',
+      dualCalendar: true,
+    });
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'pref@example.com', password: 'CorrectHorseBattery9' },
+    });
+    expect(login.json().user).toMatchObject({
+      timeZone: 'Asia/Tehran',
+      timeFormat: 'H12',
+      dualCalendar: true,
+    });
+  });
+
+  it('allows clearing timeZone with null (browser fallback)', async () => {
+    const { token } = await register();
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me/preferences',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { timeZone: 'Europe/Berlin' },
+    });
+    const cleared = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me/preferences',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { timeZone: null },
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().timeZone).toBeNull();
+  });
+
+  it('rejects an invalid IANA timezone with 400', async () => {
+    const { token } = await register();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me/preferences',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { timeZone: 'Not/A/Real/Zone' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

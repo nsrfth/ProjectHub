@@ -148,6 +148,11 @@ enum LanguagePreference {
   FA
 }
 
+enum TimeFormat {
+  H12
+  H24
+}
+
 // External identity provider. Phase 2A handles LDAP; SCIM in 2B reuses this.
 // One Directory binds many Users (via User.directoryId/externalId).
 model Directory {
@@ -296,6 +301,11 @@ model User {
   // <html class="dark"> and <html dir="rtl" lang="fa"> respectively.
   themePreference    ThemePreference    @default(LIGHT)
   languagePreference LanguagePreference @default(EN)
+  // v1.63: timestamp display — IANA zone for category-(b) instants only;
+  // calendar dates (dueDate, etc.) stay UTC-midnight zone-neutral.
+  timeZone           String?
+  timeFormat         TimeFormat         @default(H24)
+  dualCalendar       Boolean            @default(false)
   emailVerifiedAt DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt

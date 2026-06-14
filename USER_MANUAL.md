@@ -315,7 +315,7 @@ Click **Reports** in the dashboard header. All sections are team-scoped (current
 - **Workload** — open tasks per assignee, broken down by status. Catches the "Bob has 22 open in-progress tasks" pattern.
 - **Overdue** — open tasks past their `dueDate`, oldest first.
 
-All timestamps in reports render in your chosen calendar.
+Completion timestamps in reports use your timezone + time format; planned/due dates stay calendar-neutral.
 
 ### Exporting to CSV (v1.14)
 
@@ -374,16 +374,25 @@ LDAP-managed accounts can enable TOTP too — both factors are required at login
 
 ---
 
-## Display preferences (calendar / theme / language)
+## Display preferences (calendar / theme / language / time)
 
-Three per-user toggles, all on **Settings → Preferences**. Each is independent and travels with you across browsers + devices (stored on the server, mirrored into localStorage at every login). Saving any of them reloads the page so every component picks up the new value cleanly.
+Per-user display settings on **Settings → Preferences**. Each travels with you across browsers + devices (stored on the server, mirrored into localStorage at every login). Saving reloads the page so every component picks up the new value cleanly.
 
 ### Calendar
 
 - **Shamsi / Jalali** — Persian calendar, Persian digits, RTL date layout (e.g. `۱ خرداد ۱۴۰۵`). Default for new accounts on v1.10+ installs.
 - **Gregorian** — Western calendar, English digits, ISO format (e.g. `2026-05-22`).
 
-Affects every date + timestamp the UI renders — kanban cards, reports, audit log, comments, activity — and the date picker itself. Storage is identical: picking "1 Khordad 1405" or "May 22, 2026" produces the same underlying ISO string. Two users with different preferences viewing the same task see the same DAY, formatted their way.
+Affects how **calendar dates** render — due/start/planned dates, holidays, date picker labels. Storage is UTC midnight: two users in different timezones see the **same day** on a task due date.
+
+**Dual calendar (v1.63):** optional switch shows both Jalali and Gregorian on key task dates (e.g. `۱۴۰۳/۰۱/۰۱ (2024-03-20)`).
+
+### Timezone & time format (v1.63)
+
+- **Timezone** — IANA name (e.g. `Asia/Tehran`). Applies to **timestamps only**: comment times, activity log, audit entries, created/updated labels, notification times. Leave unset to use your browser's zone.
+- **12h / 24h** — how the clock portion of timestamps is shown. Default **24-hour** (Iran convention).
+
+> **Important:** TaskHub stores two kinds of date field. **Calendar dates** (due, start, planned, holidays) are zone-neutral — everyone sees the same calendar day. **Timestamps** (createdAt, completedAt when shown as a moment, comments) are true instants converted to your chosen timezone for display. The database always keeps UTC; nothing shifts at storage time.
 
 ### Theme
 

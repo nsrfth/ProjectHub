@@ -10,6 +10,8 @@ import type {
   VerificationRequestBody,
 } from '../schemas/auth.js';
 import type { ThemePreferenceValue } from '../schemas/themePreference.js';
+import type { UpdatePreferencesBody } from '../schemas/auth.js';
+import type { TimeFormatValue } from '../schemas/datetimePrefs.js';
 import { Errors } from '../lib/errors.js';
 import { TwoFactorService } from '../services/twoFactorService.js';
 
@@ -192,11 +194,7 @@ export class AuthController {
   // stays as-is. Returns the new triple so the frontend can mirror to
   // localStorage without a follow-up GET.
   updatePreferences = async (
-    req: FastifyRequest<{ Body: {
-      calendar?: 'SHAMSI' | 'GREGORIAN';
-      theme?: ThemePreferenceValue;
-      language?: 'EN' | 'FA';
-    } }>,
+    req: FastifyRequest<{ Body: UpdatePreferencesBody }>,
     reply: FastifyReply,
   ) => {
     if (!req.user) throw Errors.unauthorized();
@@ -205,6 +203,9 @@ export class AuthController {
     if (req.body.calendar) data.calendarPreference = req.body.calendar;
     if (req.body.theme) data.themePreference = req.body.theme;
     if (req.body.language) data.languagePreference = req.body.language;
+    if (req.body.timeZone !== undefined) data.timeZone = req.body.timeZone;
+    if (req.body.timeFormat) data.timeFormat = req.body.timeFormat;
+    if (req.body.dualCalendar !== undefined) data.dualCalendar = req.body.dualCalendar;
     const updated = await prisma.user.update({
       where: { id: req.user.sub },
       data,
@@ -212,12 +213,18 @@ export class AuthController {
         calendarPreference: true,
         themePreference: true,
         languagePreference: true,
+        timeZone: true,
+        timeFormat: true,
+        dualCalendar: true,
       },
     });
     return reply.send({
       calendar: updated.calendarPreference,
       theme: updated.themePreference,
       language: updated.languagePreference,
+      timeZone: updated.timeZone,
+      timeFormat: updated.timeFormat as TimeFormatValue,
+      dualCalendar: updated.dualCalendar,
     });
   };
 }

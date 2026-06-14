@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v1.62.0 (2026-06-09)
+**Version:** v1.63.0 (2026-06-09)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -131,6 +131,7 @@ session tokens. Same reason we hash passwords.
 | Automation rules (v1.60) | `AutomationRule` + `AutomationCondition` + `AutomationAction` + `AutomationRun` (team-scoped). Engine runs **after-commit** beside webhooks; loop guard = shared `(ruleId,taskId)` fired-set + max depth 5; actions call real services (tasks, labels, custom fields, comments). Permission: `automation.manage`. |
 | Theme tokens (v1.61) | `ThemePreference` enum: `LIGHT`, `DARK`, `SYSTEM`, `MIDNIGHT`, `SOLARIZED`, `HIGH_CONTRAST`, `NORD`. **Stored preference** may be `SYSTEM`; **resolved theme** (what the DOM gets) is always a concrete palette. `SYSTEM` → `matchMedia('(prefers-color-scheme: dark)')` with a live change listener (detached when switching away). `<html>` carries one `theme-*` class; dark-family resolved themes also get legacy `dark` for Tailwind `dark:` during migration. Semantic tokens in `frontend/src/styles/themes.css` (`--color-bg`, `--color-text`, …); Tailwind colors reference `var(--color-*)`. |
 | Holidays (v1.62) | Dedicated **`Holiday`** model (not InstanceSetting JSON) for per-date metadata: `date` at **UTC midnight**, `name`, `recurring`, `source`. Weekends stay in `InstanceSetting` key `calendar.weekend`. Frontend `isOffDay()` = `isWeekend()` OR `isHoliday()`. Bootstrap via `calendarHolidays` on `/api/system/info`. Admin CRUD at `/api/holidays`. |
+| Datetime prefs (v1.63) | `User.timeZone` (nullable IANA), `User.timeFormat` (`H12`/`H24`), `User.dualCalendar`. **Display-only** — instants stay UTC in DB. Frontend splits formatters: **`lib/shamsi.ts`** = calendar dates (UTC-midnight, zone-neutral); **`lib/datetime.ts`** = timestamps (user zone + 12h/24h). Invalid IANA → 400 on PATCH. |
 
 ## Error responses
 
