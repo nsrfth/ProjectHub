@@ -304,6 +304,10 @@
   "team.members.pagination.next": "Next",
   "team.members.pagination.jump": "Go to page",
   "team.members.pagination.go": "Go",
+  "team.remove.confirm": "Remove {name} from this team?",
+  "team.remove.ownsProjects": "This member owns projects in this team. Reassign ownership or remove anyway.",
+  "team.remove.reassignTo": "Reassign owner to",
+  "team.remove.removeAnyway": "Remove anyway (keep current project owners)",
 
   "settings.nav.security": "Security",
   "settings.nav.securityDesc": "2FA + sessions",

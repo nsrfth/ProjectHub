@@ -106,17 +106,6 @@ export default function TeamsPage(): JSX.Element {
     },
   });
 
-  const removeMut = useMutation({
-    mutationFn: (userId: string) => teamsApi.removeMember(currentTeamId!, userId),
-    onSuccess: async () => {
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ['teams', 'detail', currentTeamId] }),
-        qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'members'] }),
-        qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'assignees'] }),
-      ]);
-    },
-  });
-
   const DEFAULT_PAGE_SIZE = 25;
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -193,6 +182,84 @@ export default function TeamsPage(): JSX.Element {
   const [showActions, setShowActions] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<teamsApi.TeamMember | null>(null);
+  const [removeBlockers, setRemoveBlockers] = useState<teamsApi.MemberRemovalBlockers | null>(null);
+  const [removeBlockersLoading, setRemoveBlockersLoading] = useState(false);
+  const [reassignOwnerTo, setReassignOwnerTo] = useState('');
+  const [removeForce, setRemoveForce] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  const { data: reassignCandidates = [] } = useQuery({
+    queryKey: ['teams', currentTeamId, 'assignees'],
+    queryFn: () => teamsApi.listTeamMembersForAssignees(currentTeamId!),
+    enabled: !!currentTeamId && !!removeTarget,
+  });
+
+  const reassignOptions = reassignCandidates.filter((m) => m.userId !== removeTarget?.userId);
+
+  async function invalidateMemberLists(): Promise<void> {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['teams', 'detail', currentTeamId] }),
+      qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'members'] }),
+      qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'assignees'] }),
+    ]);
+  }
+
+  const removeMut = useMutation({
+    mutationFn: (input: { userId: string; opts?: teamsApi.RemoveMemberOptions }) =>
+      teamsApi.removeMember(currentTeamId!, input.userId, input.opts),
+    onSuccess: async () => {
+      closeRemoveDialog();
+      await invalidateMemberLists();
+    },
+    onError: (err) => setRemoveError(errorMessage(err, 'Could not remove member')),
+  });
+
+  async function beginRemoveMember(member: teamsApi.TeamMember): Promise<void> {
+    if (!currentTeamId) return;
+    setRemoveError(null);
+    setReassignOwnerTo('');
+    setRemoveForce(false);
+    setRemoveBlockersLoading(true);
+    try {
+      const blockers = await teamsApi.getMemberRemovalBlockers(currentTeamId, member.userId);
+      const hasBlockers =
+        blockers.ownedProjectCount > 0 || blockers.accountableProjectCount > 0;
+      if (!hasBlockers) {
+        const msg = t('team.remove.confirm').replace('{name}', member.name);
+        if (window.confirm(msg)) {
+          removeMut.mutate({ userId: member.userId });
+        }
+        return;
+      }
+      setRemoveTarget(member);
+      setRemoveBlockers(blockers);
+    } catch (err) {
+      window.alert(errorMessage(err, 'Could not load removal blockers'));
+    } finally {
+      setRemoveBlockersLoading(false);
+    }
+  }
+
+  function closeRemoveDialog(): void {
+    setRemoveTarget(null);
+    setRemoveBlockers(null);
+    setRemoveError(null);
+    setReassignOwnerTo('');
+    setRemoveForce(false);
+  }
+
+  function confirmRemoveWithBlockers(): void {
+    if (!removeTarget || !removeBlockers) return;
+    if (removeBlockers.ownedProjectCount > 0 && !reassignOwnerTo && !removeForce) return;
+    removeMut.mutate({
+      userId: removeTarget.userId,
+      opts: {
+        ...(reassignOwnerTo ? { reassignOwnerTo } : {}),
+        ...(removeForce ? { force: true } : {}),
+      },
+    });
+  }
 
   const renameMut = useMutation({
     mutationFn: (name: string) => teamsApi.updateTeam(currentTeamId!, { name }),
@@ -394,6 +461,93 @@ export default function TeamsPage(): JSX.Element {
                   )}
                 </div>
               </div>
+
+              {removeTarget && removeBlockers && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="remove-member-title"
+                >
+                  <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-5">
+                    <h3 id="remove-member-title" className="text-lg font-semibold mb-2">
+                      {t('team.remove.confirm').replace('{name}', removeTarget.name)}
+                    </h3>
+                    {removeBlockers.ownedProjectCount > 0 && (
+                      <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">
+                        {t('team.remove.ownsProjects')}
+                      </p>
+                    )}
+                    {(removeBlockers.ownedProjects.length > 0 ||
+                      removeBlockers.accountableProjects.length > 0) && (
+                      <ul className="list-disc ps-5 space-y-0.5 mb-3 text-sm text-slate-600 dark:text-slate-300">
+                        {removeBlockers.ownedProjects.map((p) => (
+                          <li key={p.id}>{p.name}</li>
+                        ))}
+                        {removeBlockers.accountableProjects.map((p) => (
+                          <li key={p.id}>{p.name}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {removeBlockers.ownedProjectCount > 0 && (
+                      <div className="space-y-3 mb-4">
+                        <label className="block text-sm">
+                          {t('team.remove.reassignTo')}
+                          <select
+                            value={reassignOwnerTo}
+                            onChange={(e) => {
+                              setReassignOwnerTo(e.target.value);
+                              if (e.target.value) setRemoveForce(false);
+                            }}
+                            className="mt-1 block w-full rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 px-2 py-1 text-sm"
+                          >
+                            <option value="">—</option>
+                            {reassignOptions.map((m) => (
+                              <option key={m.userId} value={m.userId}>
+                                {m.name} ({m.email})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-red-700 dark:text-red-300">
+                          <input
+                            type="checkbox"
+                            checked={removeForce}
+                            onChange={(e) => {
+                              setRemoveForce(e.target.checked);
+                              if (e.target.checked) setReassignOwnerTo('');
+                            }}
+                          />
+                          {t('team.remove.removeAnyway')}
+                        </label>
+                      </div>
+                    )}
+                    {removeError && <p className="text-xs text-red-600 mb-2">{removeError}</p>}
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={closeRemoveDialog}
+                        className="border rounded px-3 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          removeMut.isPending ||
+                          (removeBlockers.ownedProjectCount > 0 &&
+                            !reassignOwnerTo &&
+                            !removeForce)
+                        }
+                        onClick={confirmRemoveWithBlockers}
+                        className="bg-red-600 text-white rounded px-3 py-1.5 text-sm disabled:opacity-50"
+                      >
+                        {removeMut.isPending ? 'Removing…' : 'Remove'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {showDeleteDialog && (
                 <div
@@ -600,9 +754,9 @@ export default function TeamsPage(): JSX.Element {
                             {!m.external && (
                               <button
                                 type="button"
-                                onClick={() => removeMut.mutate(m.userId)}
+                                onClick={() => void beginRemoveMember(m)}
                                 className="text-xs text-red-600 hover:underline disabled:opacity-50"
-                                disabled={removeMut.isPending}
+                                disabled={removeMut.isPending || removeBlockersLoading}
                               >
                                 Remove
                               </button>

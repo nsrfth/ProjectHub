@@ -7,6 +7,22 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.56.0] — 2026-06-09
+
+**Team member removal — ownership warnings and reassignment.**
+
+### Teams (backend + frontend)
+
+- New `GET /api/teams/:teamId/members/:userId/removal-blockers` surfaces projects the
+  member owns or is accountable for in this team.
+- `DELETE /api/teams/:teamId/members/:userId` accepts optional `reassignOwnerTo` or
+  `force` — blocking removal when the member owns team projects unless ownership is
+  reassigned or force-removal is chosen. Reassignment is activity-logged.
+- Teams page removal flow: fetches blockers first; dialog lists owned/accountable
+  projects with reassign picker or explicit force option.
+
+---
+
 ## [1.55.0] — 2026-06-09
 
 **Team roster — searchable, filterable, sortable, paginated member list.**

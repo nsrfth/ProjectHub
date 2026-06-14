@@ -97,6 +97,25 @@ export interface TeamDeleteBlockers {
   reasons: string[];
 }
 
+export interface MemberRemovalProjectRef {
+  id: string;
+  name: string;
+}
+
+export interface TeamMemberRemovalBlockers {
+  canRemove: boolean;
+  ownedProjectCount: number;
+  accountableProjectCount: number;
+  ownedProjects: MemberRemovalProjectRef[];
+  accountableProjects: MemberRemovalProjectRef[];
+  reasons: string[];
+}
+
+export interface RemoveMemberOpts {
+  reassignOwnerTo?: string;
+  force?: boolean;
+}
+
 export interface PagedResult<T> {
   items: T[];
   page: number;
@@ -569,7 +588,65 @@ export class TeamsService {
     }
   }
 
-  async removeMember(teamId: string, userId: string): Promise<void> {
+  async getMemberRemovalBlockers(
+    teamId: string,
+    userId: string,
+  ): Promise<TeamMemberRemovalBlockers> {
+    const membership = await prisma.teamMembership.findUnique({
+      where: { userId_teamId: { userId, teamId } },
+    });
+    if (!membership) throw Errors.notFound('Member not found');
+
+    const [ownedProjects, accountableProjects] = await Promise.all([
+      prisma.project.findMany({
+        where: { teamId, ownerId: userId },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+        take: 20,
+      }),
+      prisma.project.findMany({
+        where: { teamId, accountableId: userId, ownerId: { not: userId } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+        take: 20,
+      }),
+    ]);
+
+    const [ownedProjectCount, accountableProjectCount] = await Promise.all([
+      prisma.project.count({ where: { teamId, ownerId: userId } }),
+      prisma.project.count({
+        where: { teamId, accountableId: userId, ownerId: { not: userId } },
+      }),
+    ]);
+
+    const reasons: string[] = [];
+    if (ownedProjectCount > 0) {
+      reasons.push(
+        `User owns ${ownedProjectCount} project${ownedProjectCount === 1 ? '' : 's'} in this team`,
+      );
+    }
+    if (accountableProjectCount > 0) {
+      reasons.push(
+        `User is accountable for ${accountableProjectCount} project${accountableProjectCount === 1 ? '' : 's'} in this team`,
+      );
+    }
+
+    return {
+      canRemove: ownedProjectCount === 0,
+      ownedProjectCount,
+      accountableProjectCount,
+      ownedProjects: ownedProjects.map((p) => ({ id: p.id, name: p.name })),
+      accountableProjects: accountableProjects.map((p) => ({ id: p.id, name: p.name })),
+      reasons,
+    };
+  }
+
+  async removeMember(
+    teamId: string,
+    userId: string,
+    opts?: RemoveMemberOpts,
+    actorId?: string | null,
+  ): Promise<void> {
     await assertNotSystemUserTarget(userId, 'Cannot remove the system manager');
 
     const membership = await prisma.teamMembership.findUnique({
@@ -577,11 +654,50 @@ export class TeamsService {
     });
     if (!membership) throw Errors.notFound('Member not found');
 
-    // Block removing the last human MANAGER — the hidden system manager
-    // does not count toward this guard.
+    // Block removing the last human MANAGER — runs before ownership checks.
     if (membership.role === 'MANAGER') {
       const humanManagers = await countHumanManagers(teamId);
       if (humanManagers <= 1) throw Errors.conflict('Cannot remove the last MANAGER');
+    }
+
+    const blockers = await this.getMemberRemovalBlockers(teamId, userId);
+
+    if (blockers.ownedProjectCount > 0) {
+      if (opts?.reassignOwnerTo) {
+        if (opts.reassignOwnerTo === userId) {
+          throw Errors.badRequest('Cannot reassign ownership to the member being removed');
+        }
+        const targetMembership = await prisma.teamMembership.findUnique({
+          where: { userId_teamId: { userId: opts.reassignOwnerTo, teamId } },
+        });
+        if (!targetMembership) {
+          throw Errors.badRequest('Reassignment target is not a member of this team');
+        }
+
+        const ownedIds = await prisma.project.findMany({
+          where: { teamId, ownerId: userId },
+          select: { id: true },
+        });
+        if (ownedIds.length > 0) {
+          await prisma.project.updateMany({
+            where: { teamId, ownerId: userId },
+            data: { ownerId: opts.reassignOwnerTo },
+          });
+          await logActivity(prisma, {
+            teamId,
+            actorId: actorId ?? null,
+            action: 'project.owner_reassigned',
+            meta: {
+              fromUserId: userId,
+              toUserId: opts.reassignOwnerTo,
+              projectIds: ownedIds.map((p) => p.id),
+              reason: 'team_member_removed',
+            },
+          });
+        }
+      } else if (!opts?.force) {
+        throw Errors.conflict('Cannot remove member who owns team projects', blockers);
+      }
     }
 
     await prisma.teamMembership.delete({

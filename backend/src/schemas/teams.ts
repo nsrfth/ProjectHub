@@ -127,6 +127,27 @@ export const teamMembersPage = z.object({
   totalPages: z.number().int().nonnegative(),
 });
 
+export const memberRemovalProjectRef = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+
+export const memberRemovalBlockersResponse = z.object({
+  canRemove: z.boolean(),
+  ownedProjectCount: z.number().int().nonnegative(),
+  accountableProjectCount: z.number().int().nonnegative(),
+  ownedProjects: z.array(memberRemovalProjectRef),
+  accountableProjects: z.array(memberRemovalProjectRef),
+  reasons: z.array(z.string()),
+});
+
+export const removeMemberBody = z.object({
+  reassignOwnerTo: z.string().min(1).optional(),
+  force: z.boolean().optional(),
+});
+
+export type RemoveMemberBody = z.infer<typeof removeMemberBody>;
+
 export type CreateTeamBody = z.infer<typeof createTeamBody>;
 export type UpdateTeamBody = z.infer<typeof updateTeamBody>;
 export type AddMemberBody = z.infer<typeof addMemberBody>;

@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.55.0** (2026-06-09)
+Version **v1.56.0** (2026-06-09)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -120,6 +120,7 @@ The buttons appear on every signed-in route so you can always reach help / conte
 - **Teams** page — click the team-name dropdown on the dashboard or go to `/teams`. Lists every team you belong to and lets you switch the "current team" (drives what the kanban / reports / settings show).
 - **Create a team** — click **New team**, give it a name + slug (URL-safe, dash-delimited, e.g. `growth-eng`).
 - **Invite a member** — open the team detail, type their email, pick role `MEMBER` or `MANAGER`. (Only `MANAGER`s can invite.)
+- **Remove a member** — managers with `team.remove_member` can remove members from the roster. The last MANAGER cannot be removed. **v1.56:** if the member **owns projects** in the team, removal is blocked until you **reassign ownership** to another team member or choose **Remove anyway** (project `ownerId` stays on the removed user — they are no longer a team member but remain the recorded owner). Owned and accountable projects are listed before you confirm.
 - **Member roster (v1.54+)** — each team member shows a **Disabled** or **Locked** badge when their account is in that state. Users with **accepted group access** who are not team members appear in the roster with an **External** badge and **Full access** / **Read only** label — they cannot be removed from the team roster (manage them in User groups).
 - **Member roster search & pagination (v1.55)** — on team detail, search by name or email, filter by role / account status / member vs external, click column headers to sort, and page through large rosters (25 per page by default). Changing a filter resets to page 1.
 - **Rename a team** (v1.48) — team detail → **⋮** → **Rename team**, edit the name, **Save**. Requires the `team.edit_details` permission (system Manager role by default). Members cannot rename.

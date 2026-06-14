@@ -4,9 +4,11 @@ import type {
   AddMemberBody,
   CreateTeamBody,
   ListTeamMembersQuery,
+  RemoveMemberBody,
   UpdateMemberRoleBody,
   UpdateTeamBody,
 } from '../schemas/teams.js';
+import { removeMemberBody } from '../schemas/teams.js';
 import { Errors } from '../lib/errors.js';
 
 type TeamIdParams = { teamId: string };
@@ -101,11 +103,35 @@ export class TeamsController {
     return reply.status(201).send({ ...member, joinedAt: member.joinedAt.toISOString() });
   };
 
-  removeMember = async (
+  getMemberRemovalBlockers = async (
     req: FastifyRequest<{ Params: TeamMemberParams }>,
     reply: FastifyReply,
   ) => {
-    await this.svc.removeMember(req.params.teamId, req.params.userId);
+    const blockers = await this.svc.getMemberRemovalBlockers(
+      req.params.teamId,
+      req.params.userId,
+    );
+    return reply.send(blockers);
+  };
+
+  removeMember = async (
+    req: FastifyRequest<{ Params: TeamMemberParams; Body?: RemoveMemberBody }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    const parsed = removeMemberBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw Errors.badRequest('Invalid remove-member body', parsed.error.flatten());
+    }
+    const { reassignOwnerTo, force } = parsed.data;
+    const opts =
+      reassignOwnerTo || force ? { reassignOwnerTo, force } : undefined;
+    await this.svc.removeMember(
+      req.params.teamId,
+      req.params.userId,
+      opts,
+      req.user.sub,
+    );
     return reply.status(204).send();
   };
 

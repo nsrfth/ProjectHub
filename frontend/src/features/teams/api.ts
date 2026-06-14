@@ -38,6 +38,25 @@ export interface TeamDeleteBlockers {
   reasons: string[];
 }
 
+export interface MemberRemovalProjectRef {
+  id: string;
+  name: string;
+}
+
+export interface MemberRemovalBlockers {
+  canRemove: boolean;
+  ownedProjectCount: number;
+  accountableProjectCount: number;
+  ownedProjects: MemberRemovalProjectRef[];
+  accountableProjects: MemberRemovalProjectRef[];
+  reasons: string[];
+}
+
+export interface RemoveMemberOptions {
+  reassignOwnerTo?: string;
+  force?: boolean;
+}
+
 export interface TeamCapabilities {
   editDetails: boolean;
   deleteTeam: boolean;
@@ -138,8 +157,21 @@ export async function updateMemberRole(
   return (await api.patch<TeamMember>(`/teams/${teamId}/members/${userId}`, patch)).data;
 }
 
-export async function removeMember(teamId: string, userId: string): Promise<void> {
-  await api.delete(`/teams/${teamId}/members/${userId}`);
+export async function getMemberRemovalBlockers(
+  teamId: string,
+  userId: string,
+): Promise<MemberRemovalBlockers> {
+  return (
+    await api.get<MemberRemovalBlockers>(`/teams/${teamId}/members/${userId}/removal-blockers`)
+  ).data;
+}
+
+export async function removeMember(
+  teamId: string,
+  userId: string,
+  opts?: RemoveMemberOptions,
+): Promise<void> {
+  await api.delete(`/teams/${teamId}/members/${userId}`, { data: opts });
 }
 
 export async function deleteTeam(teamId: string): Promise<void> {

@@ -10,6 +10,7 @@ import {
   addMemberBody,
   createTeamBody,
   listTeamMembersQuery,
+  memberRemovalBlockersResponse,
   teamDetailResponse,
   teamMemberResponse,
   teamMembersPage,
@@ -142,13 +143,26 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
     handler: ctrl.updateMemberRole,
   });
 
+  r.get('/:teamId/members/:userId/removal-blockers', {
+    preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.remove_member'), requireScope('admin')],
+    schema: {
+      tags: ['teams'],
+      summary: 'List projects blocking member removal (ownership in this team)',
+      params: z.object({ teamId: z.string(), userId: z.string() }),
+      response: { 200: memberRemovalBlockersResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.getMemberRemovalBlockers,
+  });
+
   r.delete('/:teamId/members/:userId', {
     preHandler: [requireTeamRole('MEMBER', 'MANAGER'), requirePermission('team.remove_member'), requireScope('admin')],
     schema: {
       tags: ['teams'],
       summary:
-        'Remove a member (requires team.remove_member — last MANAGER cannot be removed)',
+        'Remove a member (requires team.remove_member — last MANAGER cannot be removed; owned projects require reassign or force)',
       params: z.object({ teamId: z.string(), userId: z.string() }),
+      response: { 204: z.null() },
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.removeMember,

@@ -304,6 +304,10 @@
   "team.members.pagination.next": "بعدی",
   "team.members.pagination.jump": "رفتن به صفحه",
   "team.members.pagination.go": "برو",
+  "team.remove.confirm": "«{name}» از این تیم حذف شود؟",
+  "team.remove.ownsProjects": "این عضو مالک پروژه‌هایی در این تیم است. مالکیت را واگذار کنید یا در هر صورت حذف کنید.",
+  "team.remove.reassignTo": "واگذاری مالکیت به",
+  "team.remove.removeAnyway": "حذف در هر صورت (مالک فعلی پروژه‌ها حفظ شود)",
 
   "settings.nav.security": "امنیت",
   "settings.nav.securityDesc": "احراز هویت دومرحله‌ای + نشست‌ها",
