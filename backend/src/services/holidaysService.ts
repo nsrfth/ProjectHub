@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { resolveDatasetHolidays } from '../lib/irHolidayDataset.js';
+import type { IrHolidayType } from '../lib/irHolidayDataset.js';
 import { logActivity } from './activityLogger.js';
 import type { CreateHolidayBody, UpdateHolidayBody } from '../schemas/holidays.js';
 
@@ -39,6 +41,38 @@ function toView(row: {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+export interface ImportPreviewEntry {
+  date: string;
+  name: string;
+  type: IrHolidayType;
+  recurring: boolean;
+}
+
+export interface ImportConflictEntry {
+  date: string;
+  datasetName: string;
+  existingName: string;
+  existingSource: 'MANUAL' | 'IMPORT' | 'SYNC';
+}
+
+export interface ImportSkippedEntry {
+  date: string;
+  name: string;
+  existingName: string;
+  reason: 'already_imported';
+}
+
+export interface ImportPreviewResult {
+  jalaliYear: number;
+  added: ImportPreviewEntry[];
+  skipped: ImportSkippedEntry[];
+  conflicts: ImportConflictEntry[];
+}
+
+export interface ImportResult extends ImportPreviewResult {
+  inserted: number;
 }
 
 export class HolidaysService {
@@ -127,5 +161,85 @@ export class HolidaysService {
       action: 'holiday.deleted',
       meta: { holidayId, name: existing.name, date: existing.date.toISOString() },
     });
+  }
+
+  async previewImportFromDataset(jalaliYear: number): Promise<ImportPreviewResult> {
+    return this.diffImport(jalaliYear);
+  }
+
+  async importFromDataset(actorId: string, jalaliYear: number): Promise<ImportResult> {
+    const diff = await this.diffImport(jalaliYear);
+    let inserted = 0;
+    for (const row of diff.added) {
+      await prisma.holiday.create({
+        data: {
+          date: new Date(row.date),
+          name: row.name,
+          recurring: row.recurring,
+          source: 'IMPORT',
+          createdById: actorId,
+        },
+      });
+      inserted += 1;
+    }
+    if (inserted > 0 || diff.conflicts.length > 0 || diff.skipped.length > 0) {
+      await logActivity(prisma, {
+        actorId,
+        action: 'holiday.imported',
+        meta: {
+          jalaliYear,
+          inserted,
+          skipped: diff.skipped.length,
+          conflicts: diff.conflicts.length,
+        },
+      });
+    }
+    return { ...diff, inserted };
+  }
+
+  private async diffImport(jalaliYear: number): Promise<ImportPreviewResult> {
+    const resolved = resolveDatasetHolidays(jalaliYear);
+    if (resolved.length === 0) {
+      throw Errors.badRequest(`No dataset entries for Jalali year ${jalaliYear}`);
+    }
+    const dates = resolved.map((r) => r.date);
+    const existing = await prisma.holiday.findMany({
+      where: { date: { in: dates } },
+    });
+    const byDate = new Map(existing.map((h) => [h.date.toISOString(), h]));
+
+    const added: ImportPreviewEntry[] = [];
+    const skipped: ImportSkippedEntry[] = [];
+    const conflicts: ImportConflictEntry[] = [];
+
+    for (const row of resolved) {
+      const hit = byDate.get(row.dateIso);
+      if (!hit) {
+        added.push({
+          date: row.dateIso,
+          name: row.name,
+          type: row.type as IrHolidayType,
+          recurring: row.recurring,
+        });
+        continue;
+      }
+      if (hit.source === 'IMPORT') {
+        skipped.push({
+          date: row.dateIso,
+          name: row.name,
+          existingName: hit.name,
+          reason: 'already_imported',
+        });
+        continue;
+      }
+      conflicts.push({
+        date: row.dateIso,
+        datasetName: row.name,
+        existingName: hit.name,
+        existingSource: hit.source,
+      });
+    }
+
+    return { jalaliYear, added, skipped, conflicts };
   }
 }

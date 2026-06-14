@@ -41,3 +41,39 @@ export async function updateHoliday(
 export async function deleteHoliday(id: string): Promise<void> {
   await api.delete(`/holidays/${id}`);
 }
+
+export interface HolidayImportPreview {
+  jalaliYear: number;
+  added: Array<{
+    date: string;
+    name: string;
+    type: 'national' | 'religious';
+    recurring: boolean;
+  }>;
+  skipped: Array<{
+    date: string;
+    name: string;
+    existingName: string;
+    reason: 'already_imported';
+  }>;
+  conflicts: Array<{
+    date: string;
+    datasetName: string;
+    existingName: string;
+    existingSource: 'MANUAL' | 'IMPORT' | 'SYNC';
+  }>;
+}
+
+export interface HolidayImportResult extends HolidayImportPreview {
+  inserted: number;
+}
+
+export async function previewHolidayImport(jalaliYear: number): Promise<HolidayImportPreview> {
+  return (await api.get<HolidayImportPreview>(
+    `/holidays/import/preview?jalaliYear=${jalaliYear}`,
+  )).data;
+}
+
+export async function importHolidays(jalaliYear: number): Promise<HolidayImportResult> {
+  return (await api.post<HolidayImportResult>('/holidays/import', { jalaliYear })).data;
+}

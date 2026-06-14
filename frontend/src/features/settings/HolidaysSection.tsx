@@ -12,6 +12,7 @@ import { setHolidays } from '@/lib/calendar';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
 import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
 import { useT } from '@/lib/i18n';
+import HolidayImportPanel from '@/features/settings/HolidayImportPanel';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -116,8 +117,20 @@ export default function HolidaysSection(): JSX.Element {
 
   const upcoming = holidays.filter((h) => new Date(h.date) >= utcToday());
 
+  async function refreshHolidays(): Promise<void> {
+    const span = await fetchHolidays({
+      from: new Date(Date.UTC(year - 1, 0, 1)).toISOString(),
+      to: new Date(Date.UTC(year + 2, 11, 31)).toISOString(),
+    });
+    syncCache(span);
+    qc.invalidateQueries({ queryKey: ['holidays'] });
+  }
+
   return (
-    <form
+    <div className="space-y-4">
+      <HolidayImportPanel onImported={refreshHolidays} />
+
+      <form
       onSubmit={submit}
       className="border border-border rounded p-4 space-y-4 bg-surface"
     >
@@ -186,6 +199,9 @@ export default function HolidaysSection(): JSX.Element {
                   {formatShamsiCalendarDate(h.date) ?? h.date.slice(0, 10)}
                 </span>
                 <span className="text-text">{h.name}</span>
+                {h.source === 'IMPORT' && (
+                  <span className="text-xs text-text-muted">({t('holidays.importedBadge')})</span>
+                )}
                 {h.recurring && (
                   <span className="text-xs text-text-muted">({t('holidays.recurring')})</span>
                 )}
@@ -216,6 +232,7 @@ export default function HolidaysSection(): JSX.Element {
         <p className="text-sm text-text-muted italic">{t('holidays.empty')}</p>
       )}
     </form>
+    </div>
   );
 }
 

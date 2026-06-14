@@ -8,6 +8,9 @@ import { requireScope } from '../middleware/requireScope.js';
 import {
   createHolidayBody,
   holidayResponse,
+  importHolidayBody,
+  importPreviewResponse,
+  importResultResponse,
   updateHolidayBody,
 } from '../schemas/holidays.js';
 
@@ -52,6 +55,30 @@ export async function holidaysRoutes(app: FastifyInstance): Promise<void> {
   r.register(async (admin) => {
     admin.addHook('preHandler', requireGlobalAdmin);
     admin.addHook('preHandler', requireScope('admin'));
+
+    admin.get('/import/preview', {
+      schema: {
+        tags: ['holidays'],
+        summary: 'Preview Iranian holiday dataset import (admin, no writes)',
+        querystring: z.object({
+          jalaliYear: z.string(),
+        }),
+        response: { 200: importPreviewResponse },
+        security: [{ bearerAuth: [] }],
+      },
+      handler: ctrl.previewImport,
+    });
+
+    admin.post('/import', {
+      schema: {
+        tags: ['holidays'],
+        summary: 'Import Iranian holidays from bundled offline dataset (admin)',
+        body: importHolidayBody,
+        response: { 200: importResultResponse },
+        security: [{ bearerAuth: [] }],
+      },
+      handler: ctrl.importFromDataset,
+    });
 
     admin.post('/', {
       schema: {

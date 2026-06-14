@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { Errors } from '../lib/errors.js';
 import type { HolidaysService } from '../services/holidaysService.js';
-import type { CreateHolidayBody, UpdateHolidayBody } from '../schemas/holidays.js';
+import type { CreateHolidayBody, ImportHolidayBody, UpdateHolidayBody } from '../schemas/holidays.js';
 
 type HolidayParams = { id: string };
 
@@ -47,5 +48,25 @@ export class HolidaysController {
   remove = async (req: FastifyRequest<{ Params: HolidayParams }>, reply: FastifyReply) => {
     await this.svc.remove(req.params.id, req.user!.sub);
     return reply.status(204).send();
+  };
+
+  previewImport = async (
+    req: FastifyRequest<{ Querystring: { jalaliYear: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const jalaliYear = Number(req.query.jalaliYear);
+    if (!Number.isInteger(jalaliYear)) {
+      throw Errors.badRequest('jalaliYear must be an integer');
+    }
+    const result = await this.svc.previewImportFromDataset(jalaliYear);
+    return reply.send(result);
+  };
+
+  importFromDataset = async (
+    req: FastifyRequest<{ Body: ImportHolidayBody }>,
+    reply: FastifyReply,
+  ) => {
+    const result = await this.svc.importFromDataset(req.user!.sub, req.body.jalaliYear);
+    return reply.send(result);
   };
 }

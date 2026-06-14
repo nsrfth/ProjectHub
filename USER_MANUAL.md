@@ -495,6 +495,8 @@ The setting lives in the `InstanceSetting` key/JSON store (`calendar.weekend`), 
 
 Non-admins can read holidays (for calendar colouring) but cannot create or delete them.
 
+**v1.66 — Import Iranian holidays (admin):** Under **Settings → Preferences → Holidays**, use **Import Iranian holidays** to load official dates from a **bundled offline dataset** (no network — safe behind ISP filtering). Pick a **Jalali year**, click **Preview import** to see what would be added / skipped / conflict, then confirm. Imported rows are marked *imported*, fully **editable and deletable** afterward. Re-importing the same year is idempotent (no duplicates). **Manual holidays on the same date are never overwritten** — they appear as conflicts. **Important:** religious/lunar dates in the dataset may not match the latest official decree — always verify against government announcements and adjust individual rows after import. Refresh the bundled dataset yearly (`backend/scripts/generate-ir-holidays.mjs`).
+
 ### Working-day scheduling (admin, v1.64)
 
 Two **opt-in** instance toggles under **Settings → Preferences → Working-day scheduling**. Both default **off** — when off, behaviour is identical to pre-v1.64 (calendar-day math everywhere).

@@ -36,8 +36,8 @@ async function memberToken(): Promise<string> {
   return r.token;
 }
 
-/** Nowruz 1405 in Jalali ≈ 2026-03-20 UTC calendar date. */
-const NOWRUZ_ISO = '2026-03-20T00:00:00.000Z';
+/** Nowruz 1405 in Jalali ≈ 2026-03-21 UTC calendar date (react-date-object). */
+const NOWRUZ_ISO = '2026-03-21T00:00:00.000Z';
 
 describe('instance holidays API', () => {
   it('1) admin creates a holiday at UTC midnight and it appears in the list', async () => {
@@ -114,9 +114,9 @@ describe('instance holidays API', () => {
       payload: { date: '2026-03-20T15:30:00.000Z', name: 'Nowruz' },
     });
     expect(create.statusCode).toBe(201);
-    expect(create.json().date).toBe(NOWRUZ_ISO);
+    expect(create.json().date).toBe('2026-03-20T00:00:00.000Z');
     const normalized = normalizeUtcMidnight('2026-03-20T15:30:00.000Z');
-    expect(normalized.toISOString()).toBe(NOWRUZ_ISO);
+    expect(normalized.toISOString()).toBe('2026-03-20T00:00:00.000Z');
   });
 });
 

@@ -7,6 +7,23 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.66.0] — 2026-06-09
+
+**Offline Iranian holiday import — admin-triggered, ISP-filtering safe.**
+
+- Bundled offline dataset (`backend/src/data/ir-holidays.json`) sourced from **time.ir** official
+  holiday dates via `shamsi-holidays` static files (Jalali years **1404–1406**). Refresh yearly
+  with `backend/scripts/generate-ir-holidays.mjs`.
+- Admin API: `GET /api/holidays/import/preview?jalaliYear=` (read-only diff) and
+  `POST /api/holidays/import` `{ jalaliYear }` → `{ added, skipped, conflicts, inserted }`.
+- **Idempotent, non-destructive:** re-import skips existing `IMPORT` rows; **MANUAL** (and `SYNC`)
+  dates on the same day are never overwritten — reported as conflicts. No deletes on import.
+- Jalali→Gregorian uses **`react-date-object`** (same library as frontend `lib/shamsi.ts`).
+- Settings → **Holidays**: preview + confirm import UI; imported rows editable/deletable; verify
+  lunar/religious dates against official announcements (documented in UI + manual).
+
+---
+
 ## [1.65.0] — 2026-06-09
 
 **Configurable due reminders — per-user lead time + holiday-aware notify timing.**

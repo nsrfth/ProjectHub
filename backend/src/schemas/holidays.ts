@@ -27,3 +27,41 @@ export const updateHolidayBody = z.object({
 
 export type CreateHolidayBody = z.infer<typeof createHolidayBody>;
 export type UpdateHolidayBody = z.infer<typeof updateHolidayBody>;
+
+export const importHolidayBody = z.object({
+  jalaliYear: z.number().int().min(1300).max(1500),
+});
+
+export const importPreviewEntry = z.object({
+  date: z.string().datetime(),
+  name: z.string(),
+  type: z.enum(['national', 'religious']),
+  recurring: z.boolean(),
+});
+
+export const importConflictEntry = z.object({
+  date: z.string().datetime(),
+  datasetName: z.string(),
+  existingName: z.string(),
+  existingSource: holidaySourceEnum,
+});
+
+export const importSkippedEntry = z.object({
+  date: z.string().datetime(),
+  name: z.string(),
+  existingName: z.string(),
+  reason: z.literal('already_imported'),
+});
+
+export const importPreviewResponse = z.object({
+  jalaliYear: z.number(),
+  added: z.array(importPreviewEntry),
+  skipped: z.array(importSkippedEntry),
+  conflicts: z.array(importConflictEntry),
+});
+
+export const importResultResponse = importPreviewResponse.extend({
+  inserted: z.number().int(),
+});
+
+export type ImportHolidayBody = z.infer<typeof importHolidayBody>;

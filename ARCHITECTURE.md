@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v1.65.0 (2026-06-09)
+**Version:** v1.66.0 (2026-06-09)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -134,6 +134,7 @@ session tokens. Same reason we hash passwords.
 | Datetime prefs (v1.63) | `User.timeZone` (nullable IANA), `User.timeFormat` (`H12`/`H24`), `User.dualCalendar`. **Display-only** — instants stay UTC in DB. Frontend splits formatters: **`lib/shamsi.ts`** = calendar dates (UTC-midnight, zone-neutral); **`lib/datetime.ts`** = timestamps (user zone + 12h/24h). Invalid IANA → 400 on PATCH. |
 | Working-day scheduling (v1.64) | InstanceSetting keys `scheduling.rollOffdayDueDates` + `scheduling.workingDaysOnly` (both default **false**). Backend `WorkingDayCalendar` mirrors frontend `isOffDay`. Rolls apply on create/update/spawn only (not retroactive). `spawnedForPeriod` keyed on spawn date, not rolled due date. Gantt API adds `workingDayCount` per row when enabled. |
 | Due reminders (v1.65) | `User.reminderLeadHours` (default 24, 1–168). Scheduler resolves assignee → creator → `TASK_DUE_LEAD_HOURS`. One-shot via `Task.dueNotifiedAt`. InstanceSetting `reminders.skipOffDays` shifts notify instant to prior working day when nominal day is off; fires immediately if shifted time is past. `lib/reminderTiming.ts`. Per-task override deferred. |
+| Iranian holiday import (v1.66) | Vendored `src/data/ir-holidays.json` (time.ir dates via shamsi-holidays static files, years 1404–1406). Admin-only `GET/POST /api/holidays/import/*`. `react-date-object` Jalali→UTC midnight (matches frontend). Idempotent upsert (`source: IMPORT`); MANUAL/SYNC dates never overwritten. No network at runtime. |
 
 ## Error responses
 
