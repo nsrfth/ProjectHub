@@ -7,6 +7,20 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.54.0] — 2026-06-09
+
+**Team roster — member status badges + external group accessors.**
+
+### Teams (backend + frontend)
+
+- `GET /api/teams/:teamId` member list now includes `disabled`, `locked`, and `external`
+  flags per row. Team members show account status (disabled / locked); external rows list
+  ACCEPTED group accessors who are not team members, with `groupAccessLevel` (FULL / READONLY).
+- Team detail UI: status badges on members; external accessors in a separate section with
+  External + access-level labels. No schema change.
+
+---
+
 ## [1.53.1] — 2026-06-09
 
 **Settings sidebar — English-alphabetical order in both languages.**

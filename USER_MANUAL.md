@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.53.0** (2026-06-09)
+Version **v1.54.0** (2026-06-09)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -120,6 +120,7 @@ The buttons appear on every signed-in route so you can always reach help / conte
 - **Teams** page — click the team-name dropdown on the dashboard or go to `/teams`. Lists every team you belong to and lets you switch the "current team" (drives what the kanban / reports / settings show).
 - **Create a team** — click **New team**, give it a name + slug (URL-safe, dash-delimited, e.g. `growth-eng`).
 - **Invite a member** — open the team detail, type their email, pick role `MEMBER` or `MANAGER`. (Only `MANAGER`s can invite.)
+- **Member roster (v1.54)** — each team member shows a **Disabled** or **Locked** badge when their account is in that state. Users with **accepted group access** who are not team members appear under **External accessors (group access)** with **External** and **Full access** / **Read only** labels — they cannot be removed from the team roster (manage them in User groups).
 - **Rename a team** (v1.48) — team detail → **⋮** → **Rename team**, edit the name, **Save**. Requires the `team.edit_details` permission (system Manager role by default). Members cannot rename.
 - **Delete a team** (v1.48) — **⋮** → **Delete team** → confirm. Allowed only when the team has **no projects** and **no live tasks**; otherwise the dialog lists blockers. Global admins can still force-delete teams (with all content) from **Settings → Admin**.
 - **User groups** (v1.50 / v1.51) — on team detail, the **User groups** section appears when you have the `group.manage` permission (system Manager role by default). Create a group, add team members (or search **any user** for cross-team invites), set each member to **Full access** or **Read only**, and grant projects. In-team members join immediately; external users receive an invitation they must **Accept** (see the notifications bell). Read-only members can view tasks and comments but cannot create or edit them. Removing a member or deleting the group revokes access on the next request.

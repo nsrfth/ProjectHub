@@ -271,6 +271,14 @@
   "admin.users.profile.cancel": "لغو",
   "admin.users.detail.title": "کاربر — {email}",
 
+  "team.member.status.disabled": "غیرفعال",
+  "team.member.status.locked": "قفل‌شده",
+  "team.member.status.active": "فعال",
+  "team.member.external": "خارجی",
+  "team.member.externalSection": "دسترسی‌دهندگان خارجی (گروه)",
+  "team.member.access.full": "دسترسی کامل",
+  "team.member.access.readonly": "فقط خواندن",
+
   "settings.nav.security": "امنیت",
   "settings.nav.securityDesc": "احراز هویت دومرحله‌ای + نشست‌ها",
   "settings.nav.audit": "گزارش فعالیت",
