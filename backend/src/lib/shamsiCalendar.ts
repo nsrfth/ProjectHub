@@ -1,6 +1,6 @@
 import DateObject from 'react-date-object';
-import persian from 'react-date-object/calendars/persian';
-import gregorian from 'react-date-object/calendars/gregorian';
+import persian from 'react-date-object/calendars/persian.js';
+import gregorian from 'react-date-object/calendars/gregorian.js';
 
 /**
  * Jalali calendar date → UTC-midnight Gregorian instant.
