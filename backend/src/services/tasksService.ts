@@ -354,7 +354,16 @@ export class TasksService {
       // (including the dispatcher right after a synchronous test action)
       // can rely on the delivery row existing on return.
       await _webhooks.emit(view.teamId, 'task.created', view);
-      return withCustomFields(teamId, view);
+      const hydrated = await withCustomFields(teamId, view);
+      const { emitAutomationForTask } = await import('./automationEngine.js');
+      await emitAutomationForTask({
+        teamId: view.teamId,
+        projectId: view.projectId,
+        taskId: view.id,
+        triggerType: 'task.created',
+        task: hydrated,
+      });
+      return hydrated;
     });
   }
 
@@ -697,7 +706,40 @@ export class TasksService {
           task: result.view, fields: result.changedNonStatusFields,
         });
       }
-      return withCustomFields(teamId, result.view);
+      const hydrated = await withCustomFields(teamId, result.view);
+      const { emitAutomationForTask } = await import('./automationEngine.js');
+      if (result.statusChanged) {
+        await emitAutomationForTask({
+          teamId: result.view.teamId,
+          projectId: result.view.projectId,
+          taskId: result.view.id,
+          triggerType: 'task.status_changed',
+          task: hydrated,
+          fromStatus: result.fromStatus,
+          toStatus: result.view.status,
+        });
+      }
+      if (result.changedNonStatusFields.length > 0) {
+        await emitAutomationForTask({
+          teamId: result.view.teamId,
+          projectId: result.view.projectId,
+          taskId: result.view.id,
+          triggerType: 'task.updated',
+          task: hydrated,
+          changedFields: result.changedNonStatusFields,
+        });
+        if (result.changedNonStatusFields.includes('assigneeId')) {
+          await emitAutomationForTask({
+            teamId: result.view.teamId,
+            projectId: result.view.projectId,
+            taskId: result.view.id,
+            triggerType: 'task.assigned',
+            task: hydrated,
+            changedFields: ['assigneeId'],
+          });
+        }
+      }
+      return hydrated;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw Errors.notFound('Task not found');

@@ -90,6 +90,7 @@ export interface TeamCapabilities {
   deleteTeam: boolean;
   manageGroups: boolean;
   manageCustomFields: boolean;
+  manageAutomations: boolean;
 }
 
 export interface TeamDeleteBlockers {
@@ -433,6 +434,7 @@ export class TeamsService {
       deleteTeam: permGranted(perms, 'team.delete'),
       manageGroups: permGranted(perms, 'group.manage'),
       manageCustomFields: permGranted(perms, 'customfield.manage'),
+      manageAutomations: permGranted(perms, 'automation.manage'),
     };
     const deleteBlockers = capabilities.deleteTeam
       ? await this.getDeleteBlockers(teamId)

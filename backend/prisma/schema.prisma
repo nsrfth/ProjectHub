@@ -445,6 +445,7 @@ model Team {
   webhooks      Webhook[]
   userGroups    UserGroup[]
   customFields  CustomFieldDefinition[]
+  automationRules AutomationRule[]
   directory     Directory?       @relation("TeamDirectory", fields: [directoryId], references: [id], onDelete: SetNull)
 
   @@index([directoryId])
@@ -1065,4 +1066,63 @@ model Notification {
   team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt, createdAt])
+}
+
+// v1.60: no-code automation rules — team-scoped trigger → conditions → actions.
+model AutomationRule {
+  id             String   @id @default(cuid())
+  teamId         String
+  name           String
+  description    String?
+  enabled        Boolean  @default(true)
+  triggerType    String
+  conditionMatch String   @default("ALL")
+  position       Int      @default(0)
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  team           Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  conditions     AutomationCondition[]
+  actions        AutomationAction[]
+  runs           AutomationRun[]
+
+  @@index([teamId, enabled, triggerType])
+}
+
+model AutomationCondition {
+  id            String         @id @default(cuid())
+  ruleId        String
+  factType      String
+  operator      String
+  valueJson     Json?
+  customFieldId String?
+  rule          AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+}
+
+model AutomationAction {
+  id            String         @id @default(cuid())
+  ruleId        String
+  actionType    String
+  valueJson     Json?
+  customFieldId String?
+  position      Int            @default(0)
+  rule          AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+}
+
+model AutomationRun {
+  id          String         @id @default(cuid())
+  ruleId      String
+  taskId      String
+  triggerType String
+  status      String
+  detail      String?
+  createdAt   DateTime       @default(now())
+  rule        AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId, createdAt])
+  @@index([taskId])
 }

@@ -339,7 +339,7 @@ export class CustomFieldsService {
   ): Promise<TaskCustomFieldValueView[]> {
     const task = await prisma.task.findFirst({
       where: { id: taskId, projectId, teamId, deletedAt: null },
-      select: { id: true, teamId: true },
+      select: { id: true, teamId: true, projectId: true },
     });
     if (!task) throw Errors.notFound('Task not found');
 
@@ -367,6 +367,16 @@ export class CustomFieldsService {
         taskId,
         action: 'task.customfield_set',
         meta: { fieldName: field.name, summary: '(cleared)', cleared: true },
+      });
+      const { emitAutomationForTask } = await import('./automationEngine.js');
+      await emitAutomationForTask({
+        teamId,
+        projectId: task.projectId,
+        taskId,
+        triggerType: 'task.custom_field_changed',
+        customFieldId: fieldId,
+        customFieldName: field.name,
+        customFieldCleared: true,
       });
       return this.buildTaskCustomFieldsView(teamId, taskId);
     }
@@ -404,6 +414,17 @@ export class CustomFieldsService {
       taskId,
       action: 'task.customfield_set',
       meta: { fieldName: field.name, summary },
+    });
+
+    const { emitAutomationForTask } = await import('./automationEngine.js');
+    await emitAutomationForTask({
+      teamId,
+      projectId: task.projectId,
+      taskId,
+      triggerType: 'task.custom_field_changed',
+      customFieldId: fieldId,
+      customFieldName: field.name,
+      customFieldCleared: false,
     });
 
     return this.buildTaskCustomFieldsView(teamId, taskId);

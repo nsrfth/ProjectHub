@@ -152,6 +152,16 @@ Each team can set a **default currency** (`IRR`, `EUR`, or `USD`) on the team de
 - Amounts are **not converted** when you change a currency — only the display label changes. The UI warns you before saving a currency change.
 - **IRR** shows whole numbers (no decimal places); **EUR** and **USD** show two decimal places. English and Persian UI locales format digits and grouping accordingly.
 
+### Automations (v1.60)
+
+Settings → **Automations** lets managers with `automation.manage` define no-code rules for a team.
+
+- **Trigger** — one of: task created, status changed, updated, assigned, or custom field changed.
+- **Conditions** — match ALL or ANY of: status, priority, assignee, label, due date, or custom field (typed per field kind).
+- **Actions** — set status/priority/assignee, add/remove label, set custom field, add comment (supports `{{task.title}}` tokens), or send notification.
+- Rules run **after your save completes** — a failing rule never rolls back your edit.
+- **Loop protection** — each rule fires at most once per task per originating change chain; nested depth is capped at 5.
+
 ---
 
 ## Tasks — the basics

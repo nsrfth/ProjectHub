@@ -59,6 +59,12 @@ const NAV: NavItem[] = [
     roles: ['ADMIN', 'MANAGER'],
   },
   {
+    to: '/settings/automations',
+    labelKey: 'settings.nav.automations',
+    descriptionKey: 'settings.nav.automationsDesc',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
     to: '/settings/directories',
     labelKey: 'settings.nav.directories',
     descriptionKey: 'settings.nav.directoriesDesc',

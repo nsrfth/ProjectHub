@@ -56,6 +56,8 @@ export const PERMISSIONS = [
 
   // Integrations.
   'webhooks.manage',
+  // v1.60: no-code automation rules (triggers, conditions, actions).
+  'automation.manage',
 
   // Trash. The `trash.emptyAllowedRoles` InstanceSetting (v1.21) gates this
   // on TOP of the permission — both layers must pass.
@@ -87,7 +89,7 @@ export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
     'team.edit_details',
     'team.delete',
   ],
-  Integrations: ['webhooks.manage'],
+  Integrations: ['webhooks.manage', 'automation.manage'],
   Trash: ['trash.purge'],
 };
 
