@@ -14,6 +14,7 @@ COPY prisma ./prisma
 RUN npx prisma generate
 
 COPY tsconfig.json ./
+COPY scripts/copy-data.mjs scripts/generate-ir-holidays.mjs ./scripts/
 COPY src ./src
 RUN npm run build
 
