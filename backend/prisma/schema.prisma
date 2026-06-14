@@ -284,6 +284,7 @@ model User {
   apiTokens          ApiToken[]
   passwordHistory    PasswordHistory[]
   projectBuckets     UserProjectBucket[]
+  userGroupMembers   UserGroupMember[]
 
   @@index([email])
 }
@@ -406,6 +407,7 @@ model Team {
   notifications Notification[]
   activities    Activity[]       @relation("TeamActivity")
   webhooks      Webhook[]
+  userGroups    UserGroup[]
   directory     Directory?       @relation("TeamDirectory", fields: [directoryId], references: [id], onDelete: SetNull)
 
   @@index([directoryId])
@@ -494,6 +496,7 @@ model Project {
   owner         User?         @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   accountable   User?         @relation("ProjectAccountable", fields: [accountableId], references: [id], onDelete: SetNull)
   tasks         Task[]
+  groupGrants   ProjectGroupGrant[]
 
   // v1.30: tsvector for full-text search. See Task.searchVector for
   // rationale + lifecycle (managed by raw SQL, never read via Prisma).
@@ -504,6 +507,48 @@ model Project {
   @@index([teamId, status])
   @@index([ownerId])
   @@index([accountableId])
+}
+
+// v1.50: team-scoped user groups for granting project access without
+// changing project ownership.
+model UserGroup {
+  id          String   @id @default(cuid())
+  teamId      String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  team     Team                @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  members  UserGroupMember[]
+  grants   ProjectGroupGrant[]
+
+  @@unique([teamId, name])
+  @@index([teamId])
+}
+
+model UserGroupMember {
+  groupId String
+  userId  String
+  addedAt DateTime @default(now())
+
+  group UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([userId])
+}
+
+model ProjectGroupGrant {
+  projectId String
+  groupId   String
+  grantedAt DateTime @default(now())
+
+  project Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  group   UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, groupId])
+  @@index([groupId])
 }
 
 enum RecurrenceFrequency {

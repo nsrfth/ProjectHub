@@ -1,41 +1,34 @@
 import { Prisma, type GlobalRole, type ProjectStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import {
+  projectListAllWhereForCaller,
+  projectListWhereForCaller,
+  userCanAccessProject,
+} from '../lib/projectAccess.js';
 import { listMembershipPermissions } from '../middleware/requirePermission.js';
-// v1.39 (BREAKING): project visibility tightened for most callers.
-// - globalRole === 'ADMIN' → sees and manages every project on the team.
-// - project owner → sees and manages their own project (full edit).
-// - team member with `project.edit` (default: Manager role) → sees every
-//   project on the team and may rename (`name` only) projects they do not
-//   own. Other fields remain owner-or-ADMIN.
-// - everyone else → own projects only.
+// Project visibility (additive):
+// - globalRole === 'ADMIN' → all projects
+// - owner → own project (full edit + nested routes)
+// - project.edit manager → see all team projects; rename others (name only)
+// - group grant → see + nested routes (owner-equivalent for tasks/…)
+// - everyone else → own projects only
 
 export interface ProjectView {
   id: string;
   teamId: string;
-  // ownerId is null when the owning user has been deleted (FK SetNull).
-  // A manager can reassign by transferring the project to a new owner.
   ownerId: string | null;
-  // v1.17: RACI "Accountable" person. Same nullability story as ownerId.
   accountableId: string | null;
   accountableName: string | null;
   name: string;
   description: string | null;
   status: ProjectStatus;
-  // v1.41: budget fields. Stringified Decimal — preserves precision past
-  // Number.MAX_SAFE_INTEGER and matches what Prisma emits when its
-  // Decimal type is JSON-stringified. Two decimal places.
   plannedBudget: string | null;
   actualSpent: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-// v1.41: normalise an incoming budget value into the shape Prisma's
-// Decimal column expects (null | Prisma.Decimal). Accepts numbers,
-// numeric strings, and the literal null. The Zod layer has already
-// rejected anything malformed by the time we get here — this is just
-// the type coercion + sanitisation step.
 function normaliseBudget(v: number | string | null | undefined): Prisma.Decimal | null | undefined {
   if (v === undefined) return undefined;
   if (v === null) return null;
@@ -44,8 +37,6 @@ function normaliseBudget(v: number | string | null | undefined): Prisma.Decimal 
   return new Prisma.Decimal(s);
 }
 
-// Shape the Prisma row into a ProjectView. Centralised so list / get / update
-// stay consistent and the accountable join lights up in every response.
 function toView(
   p: Awaited<ReturnType<typeof prisma.project.findFirstOrThrow>> & {
     accountable?: { name: string } | null;
@@ -60,9 +51,6 @@ function toView(
     name: p.name,
     description: p.description,
     status: p.status,
-    // v1.41: Prisma.Decimal → fixed-2-string. toFixed(2) normalises the
-    // wire shape (e.g. "1000" → "1000.00") so the SPA can format without
-    // probing for a fractional separator.
     plannedBudget: p.plannedBudget === null ? null : p.plannedBudget.toFixed(2),
     actualSpent: p.actualSpent === null ? null : p.actualSpent.toFixed(2),
     createdAt: p.createdAt,
@@ -70,8 +58,6 @@ function toView(
   };
 }
 
-// v1.17: Accountable can be set only to a member of the same team. Skip the
-// check when clearing (null). Throws 400 with a friendly message otherwise.
 async function assertAccountableInTeam(
   teamId: string,
   accountableId: string | null,
@@ -100,16 +86,6 @@ async function callerHasProjectEdit(
   return perms.has('*') || perms.has('project.edit');
 }
 
-async function canViewProject(
-  project: { teamId: string; ownerId: string | null },
-  callerUserId: string,
-  callerGlobalRole: GlobalRole,
-): Promise<boolean> {
-  if (callerGlobalRole === 'ADMIN') return true;
-  if (project.ownerId === callerUserId) return true;
-  return callerHasProjectEdit(project.teamId, callerUserId, callerGlobalRole);
-}
-
 function updateTouchesNonNameFields(input: {
   description?: string | null;
   status?: ProjectStatus;
@@ -134,7 +110,6 @@ export class ProjectsService {
       name: string;
       description?: string;
       accountableId?: string | null;
-      // v1.41: optional budget fields. Accept number | string | null.
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
     },
@@ -164,14 +139,9 @@ export class ProjectsService {
     callerUserId: string,
     callerGlobalRole: GlobalRole,
   ): Promise<ProjectView[]> {
-    const isAdmin = callerGlobalRole === 'ADMIN';
-    const managerView =
-      !isAdmin && (await callerHasProjectEdit(teamId, callerUserId, callerGlobalRole));
+    const where = await projectListWhereForCaller(teamId, callerUserId, callerGlobalRole);
     const rows = await prisma.project.findMany({
-      where: {
-        teamId,
-        ...(isAdmin || managerView ? {} : { ownerId: callerUserId }),
-      },
+      where,
       orderBy: { createdAt: 'desc' },
       include: { accountable: { select: { name: true } } },
     });
@@ -188,10 +158,8 @@ export class ProjectsService {
       where: { id: projectId },
       include: { accountable: { select: { name: true } } },
     });
-    // Same 404 whether the project doesn't exist or belongs to another team —
-    // never leak the existence of resources across tenants.
     if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
-    if (!(await canViewProject(p, callerUserId, callerGlobalRole))) {
+    if (!(await userCanAccessProject(projectId, teamId, callerUserId, callerGlobalRole, 'view'))) {
       throw Errors.notFound('Project not found');
     }
     return toView(p);
@@ -207,7 +175,6 @@ export class ProjectsService {
       description?: string | null;
       status?: ProjectStatus;
       accountableId?: string | null;
-      // v1.41: optional budget fields. undefined = leave; null = clear.
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
     },
@@ -280,48 +247,13 @@ export class ProjectsService {
     await prisma.project.delete({ where: { id: projectId } });
   }
 
-  // v1.40: cross-team visibility list for the SPA's Projects page. Returns
-  // every project the caller can see across ALL teams they belong to (or
-  // every project on the instance for global ADMINs). Each row includes
-  // the team name/slug so the SPA can render a per-row chip without a
-  // second roundtrip. Owner-scoped same as list().
   async listAllVisible(
     callerUserId: string,
     callerGlobalRole: GlobalRole,
   ): Promise<Array<ProjectView & { teamName: string; teamSlug: string }>> {
-    const isAdmin = callerGlobalRole === 'ADMIN';
-    if (isAdmin) {
-      const rows = await prisma.project.findMany({
-        orderBy: { createdAt: 'desc' },
-        include: {
-          accountable: { select: { name: true } },
-          team: { select: { name: true, slug: true } },
-        },
-      });
-      return rows.map((p) => ({
-        ...toView(p),
-        teamName: p.team.name,
-        teamSlug: p.team.slug,
-      }));
-    }
-
-    const memberships = await prisma.teamMembership.findMany({
-      where: { userId: callerUserId },
-    });
-    const editTeamIds: string[] = [];
-    for (const m of memberships) {
-      const perms = await listMembershipPermissions(m, callerGlobalRole);
-      if (perms.has('*') || perms.has('project.edit')) editTeamIds.push(m.teamId);
-    }
-    const memberTeamIds = memberships.map((m) => m.teamId);
-
+    const where = await projectListAllWhereForCaller(callerUserId, callerGlobalRole);
     const rows = await prisma.project.findMany({
-      where: {
-        OR: [
-          { ownerId: callerUserId, teamId: { in: memberTeamIds } },
-          ...(editTeamIds.length ? [{ teamId: { in: editTeamIds } }] : []),
-        ],
-      },
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         accountable: { select: { name: true } },
@@ -335,40 +267,22 @@ export class ProjectsService {
     }));
   }
 
-  // v1.39: helper for nested routes (tasks / labels / comments
-  // / subtasks / attachments / dependencies / recurrence) to enforce the
-  // same project-visibility rule at the route layer. The
-  // `requireProjectAccess` middleware in middleware/requireProjectAccess.ts
-  // wraps this helper; service code can also call it directly.
-  //
-  // Throws 404 (NOT 403) on any failure mode — matches the projects /
-  // labels precedent: never leak existence.
   async assertCallerCanAccess(
     teamId: string,
     projectId: string,
     callerUserId: string,
     callerGlobalRole: GlobalRole,
   ): Promise<void> {
-    if (callerGlobalRole === 'ADMIN') {
-      const p = await prisma.project.findUnique({
-        where: { id: projectId },
-        select: { teamId: true },
-      });
-      if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
-      return;
-    }
-    const p = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { teamId: true, ownerId: true },
-    });
-    if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
-    if (!(await canViewProject(p, callerUserId, callerGlobalRole))) {
-      throw Errors.notFound('Project not found');
-    }
-    if (p.ownerId !== callerUserId) {
-      // Managers with project.edit may read project metadata for rename, but
-      // nested routes (tasks, comments, …) remain owner-only.
-      throw Errors.notFound('Project not found');
-    }
+    const ok = await userCanAccessProject(
+      projectId,
+      teamId,
+      callerUserId,
+      callerGlobalRole,
+      'nested',
+    );
+    if (!ok) throw Errors.notFound('Project not found');
   }
 }
+
+// Re-export for middleware and tests.
+export { userCanAccessProject } from '../lib/projectAccess.js';

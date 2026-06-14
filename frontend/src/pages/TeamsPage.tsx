@@ -6,6 +6,7 @@ import * as rolesApi from '@/features/roles/api';
 import { useTeams } from '@/features/teams/TeamsContext';
 import { formatShamsiTimestampDate } from '@/lib/shamsi';
 import { visibleTeamMembers } from '@/lib/systemUser';
+import TeamGroupsPanel from '@/features/groups/TeamGroupsPanel';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -88,6 +89,7 @@ export default function TeamsPage(): JSX.Element {
   const isManager = detail?.myRole === 'MANAGER';
   const canEditDetails = detail?.capabilities?.editDetails ?? isManager;
   const canDelete = detail?.capabilities?.deleteTeam ?? false;
+  const canManageGroups = detail?.capabilities?.manageGroups ?? false;
 
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -447,6 +449,10 @@ export default function TeamsPage(): JSX.Element {
                     The user must already have a TaskHub account.
                   </p>
                 </form>
+              )}
+
+              {canManageGroups && currentTeamId && (
+                <TeamGroupsPanel teamId={currentTeamId} members={detail.members} />
               )}
             </>
           )}

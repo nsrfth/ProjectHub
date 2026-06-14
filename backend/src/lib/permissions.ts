@@ -34,6 +34,9 @@ export const PERMISSIONS = [
   'project.delete',
   'project.set_accountable',
 
+  // v1.50: team user groups — create groups, assign members, grant projects.
+  'group.manage',
+
   // Team membership + governance.
   'team.invite_member',
   'team.remove_member',
@@ -71,6 +74,7 @@ export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
   ],
   Comments: ['comment.delete_others'],
   Projects: ['project.edit', 'project.delete', 'project.set_accountable'],
+  Groups: ['group.manage'],
   Team: [
     'team.invite_member',
     'team.remove_member',

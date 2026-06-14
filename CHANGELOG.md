@@ -7,6 +7,49 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.50.0] — 2026-06-14
+
+**User Groups — grant project access to sets of team members without changing ownership.**
+
+### User Groups (backend)
+
+- New models: `UserGroup`, `UserGroupMember`, `ProjectGroupGrant` (migration
+  `20260610150000_user_groups`).
+- New permission **`group.manage`** (system Manager roles backfilled via migration).
+- **`GET/POST/PATCH/DELETE /api/teams/:teamId/groups`** — CRUD for groups.
+- **`POST …/groups/:groupId/members`**, **`DELETE …/members/:userId`** — membership.
+- **`PUT …/groups/:groupId/projects`** — idempotent replace of granted projects.
+- Cross-team validation: granted projects must belong to `:teamId` (404, no leak).
+- Group members must be team members (400 on cross-team users).
+
+### Project access (backend)
+
+- Unified helper **`userCanAccessProject(projectId, teamId, userId, globalRole, intent)`**
+  in `lib/projectAccess.ts` — single source for list/get visibility (`view`) and
+  nested routes (`nested`).
+- Access paths (additive): global ADMIN, project owner, `project.edit` manager
+  (view/rename only), **group grant** (view + nested — owner-equivalent for tasks).
+- All four call sites delegate: `ProjectsService.canViewProject`, `ProjectsService.list`
+  where-clause, `ProjectsService.assertCallerCanAccess`, `requireProjectAccess` middleware.
+
+### User Groups (frontend)
+
+- **User groups** section on team detail when `capabilities.manageGroups` is true.
+- Group editor: name/description, member multi-select, project grant multi-select.
+
+### Audit
+
+- `group.created`, `group.updated`, `group.deleted`, `group.member_added`,
+  `group.member_removed`, `group.projects_set`.
+
+### Tests
+
+- `backend/tests/integration/userGroups.test.ts` — 8 regression scenarios (owner
+  unchanged, group list/nested access, no-grant 404, cross-team isolation, removal
+  revokes, admin/manager behaviour, cascade delete).
+
+---
+
 ## [1.49.3] — 2026-06-09
 
 **Fix: Active Directory users can get team membership and create content.**

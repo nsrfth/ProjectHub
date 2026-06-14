@@ -37,6 +37,7 @@ export interface TeamDeleteBlockers {
 export interface TeamCapabilities {
   editDetails: boolean;
   deleteTeam: boolean;
+  manageGroups: boolean;
 }
 
 export interface TeamDetail extends Team {

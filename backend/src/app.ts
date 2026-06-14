@@ -30,6 +30,7 @@ import { systemRoutes } from './routes/system.js';
 import { calendarRoutes } from './routes/calendar.js';
 import { trashRoutes } from './routes/trash.js';
 import { rolesRoutes } from './routes/roles.js';
+import { userGroupsRoutes } from './routes/userGroups.js';
 import { backupsRoutes } from './routes/backups.js';
 import { taskhubRoutes } from './routes/taskhub.js';
 import { securitySettingsRoutes } from './routes/securitySettings.js';
@@ -190,6 +191,8 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     // v1.23: per-team custom roles + permission matrix. Listing is open
     // to any team member; mutations gated by team.manage_roles.
     await api.register(rolesRoutes, { prefix: '/teams/:teamId/roles' });
+    // v1.50: team user groups for project access grants.
+    await api.register(userGroupsRoutes, { prefix: '/teams/:teamId/groups' });
   }, { prefix: '/api' });
 
   app.addHook('onClose', async () => {

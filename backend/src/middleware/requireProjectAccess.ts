@@ -1,25 +1,10 @@
 import type { preHandlerHookHandler } from 'fastify';
-import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { userCanAccessProject } from '../lib/projectAccess.js';
 
-// v1.39 (BREAKING): project-visibility gate for every route nested under
-// /teams/:teamId/projects/:projectId/*.
-//
-// Pre-v1.39 the route layer only checked team membership (requireTeamRole),
-// which meant any team member could URL-guess `/projects/P/tasks` and
-// reach a project they couldn't see in the projects list. With v1.39's
-// projects-list filter (non-ADMIN sees only own projects), that bypass
-// would have made the change cosmetic.
-//
-// Gate semantics — mirrors ProjectsService.assertCallerCanAccess:
-//   - globalRole === 'ADMIN' → bypass (admin still requires the project
-//     to actually exist in the named team).
-//   - everyone else → require Project.ownerId === request.user.sub.
-//   - any failure → 404, never 403 (no existence leak).
-//
-// Hook order: install AFTER requireAuth + requireTeamRole. Reads
-// request.user (populated by requireAuth) and the {teamId, projectId} URL
-// params. Hit is one Prisma findUnique per nested-route request — cheap.
+// Project-visibility gate for /teams/:teamId/projects/:projectId/* nested routes.
+// Delegates to userCanAccessProject(..., 'nested') so group grants and owners
+// pass; project.edit managers do not.
 
 export function requireProjectAccess(): preHandlerHookHandler {
   return async (request) => {
@@ -31,16 +16,13 @@ export function requireProjectAccess(): preHandlerHookHandler {
       );
     }
 
-    const project = await prisma.project.findUnique({
-      where: { id: params.projectId },
-      select: { teamId: true, ownerId: true },
-    });
-    if (!project || project.teamId !== params.teamId) {
-      throw Errors.notFound('Project not found');
-    }
-    if (request.user.globalRole === 'ADMIN') return;
-    if (project.ownerId !== request.user.sub) {
-      throw Errors.notFound('Project not found');
-    }
+    const ok = await userCanAccessProject(
+      params.projectId,
+      params.teamId,
+      request.user.sub,
+      request.user.globalRole,
+      'nested',
+    );
+    if (!ok) throw Errors.notFound('Project not found');
   };
 }

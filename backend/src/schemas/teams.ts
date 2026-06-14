@@ -82,6 +82,7 @@ export const teamDeleteBlockersResponse = z.object({
 export const teamCapabilitiesResponse = z.object({
   editDetails: z.boolean(),
   deleteTeam: z.boolean(),
+  manageGroups: z.boolean(),
 });
 
 export const teamDetailResponse = teamResponse.extend({

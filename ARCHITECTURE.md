@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v1.45.0 (2026-06-09)
+**Version:** v1.50.0 (2026-06-14)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -231,6 +231,37 @@ PUT  /api/me/project-buckets/assignments  → replace memberships for one projec
 UI: `features/projectBuckets/` — `ProjectBucketBoard` (dnd-kit), filters,
 `localStorage` for view mode + collapsed columns. Future: shared buckets,
 smart/rule-based buckets can extend the same tables with a `scope` column.
+
+## User Groups & project access (v1.50)
+
+Project visibility is **owner-based** by default (v1.39). v1.50 adds an
+**additive** path: team managers (or admins) define **User Groups**, add team
+members, and grant one or more projects to a group. A user in a granting group
+gets the same **list/get visibility and nested-route access** (tasks, comments,
+labels, …) as the project owner — without becoming owner and without broadening
+default member visibility.
+
+```
+lib/projectAccess.ts
+  userCanAccessProject(projectId, teamId, userId, globalRole, intent: 'view' | 'nested')
+  projectListWhereForCaller / projectListAllWhereForCaller
+
+services/userGroupsService.ts  → CRUD + grants
+routes/userGroups.ts           → /api/teams/:teamId/groups
+```
+
+Access decision order in `userCanAccessProject`:
+
+1. Global `ADMIN` → always.
+2. `project.ownerId === userId` → always.
+3. `intent === 'view'` + caller has `project.edit` on the team → list/rename visibility only.
+4. Group grant (`ProjectGroupGrant` + `UserGroupMember`) → view **and** nested.
+
+The middleware (`requireProjectAccess`) and service gate (`assertCallerCanAccess`)
+both call `userCanAccessProject(..., 'nested')` — never a duplicate owner check.
+
+Mutations require `group.manage` (on system Manager by default). Listing/detail
+is open to any team member so the grant UI can populate project pickers.
 
 ## Dashboard (v1.46)
 
