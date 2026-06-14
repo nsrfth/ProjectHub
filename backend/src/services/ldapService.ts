@@ -3,6 +3,7 @@ import type { ConnectionOptions } from 'node:tls';
 import { Client } from 'ldapts';
 import { decrypt } from '../lib/crypto.js';
 import { Errors } from '../lib/errors.js';
+import { mergeGroupDns } from '../lib/ldapDn.js';
 
 // Result of a successful LDAP authentication or profile lookup.
 export interface LdapAuthResult {
@@ -124,8 +125,16 @@ const PROFILE_ATTRS = (directory: Directory) => [
   'department',
   'title',
   'manager',
+  'memberOf',
   'dn',
 ];
+
+function entryAttrMulti(entry: Record<string, unknown>, name: string): string[] {
+  const v = entry[name];
+  if (v == null) return [];
+  if (Array.isArray(v)) return v.map(String);
+  return [String(v)];
+}
 
 function profileFromEntry(
   directory: Directory,
@@ -174,15 +183,16 @@ export class LdapService {
       return null;
     }
 
-    const groups = await this.fetchGroups(directory, resolvedProfile.dn).catch(() => [] as string[]);
-    return { ...resolvedProfile, groups };
+    const memberOf = resolvedProfile.memberOf;
+    const searched = await this.fetchGroups(directory, resolvedProfile.dn).catch(() => [] as string[]);
+    return { ...resolvedProfile, groups: mergeGroupDns(memberOf, searched) };
   }
 
   private async searchUserProfile(
     directory: Directory,
     identifier: string,
     bindPassword: string,
-  ): Promise<Omit<LdapAuthResult, 'groups'> | null> {
+  ): Promise<(Omit<LdapAuthResult, 'groups'> & { memberOf: string[] }) | null> {
     return withClient(directory, async (adminClient) => {
       await adminClient.bind(directory.bindDN!, bindPassword);
 
@@ -205,7 +215,10 @@ export class LdapService {
       const managerName = managerDn
         ? await this.resolveManagerName(adminClient, managerDn)
         : null;
-      return profileFromEntry(directory, entry, identifier, managerName);
+      return {
+        ...profileFromEntry(directory, entry, identifier, managerName),
+        memberOf: entryAttrMulti(entry, 'memberOf'),
+      };
     });
   }
 
@@ -230,8 +243,9 @@ export class LdapService {
         ? await this.resolveManagerName(client, managerDn)
         : null;
       const profile = profileFromEntry(directory, entry, userDn, managerName);
-      const groups = await this.fetchGroups(directory, userDn).catch(() => [] as string[]);
-      return { ...profile, groups };
+      const memberOf = entryAttrMulti(entry, 'memberOf');
+      const searched = await this.fetchGroups(directory, userDn).catch(() => [] as string[]);
+      return { ...profile, groups: mergeGroupDns(memberOf, searched) };
     });
   }
 

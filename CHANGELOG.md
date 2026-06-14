@@ -7,38 +7,19 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
-## [1.49.2] — 2026-06-10
+## [1.49.3] — 2026-06-09
 
-### Fixed
+**Fix: Active Directory users can get team membership and create content.**
 
-- **Backend crash on boot** — `ensureSystemRoles` failed when seed-created Manager/Member
-  roles used auto-generated ids (unique on `teamId`+`name`). Server now resolves
-  existing roles by name before creating, fixing login/API outage on localhost.
+- LDAP group sync now matches DNs **case-insensitively** (AD `memberOf` vs
+  admin-entered mapping DNs).
+- User profile reads **`memberOf`** from the LDAP entry and merges it with
+  group search results — typical AD setups no longer miss group membership.
+- Admin **Refresh from directory** now re-syncs group mappings (was skipping
+  groups).
+- Team creators get a proper **`roleId`** on their Manager membership.
 
-## [1.49.1] — 2026-06-10
-
-### Fixed
-
-- **System admin still visible in Teams** — strengthened API filtering (email +
-  userId), boot-time `isSystemUser` flag sync, configurable `SYSTEM_USER_EMAIL`,
-  and frontend `visibleTeamMembers()` filter on all team-member UIs.
-
-## [1.49.0] — 2026-06-10
-
-**Hidden system team manager** — `admin@taskhub.local` is automatically assigned
-as MANAGER on every team (existing and new) but is excluded from all user-facing
-API responses and protected from admin/team mutations.
-
-### Backend
-
-- New `User.isSystemUser` flag; migration marks `admin@taskhub.local`.
-- `ensureSystemManagerOnTeam` / `bootstrapSystemManagerOnAllTeams` (idempotent;
-  runs on server boot and team create).
-- Team member lists, admin user list, SCIM group members, and audit/activity
-  actor fields filter or mask the system account.
-- System manager cannot be removed, demoted, deleted, or password-reset via API.
-- Last-human-MANAGER guards exclude the hidden system manager.
-- Audit: `system.manager_assigned` / `system.manager_backfill` with `actorId: null`.
+---
 
 ## [1.48.0] — 2026-06-10
 

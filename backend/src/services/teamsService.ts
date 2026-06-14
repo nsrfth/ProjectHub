@@ -4,6 +4,7 @@ import { Errors } from '../lib/errors.js';
 import type { Permission } from '../lib/permissions.js';
 import { listMembershipPermissions } from '../middleware/requirePermission.js';
 import { logActivity } from './activityLogger.js';
+import { systemRoleIdFor } from '../lib/teamRoles.js';
 import {
   assertNotSystemUserTarget,
   countHumanManagers,
@@ -71,6 +72,11 @@ export class TeamsService {
         },
       });
       await ensureSystemManagerOnTeam(team.id);
+      const managerRoleId = await systemRoleIdFor(team.id, 'MANAGER');
+      await prisma.teamMembership.update({
+        where: { userId_teamId: { userId: creatorId, teamId: team.id } },
+        data: { roleId: managerRoleId },
+      });
       await logActivity(prisma, {
         actorId: null,
         teamId: team.id,

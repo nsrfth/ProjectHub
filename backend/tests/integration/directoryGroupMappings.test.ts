@@ -243,4 +243,21 @@ describe('S-6 / S-7 directory group mappings populate roleId', () => {
       }),
     ).toBeNull();
   });
+
+  it('matches group DNs case-insensitively (AD memberOf vs admin mapping)', async () => {
+    const { directoryId, userId, teamId } = await setupDirectoryAndUser();
+    const mappingDn = 'CN=Team-Alpha-Members,OU=Groups,DC=modalalco,DC=com';
+    await prisma.directoryGroupMapping.create({
+      data: { directoryId, externalGroupDn: mappingDn, teamId, teamRole: 'MEMBER' },
+    });
+    const adMemberOf = 'cn=team-alpha-members,ou=groups,dc=modalalco,dc=com';
+    await authService.applyDirectoryGroups(userId, directoryId, [adMemberOf]);
+
+    const membership = await prisma.teamMembership.findUnique({
+      where: { userId_teamId: { userId, teamId } },
+    });
+    expect(membership).not.toBeNull();
+    expect(membership!.role).toBe('MEMBER');
+    expect(membership!.roleId).not.toBeNull();
+  });
 });

@@ -9,6 +9,7 @@ import { DirectoryService } from './directoryService.js';
 import { isLdapInfrastructureError, LdapService, type LdapAuthResult } from './ldapService.js';
 import { TwoFactorService } from './twoFactorService.js';
 import { emailService } from './emailService.js';
+import { groupDnsMatch } from '../lib/ldapDn.js';
 import { systemRoleIdFor } from '../lib/teamRoles.js';
 import { passwordPolicyService } from './passwordPolicyService.js';
 
@@ -227,7 +228,7 @@ export class AuthService {
       throw e;
     }
     if (!result) throw Errors.notFound('User no longer exists in the directory');
-    await this.syncFromLdap(user, dir.id, result, { skipGroups: true });
+    await this.syncFromLdap(user, dir.id, result);
     const refreshed = await prisma.user.findUnique({ where: { id: userId } });
     if (!refreshed) throw Errors.notFound('User not found');
     return refreshed;
@@ -383,7 +384,7 @@ export class AuthService {
     if (!dir?.syncRolesFromGroups) return;
 
     const mappings = await prisma.directoryGroupMapping.findMany({ where: { directoryId } });
-    const matched = mappings.filter((m) => groupDns.includes(m.externalGroupDn));
+    const matched = mappings.filter((m) => groupDnsMatch(groupDns, m.externalGroupDn));
 
     // Highest-rank global role wins. ADMIN > MEMBER.
     const globalRoles = matched.map((m) => m.globalRole).filter(Boolean);
