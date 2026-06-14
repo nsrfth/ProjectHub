@@ -33,6 +33,7 @@ import { rolesRoutes } from './routes/roles.js';
 import { groupInvitesRoutes } from './routes/groupInvites.js';
 import { userGroupsRoutes } from './routes/userGroups.js';
 import { customFieldsRoutes, taskCustomFieldsRoutes } from './routes/customFields.js';
+import { automationsRoutes } from './routes/automations.js';
 import { backupsRoutes } from './routes/backups.js';
 import { taskhubRoutes } from './routes/taskhub.js';
 import { securitySettingsRoutes } from './routes/securitySettings.js';
@@ -201,6 +202,7 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(taskCustomFieldsRoutes, {
       prefix: '/teams/:teamId/projects/:projectId/tasks/:taskId/custom-fields',
     });
+    await api.register(automationsRoutes, { prefix: '/teams/:teamId/automations' });
   }, { prefix: '/api' });
 
   app.addHook('onClose', async () => {

@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v1.59.0 (2026-06-09)
+**Version:** v1.60.0 (2026-06-09)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -128,6 +128,7 @@ session tokens. Same reason we hash passwords.
 | `Notification` model rather than per-feature flags | Single inbox query; consistent shape across notification sources; easy to mark-all-read. |
 | Custom field values (v1.58) | Definitions are team-scoped (`CustomFieldDefinition` + `CustomFieldOption`). Values live in `CustomFieldValue` with **typed columns** per field kind (`valueText`, `valueNumber DECIMAL(18,4)`, `valueDate`, `valueBool`, `valueUserId`) and `CustomFieldValueOption` for select types — deliberately **not** a JSON blob so dashboards/automation can filter and sort. One row per `(fieldId, taskId)` with upsert semantics. Project-scoped field restriction is deferred; v1 is team-wide vocabulary like labels. TEXT values do not yet feed `Task.searchVector` (would require tsvector trigger rework). |
 | Budget currency (v1.59) | `Currency` enum (`IRR`, `EUR`, `USD`). `Team.defaultCurrency` pre-fills `Project.budgetCurrency` on create; tasks inherit the parent project's currency via join (no task column). Amounts stay `Decimal(18,2)` — IRR displays with 0 fraction digits; no exchange-rate or conversion logic. |
+| Automation rules (v1.60) | `AutomationRule` + `AutomationCondition` + `AutomationAction` + `AutomationRun` (team-scoped). Engine runs **after-commit** beside webhooks; loop guard = shared `(ruleId,taskId)` fired-set + max depth 5; actions call real services (tasks, labels, custom fields, comments). Permission: `automation.manage`. |
 
 ## Error responses
 

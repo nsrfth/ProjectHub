@@ -7,6 +7,26 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.60.0] — 2026-06-09
+
+**Automation rules — no-code trigger → conditions → actions engine (Tier A).**
+
+### Automation (backend + frontend)
+
+- Team-scoped **automation rules** with v1 triggers (`task.created`, `task.status_changed`,
+  `task.updated`, `task.assigned`, `task.custom_field_changed`), flat ALL/ANY condition
+  groups, and actions (set status/priority/assignee, labels, custom fields, comments,
+  notifications).
+- **Post-commit engine** hooks the same task mutation points as webhooks — never inside
+  transactions. **Loop guard**: shared `(ruleId, taskId)` fired-set plus max depth **5** per
+  originating chain; exceeding depth logs ERROR and halts.
+- **AutomationRun** audit log per evaluation (SUCCESS / SKIPPED / ERROR). Action failures
+  are isolated — one bad action logs ERROR and remaining actions still run.
+- New permission **`automation.manage`** (default Manager). Settings → **Automations** rule
+  builder + run log view. Custom-field-aware conditions and actions reuse typed validators.
+
+---
+
 ## [1.59.0] — 2026-06-09
 
 **Budget currency — IRR / EUR / USD on project budgets with team default.**
