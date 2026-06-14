@@ -66,7 +66,7 @@ export async function projectsRoutes(app: FastifyInstance): Promise<void> {
     preHandler: requireScope('projects:write'),
     schema: {
       tags: ['projects'],
-      summary: 'Update a project (owner OR team MANAGER)',
+      summary: 'Update a project (owner or ADMIN: full edit; manager: rename only)',
       params: z.object({ teamId: z.string(), projectId: z.string() }),
       body: updateProjectBody,
       response: { 200: projectResponse },

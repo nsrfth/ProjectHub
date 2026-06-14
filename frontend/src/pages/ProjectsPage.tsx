@@ -171,6 +171,21 @@ export default function ProjectsPage(): JSX.Element {
     onSuccess: invalidateBuckets,
   });
 
+  const managerTeamIds = useMemo(
+    () => new Set(teams.filter((t) => t.myRole === 'MANAGER').map((t) => t.id)),
+    [teams],
+  );
+
+  const updateNameMut = useMutation({
+    mutationFn: (args: { teamId: string; projectId: string; name: string }) =>
+      projectsApi.updateProject(args.teamId, args.projectId, { name: args.name }),
+    onSuccess: async (_d, vars) => {
+      await qc.invalidateQueries({ queryKey: ['projects', 'all'] });
+      await qc.invalidateQueries({ queryKey: ['projects', vars.teamId] });
+    },
+    onError: (err) => window.alert(errorMessage(err, 'Could not rename project')),
+  });
+
   const updateBudgetMut = useMutation({
     mutationFn: (args: {
       teamId: string;
@@ -399,8 +414,17 @@ export default function ProjectsPage(): JSX.Element {
                 project={p}
                 userId={user?.id}
                 isAdmin={!!isAdmin}
+                canRename={
+                  p.ownerId === user?.id
+                  || isAdmin
+                  || managerTeamIds.has(p.teamId)
+                }
                 bucketNames={bucketNamesByProject.get(p.id) ?? []}
                 onOpen={() => nav(`/projects/${p.id}/tasks`)}
+                onRename={(name) =>
+                  updateNameMut.mutate({ teamId: p.teamId, projectId: p.id, name })
+                }
+                renamePending={updateNameMut.isPending}
                 onDelete={() => {
                   if (window.confirm(`Delete project "${p.name}"?`)) {
                     deleteMut.mutate({ teamId: p.teamId, projectId: p.id });
@@ -532,8 +556,11 @@ function ProjectListRow({
   project,
   userId,
   isAdmin,
+  canRename,
   bucketNames,
   onOpen,
+  onRename,
+  renamePending,
   onDelete,
   deletePending,
   onSaveBudget,
@@ -543,8 +570,11 @@ function ProjectListRow({
   project: projectsApi.ProjectCrossTeam;
   userId?: string;
   isAdmin: boolean;
+  canRename: boolean;
   bucketNames: string[];
   onOpen: () => void;
+  onRename: (name: string) => void;
+  renamePending: boolean;
   onDelete: () => void;
   deletePending: boolean;
   onSaveBudget: (planned: string | null, actual: string | null) => void;
@@ -552,20 +582,69 @@ function ProjectListRow({
   bucketMenu: React.ReactNode;
 }): JSX.Element {
   const canEdit = project.ownerId === userId || isAdmin;
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState(project.name);
+
+  useEffect(() => {
+    if (!editingName) setDraftName(project.name);
+  }, [project.name, editingName]);
+
+  function commitRename(): void {
+    const trimmed = draftName.trim();
+    setEditingName(false);
+    if (!trimmed || trimmed === project.name) return;
+    onRename(trimmed);
+  }
+
   return (
     <li className="py-3">
       <div className="flex items-start justify-between gap-4">
-        <button type="button" onClick={onOpen} className="text-left min-w-0 flex-1 hover:underline">
-          <div className="flex items-center gap-2">
-            <p className="font-medium truncate">{project.name}</p>
+        <div className="text-left min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            {editingName ? (
+              <input
+                type="text"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') {
+                    setDraftName(project.name);
+                    setEditingName(false);
+                  }
+                }}
+                disabled={renamePending}
+                autoFocus
+                maxLength={120}
+                className="font-medium rounded border px-2 py-0.5 text-sm dark:bg-slate-700 min-w-[8rem] flex-1"
+              />
+            ) : (
+              <button type="button" onClick={onOpen} className="font-medium truncate hover:underline">
+                {project.name}
+              </button>
+            )}
+            {canRename && !editingName && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingName(true);
+                }}
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+                title="Rename project"
+              >
+                Rename
+              </button>
+            )}
             <span className="text-xs uppercase tracking-wide text-slate-500 shrink-0">
               {STATUS_LABEL[project.status]}
             </span>
           </div>
           {project.description && (
-            <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5 truncate">
+            <button type="button" onClick={onOpen} className="text-sm text-slate-600 dark:text-slate-300 mt-0.5 truncate block hover:underline w-full text-left">
               {project.description}
-            </p>
+            </button>
           )}
           {bucketNames.length > 0 && (
             <p className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-0.5 truncate">
@@ -577,7 +656,7 @@ function ProjectListRow({
             {' · '}
             <span dir="rtl">ایجاد {formatShamsiTimestampDate(project.createdAt)}</span>
           </p>
-        </button>
+        </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
           {bucketMenu}
           <span className="text-[11px] uppercase rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5">

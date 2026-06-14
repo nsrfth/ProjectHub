@@ -240,15 +240,10 @@ describe('PATCH /api/teams/:teamId/projects/:projectId', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  // v1.39 (BREAKING): a team MANAGER no longer auto-bypasses the
-  // visibility gate. Only ADMIN bypasses; everyone else (MANAGER + MEMBER)
-  // can only edit projects they own. Pre-v1.39 the manager could edit
-  // any project in their team via the `project.edit` permission.
-  it('returns 404 when a team MANAGER tries to edit someone elses project (v1.39 visibility gate)', async () => {
-    // Bootstrap an admin to own the team (first user auto-promotes to ADMIN),
-    // then create an explicit MEMBER-globalRole user that we hand the team
-    // MANAGER role to. v1.39: being a team MANAGER no longer bypasses the
-    // visibility gate — only globalRole === 'ADMIN' does.
+  // v1.39 (BREAKING): a team MANAGER with `project.edit` may rename
+  // (`name` only) projects they do not own. Full edit/delete remains
+  // owner-or-global-ADMIN.
+  it('allows a team MANAGER to rename someone elses project (name only)', async () => {
     const tokenAdmin = await registerUser('admin@example.com');
     const tokenManager = await registerMember('mgr@example.com');
     const tokenOwner = await registerMember('owner@example.com');
@@ -265,13 +260,22 @@ describe('PATCH /api/teams/:teamId/projects/:projectId', () => {
       })
     ).json();
 
-    const res = await inject({
+    const rename = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${tokenManager}` },
+      payload: { name: 'Renamed by manager' },
+    });
+    expect(rename.statusCode).toBe(200);
+    expect(rename.json().name).toBe('Renamed by manager');
+
+    const status = await inject({
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${proj.id}`,
       headers: { authorization: `Bearer ${tokenManager}` },
       payload: { status: 'ON_HOLD' },
     });
-    expect(res.statusCode).toBe(404);
+    expect(status.statusCode).toBe(403);
   });
 });
 
@@ -322,14 +326,46 @@ describe('DELETE /api/teams/:teamId/projects/:projectId', () => {
   });
 });
 
-// v1.39 (BREAKING) — project visibility tiering:
+// v1.39 project visibility tiering (+ manager rename via project.edit):
 //   - globalRole === 'ADMIN' → sees / manages every project in the team
-//   - everyone else (incl. team MANAGER)  → sees / manages only their
-//     own projects (Project.ownerId === userId)
-// The cascade middleware extends the same rule to /projects/:projectId/*
-// nested routes (tasks, comments, etc.) so URL-guessing past
-// the projects list filter returns 404.
+//   - project owner → sees / manages own projects (full edit)
+//   - team member with project.edit (default: Manager) → sees all team
+//     projects; may rename others' projects (name only)
+//   - everyone else → own projects only
+// Nested task/comment routes remain owner-only (requireProjectAccess).
 describe('v1.39 project visibility tiering', () => {
+  it('list — team MANAGER with project.edit sees every project on the team', async () => {
+    const adminToken = await registerUser('admin@example.com');
+    const managerToken = await registerMember('mgr@example.com');
+    const memberToken = await registerMember('member@example.com');
+    const team = await createTeam(adminToken, 'acme');
+    await addMember(adminToken, team.id, 'mgr@example.com', 'MANAGER');
+    await addMember(adminToken, team.id, 'member@example.com', 'MEMBER');
+
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${memberToken}` },
+      payload: { name: 'Member Project' },
+    });
+    const mgrProj = (await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${managerToken}` },
+      payload: { name: 'Manager Project' },
+    })).json();
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${managerToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const names = (res.json() as Array<{ name: string }>).map((p) => p.name).sort();
+    expect(names).toEqual(['Manager Project', 'Member Project']);
+    expect(mgrProj.name).toBe('Manager Project');
+  });
+
   it('list — MEMBER sees only projects they own', async () => {
     // The first bootstrapped user is an admin (auto-promote). Use that
     // as the team-owner / counterparty, then make a plain MEMBER with

@@ -1,19 +1,14 @@
 import { Prisma, type GlobalRole, type ProjectStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
-// v1.39 (BREAKING): project visibility tightened.
+import { listMembershipPermissions } from '../middleware/requirePermission.js';
+// v1.39 (BREAKING): project visibility tightened for most callers.
 // - globalRole === 'ADMIN' → sees and manages every project on the team.
-// - everyone else → sees and manages only their own projects
-//   (Project.ownerId === userId). Being a team MANAGER no longer grants
-//   cross-project rights.
-// - Nested routes (tasks/comments/subtasks/...) cascade the same
-//   gate via middleware/requireProjectAccess.ts; URL-guessing past a
-//   non-owned project gives 404 just like the projects/list filter does.
-//
-// The v1.23 `project.edit` / `project.delete` / `project.set_accountable`
-// permission checks that were here pre-v1.39 are now dead code (a non-owner
-// non-admin 404s at the get() gate). The userHasPermission import is gone
-// with them.
+// - project owner → sees and manages their own project (full edit).
+// - team member with `project.edit` (default: Manager role) → sees every
+//   project on the team and may rename (`name` only) projects they do not
+//   own. Other fields remain owner-or-ADMIN.
+// - everyone else → own projects only.
 
 export interface ProjectView {
   id: string;
@@ -91,6 +86,46 @@ async function assertAccountableInTeam(
   }
 }
 
+async function callerHasProjectEdit(
+  teamId: string,
+  callerUserId: string,
+  callerGlobalRole: GlobalRole,
+): Promise<boolean> {
+  if (callerGlobalRole === 'ADMIN') return true;
+  const membership = await prisma.teamMembership.findUnique({
+    where: { userId_teamId: { userId: callerUserId, teamId } },
+  });
+  if (!membership) return false;
+  const perms = await listMembershipPermissions(membership, callerGlobalRole);
+  return perms.has('*') || perms.has('project.edit');
+}
+
+async function canViewProject(
+  project: { teamId: string; ownerId: string | null },
+  callerUserId: string,
+  callerGlobalRole: GlobalRole,
+): Promise<boolean> {
+  if (callerGlobalRole === 'ADMIN') return true;
+  if (project.ownerId === callerUserId) return true;
+  return callerHasProjectEdit(project.teamId, callerUserId, callerGlobalRole);
+}
+
+function updateTouchesNonNameFields(input: {
+  description?: string | null;
+  status?: ProjectStatus;
+  accountableId?: string | null;
+  plannedBudget?: number | string | null;
+  actualSpent?: number | string | null;
+}): boolean {
+  return (
+    input.description !== undefined
+    || input.status !== undefined
+    || input.accountableId !== undefined
+    || input.plannedBudget !== undefined
+    || input.actualSpent !== undefined
+  );
+}
+
 export class ProjectsService {
   async create(
     teamId: string,
@@ -124,25 +159,18 @@ export class ProjectsService {
     return toView(p);
   }
 
-  // v1.39 (BREAKING): non-ADMIN callers see only projects they own.
-  // Global ADMINs (req.user.globalRole === 'ADMIN') bypass the filter and
-  // see every project on the team. Team MANAGERs are no longer privileged
-  // for visibility — being a MANAGER doesn't grant cross-project rights.
-  //
-  // Pre-v1.39: any team member saw every project in the team.
   async list(
     teamId: string,
     callerUserId: string,
     callerGlobalRole: GlobalRole,
   ): Promise<ProjectView[]> {
     const isAdmin = callerGlobalRole === 'ADMIN';
+    const managerView =
+      !isAdmin && (await callerHasProjectEdit(teamId, callerUserId, callerGlobalRole));
     const rows = await prisma.project.findMany({
       where: {
         teamId,
-        // ownerId IS NULL projects (owner was deleted) remain invisible to
-        // non-admins. Admins can reassign via a future ownership-transfer
-        // endpoint or by hand in the DB.
-        ...(isAdmin ? {} : { ownerId: callerUserId }),
+        ...(isAdmin || managerView ? {} : { ownerId: callerUserId }),
       },
       orderBy: { createdAt: 'desc' },
       include: { accountable: { select: { name: true } } },
@@ -150,12 +178,6 @@ export class ProjectsService {
     return rows.map(toView);
   }
 
-  // v1.39 (BREAKING): non-ADMIN callers get 404 on any project they don't
-  // own — even if they're in the project's team. The 404 (vs 403) matches
-  // the projects/labels precedent: never leak existence of resources the
-  // caller can't see.
-  //
-  // Pre-v1.39: any team member could read any project in the team.
   async get(
     teamId: string,
     projectId: string,
@@ -169,8 +191,7 @@ export class ProjectsService {
     // Same 404 whether the project doesn't exist or belongs to another team —
     // never leak the existence of resources across tenants.
     if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
-    // v1.39 visibility gate.
-    if (callerGlobalRole !== 'ADMIN' && p.ownerId !== callerUserId) {
+    if (!(await canViewProject(p, callerUserId, callerGlobalRole))) {
       throw Errors.notFound('Project not found');
     }
     return toView(p);
@@ -191,11 +212,29 @@ export class ProjectsService {
       actualSpent?: number | string | null;
     },
   ): Promise<ProjectView> {
-    // v1.39: get() applies the visibility gate. Non-ADMIN non-owner 404s
-    // before we ever touch the data — the pre-v1.39 v1.23 `project.edit` /
-    // `project.set_accountable` permission checks are dead code after the
-    // gate, removed.
-    await this.get(teamId, projectId, callerId, callerGlobalRole);
+    const p = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { teamId: true, ownerId: true },
+    });
+    if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
+
+    const isOwner = p.ownerId === callerId;
+    const isAdmin = callerGlobalRole === 'ADMIN';
+    const canRenameOthers =
+      !isOwner && !isAdmin && (await callerHasProjectEdit(teamId, callerId, callerGlobalRole));
+
+    if (!isOwner && !isAdmin && !canRenameOthers) {
+      throw Errors.notFound('Project not found');
+    }
+    if (canRenameOthers) {
+      if (updateTouchesNonNameFields(input)) {
+        throw Errors.forbidden('Managers may only rename projects they do not own');
+      }
+      if (input.name === undefined) {
+        throw Errors.badRequest('Provide a name to rename this project');
+      }
+    }
+
     if (input.accountableId !== undefined) {
       await assertAccountableInTeam(teamId, input.accountableId);
     }
@@ -229,9 +268,14 @@ export class ProjectsService {
     callerId: string,
     callerGlobalRole: GlobalRole,
   ): Promise<void> {
-    // v1.39: same as update() — the get() gate makes the v1.23
-    // `project.delete` permission check below dead code, removed.
-    await this.get(teamId, projectId, callerId, callerGlobalRole);
+    const p = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { teamId: true, ownerId: true },
+    });
+    if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
+    if (callerGlobalRole !== 'ADMIN' && p.ownerId !== callerId) {
+      throw Errors.notFound('Project not found');
+    }
     await prisma.userProjectBucketItem.deleteMany({ where: { projectId } });
     await prisma.project.delete({ where: { id: projectId } });
   }
@@ -246,21 +290,37 @@ export class ProjectsService {
     callerGlobalRole: GlobalRole,
   ): Promise<Array<ProjectView & { teamName: string; teamSlug: string }>> {
     const isAdmin = callerGlobalRole === 'ADMIN';
-    let teamFilter: { in: string[] } | undefined;
-    if (!isAdmin) {
-      // Cap the scope to teams the caller actually belongs to, so an
-      // owner-orphaned project from a team they left doesn't surface.
-      // Admins skip the membership filter (they see the instance).
-      const memberships = await prisma.teamMembership.findMany({
-        where: { userId: callerUserId },
-        select: { teamId: true },
+    if (isAdmin) {
+      const rows = await prisma.project.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: {
+          accountable: { select: { name: true } },
+          team: { select: { name: true, slug: true } },
+        },
       });
-      teamFilter = { in: memberships.map((m) => m.teamId) };
+      return rows.map((p) => ({
+        ...toView(p),
+        teamName: p.team.name,
+        teamSlug: p.team.slug,
+      }));
     }
+
+    const memberships = await prisma.teamMembership.findMany({
+      where: { userId: callerUserId },
+    });
+    const editTeamIds: string[] = [];
+    for (const m of memberships) {
+      const perms = await listMembershipPermissions(m, callerGlobalRole);
+      if (perms.has('*') || perms.has('project.edit')) editTeamIds.push(m.teamId);
+    }
+    const memberTeamIds = memberships.map((m) => m.teamId);
+
     const rows = await prisma.project.findMany({
       where: {
-        ...(teamFilter ? { teamId: teamFilter } : {}),
-        ...(isAdmin ? {} : { ownerId: callerUserId }),
+        OR: [
+          { ownerId: callerUserId, teamId: { in: memberTeamIds } },
+          ...(editTeamIds.length ? [{ teamId: { in: editTeamIds } }] : []),
+        ],
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -290,7 +350,6 @@ export class ProjectsService {
     callerGlobalRole: GlobalRole,
   ): Promise<void> {
     if (callerGlobalRole === 'ADMIN') {
-      // Admins still need the project to actually exist in this team.
       const p = await prisma.project.findUnique({
         where: { id: projectId },
         select: { teamId: true },
@@ -302,7 +361,13 @@ export class ProjectsService {
       where: { id: projectId },
       select: { teamId: true, ownerId: true },
     });
-    if (!p || p.teamId !== teamId || p.ownerId !== callerUserId) {
+    if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
+    if (!(await canViewProject(p, callerUserId, callerGlobalRole))) {
+      throw Errors.notFound('Project not found');
+    }
+    if (p.ownerId !== callerUserId) {
+      // Managers with project.edit may read project metadata for rename, but
+      // nested routes (tasks, comments, …) remain owner-only.
       throw Errors.notFound('Project not found');
     }
   }
