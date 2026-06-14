@@ -8,6 +8,11 @@ import {
   periodKey,
   utcMidnight,
 } from '../lib/recurrence.js';
+import { WorkingDayCalendar } from '../lib/workingDays.js';
+import {
+  logDueDateRoll,
+  readSchedulingSettings,
+} from '../lib/schedulingSettings.js';
 
 // Manage the TaskTemplate row attached to a source Task. Each task can have
 // at most one template (sourceTaskId is UNIQUE in the schema).
@@ -155,6 +160,9 @@ export class TaskTemplatesService {
     });
 
     let spawned = 0;
+    const scheduling = await readSchedulingSettings();
+    const cal = await WorkingDayCalendar.load();
+
     for (const t of ready) {
       // maxCount cap.
       if (t.maxCount !== null && t.spawnedCount >= t.maxCount) {
@@ -182,9 +190,25 @@ export class TaskTemplatesService {
       try {
         await prisma.$transaction(async (tx) => {
           const src = t.sourceTask;
-          const dueDate = t.dueOffsetDays !== null ? addDays(spawnDate, t.dueOffsetDays) : null;
-          const plannedDate = t.plannedOffsetDays !== null ? addDays(spawnDate, t.plannedOffsetDays) : null;
-          await tx.task.create({
+          let dueDate =
+            t.dueOffsetDays !== null
+              ? scheduling.workingDaysOnly
+                ? cal.addWorkingDays(spawnDate, t.dueOffsetDays)
+                : addDays(spawnDate, t.dueOffsetDays)
+              : null;
+          let dueRoll: { from: string; to: string } | null = null;
+          if (dueDate && scheduling.rollOffdayDueDates && cal.isOffDay(dueDate)) {
+            const from = dueDate.toISOString();
+            dueDate = cal.nextWorkingDay(dueDate);
+            dueRoll = { from, to: dueDate.toISOString() };
+          }
+          const plannedDate =
+            t.plannedOffsetDays !== null
+              ? scheduling.workingDaysOnly
+                ? cal.addWorkingDays(spawnDate, t.plannedOffsetDays)
+                : addDays(spawnDate, t.plannedOffsetDays)
+              : null;
+          const created = await tx.task.create({
             data: {
               projectId: src.projectId,
               teamId: src.teamId,
@@ -210,6 +234,14 @@ export class TaskTemplatesService {
               },
             },
           });
+          if (dueRoll) {
+            await logDueDateRoll(tx, {
+              taskId: created.id,
+              actorId: null,
+              teamId: src.teamId,
+              rolled: dueRoll,
+            });
+          }
           await tx.taskTemplate.update({
             where: { id: t.id },
             data: { nextRunAt: next, spawnedCount: { increment: 1 } },

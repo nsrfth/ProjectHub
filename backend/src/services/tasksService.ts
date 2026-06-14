@@ -11,6 +11,10 @@ import {
   CustomFieldsService,
   type TaskCustomFieldValueView,
 } from './customFieldsService.js';
+import {
+  logDueDateRoll,
+  resolveDueDateForScheduling,
+} from '../lib/schedulingSettings.js';
 
 // v1.18: read the instance-level date-edit restriction at PATCH time. Members
 // can always ADD a date that's null; only MANAGERS / global ADMINs can MODIFY
@@ -298,6 +302,10 @@ export class TasksService {
           ? new Date()
           : null;
 
+    const dueResolved = input.dueDate
+      ? await resolveDueDateForScheduling(input.dueDate)
+      : { dueDate: null as Date | null, rolled: null };
+
     return prisma.$transaction(async (tx) => {
       const task = await tx.task.create({
         data: {
@@ -313,7 +321,7 @@ export class TasksService {
           status,
           priority: input.priority ?? 'MEDIUM',
           startDate: input.startDate ? new Date(input.startDate) : null,
-          dueDate: input.dueDate ? new Date(input.dueDate) : null,
+          dueDate: dueResolved.dueDate,
           plannedDate: input.plannedDate ? new Date(input.plannedDate) : null,
           completedAt,
           position,
@@ -334,6 +342,14 @@ export class TasksService {
         action: 'task.created',
         meta: { title: task.title, status: task.status, priority: task.priority },
       });
+      if (dueResolved.rolled) {
+        await logDueDateRoll(tx, {
+          taskId: task.id,
+          actorId: creatorId,
+          teamId,
+          rolled: dueResolved.rolled,
+        });
+      }
       // Initial assignment is a real assignment event from the assignee's POV.
       if (task.assigneeId) {
         await notifications.onTaskAssigned(tx, {
@@ -589,6 +605,11 @@ export class TasksService {
       return current !== incoming;
     });
 
+    const dueRoll =
+      input.dueDate !== undefined && input.dueDate !== null
+        ? await resolveDueDateForScheduling(input.dueDate)
+        : null;
+
     try {
       const result = await prisma.$transaction(async (tx) => {
         const updated = await tx.task.update({
@@ -604,7 +625,8 @@ export class TasksService {
               startDate: input.startDate === null ? null : new Date(input.startDate),
             }),
             ...(input.dueDate !== undefined && {
-              dueDate: input.dueDate === null ? null : new Date(input.dueDate),
+              dueDate:
+                input.dueDate === null ? null : (dueRoll?.dueDate ?? new Date(input.dueDate)),
               // Reset the TASK_DUE notification flag whenever dueDate changes
               // so the scheduler treats the new date as fresh and notifies again.
               dueNotifiedAt: null,
@@ -656,6 +678,14 @@ export class TasksService {
             actorId,
             action: 'task.updated',
             meta: { fields: changedNonStatusFields },
+          });
+        }
+        if (dueRoll?.rolled) {
+          await logDueDateRoll(tx, {
+            taskId,
+            actorId,
+            teamId,
+            rolled: dueRoll.rolled,
           });
         }
         // Assignment change is its own notification — only fires when the

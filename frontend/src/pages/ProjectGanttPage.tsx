@@ -445,10 +445,15 @@ function GanttChart({
           const y = yCursor + 4;
           const overdue = !r.done && endMs < todayMs;
           const fill = statusFill(g.status, r.done);
+          const durationLine =
+            r.workingDayCount !== null
+              ? `Duration: ${r.workingDayCount} working day(s) (${widthDays} calendar day(s))`
+              : `Duration: ${widthDays} day(s)`;
           const tooltip = [
             r.title,
             `Start: ${formatShamsiCalendarDate(r.startDate) ?? ''}`,
             `End: ${formatShamsiCalendarDate(r.endDate) ?? ''}`,
+            durationLine,
             r.assigneeName ? `Assignee: ${r.assigneeName}` : 'Assignee: —',
             r.technicianName ? `Technician: ${r.technicianName}` : '',
             `Status: ${g.status}${r.done ? ' / done' : ''}`,

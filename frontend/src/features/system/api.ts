@@ -18,6 +18,8 @@ export interface SystemInfo {
   // dueDate / plannedDate / completedAt fields. "open" preserves the
   // pre-v1.18 behaviour; "manager-only" lets members add but not change.
   dateEditRestriction: 'open' | 'manager-only';
+  schedulingRollOffdayDueDates: boolean;
+  schedulingWorkingDaysOnly: boolean;
   counts: {
     users: number;
     teams: number;

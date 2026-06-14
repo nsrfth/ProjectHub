@@ -495,6 +495,21 @@ The setting lives in the `InstanceSetting` key/JSON store (`calendar.weekend`), 
 
 Non-admins can read holidays (for calendar colouring) but cannot create or delete them.
 
+### Working-day scheduling (admin, v1.64)
+
+Two **opt-in** instance toggles under **Settings → Preferences → Working-day scheduling**. Both default **off** — when off, behaviour is identical to pre-v1.64 (calendar-day math everywhere).
+
+| Setting | What it does |
+|---|---|
+| **Roll off-day due dates forward** | When a task **due date** (or a recurrence spawn's computed due date) lands on a weekend or holiday, store the **next working day** instead. Logs a `task.dueDate_rolled_offday` activity entry. |
+| **Count working days only** | Recurrence `dueOffsetDays` / `plannedOffsetDays` and Gantt **duration counts** skip off-days. Bar positions on the chart still use calendar start/end dates. |
+
+**Important policies:**
+
+- **Not retroactive** — toggling a setting does not rewrite existing stored due dates. Rolls apply only on the next create, due-date edit, or recurrence spawn.
+- **UTC midnight preserved** — all date math stays on UTC calendar-day anchors (same rule as task due dates).
+- **Recurrence idempotency** — `spawnedForPeriod` is keyed on the template's spawn date, not the rolled due date, so rolling cannot collide with the unique constraint.
+
 ### Security — password policy (v1.43, admin)
 
 Global **ADMIN** sees an extra section on **Settings → Security** for **local** accounts only (LDAP users follow your IdP's rules):

@@ -436,6 +436,12 @@
   "prefs.dualCalendar": "Dual calendar",
   "prefs.dualCalendar.subtitle": "Show both Jalali and Gregorian on task dates (due, start, planned).",
   "prefs.dualCalendar.enable": "Show both calendars on key dates",
+  "scheduling.title": "Working-day scheduling (admin · instance-wide)",
+  "scheduling.subtitle": "Opt-in rules. When off, due dates and Gantt durations use calendar days exactly as before. Changes apply on the next create, edit, or recurrence spawn — existing stored dates are not rewritten.",
+  "scheduling.rollOffday": "Roll off-day due dates forward",
+  "scheduling.rollOffdayHint": "When a due date (or recurrence spawn due date) lands on a weekend or holiday, move it to the next working day.",
+  "scheduling.workingDaysOnly": "Count working days only",
+  "scheduling.workingDaysOnlyHint": "Recurrence offsets and Gantt duration counts skip weekends and holidays. Bar positions still use calendar dates.",
 
   "holidays.title": "Holidays",
   "holidays.subtitle": "Instance-wide specific dates treated as off-days (shown in red on calendars). Distinct from recurring weekend weekdays.",

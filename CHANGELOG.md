@@ -7,6 +7,23 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.64.0] — 2026-06-09
+
+**Opt-in working-day scheduling — roll off-day due dates + working-day durations.**
+
+- Instance settings (admin, default **off**): `scheduling.rollOffdayDueDates` rolls task/recurrence
+  due dates forward from weekends/holidays; `scheduling.workingDaysOnly` makes recurrence offsets
+  and Gantt duration counts skip off-days.
+- Backend `WorkingDayCalendar` (`lib/workingDays.ts`) — server mirror of `isOffDay`; UTC-midnight
+  preserved throughout.
+- Rolls log `task.dueDate_rolled_offday` activity entries. **Not retroactive** — applies on next
+  create, edit, or recurrence spawn only. `spawnedForPeriod` idempotency keyed on spawn date, not
+  rolled due date.
+- Gantt API: `workingDaysOnly` flag + per-row `workingDayCount` when enabled.
+- Settings → Preferences (admin): Working-day scheduling section. Bootstrap via `/api/system/info`.
+
+---
+
 ## [1.63.0] — 2026-06-09
 
 **Per-user timezone, 12h/24h time format, and dual-calendar display.**

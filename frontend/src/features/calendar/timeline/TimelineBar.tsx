@@ -10,6 +10,8 @@ import {
   utcDayIso,
   utcDayMs,
 } from './utils';
+import { countWorkingDaysInclusive } from '@/lib/workingDays';
+import { isSchedulingWorkingDaysOnly } from '@/lib/scheduling';
 import type { BarDragMode, BarDragState, TimelineRow } from './types';
 
 interface Props {
@@ -65,10 +67,20 @@ export default function TimelineBar({
   const overdue = !row.done && endMs < todayMs;
   const progressW = Math.round((w * row.progress) / 100);
 
+  const startIso = utcDayIso(startMs);
+  const endIso = utcDayIso(endMs);
+  const calDays = widthDays;
+  const workingDays = isSchedulingWorkingDaysOnly()
+    ? countWorkingDaysInclusive(startIso, endIso)
+    : null;
+
   const tooltip = [
     row.label,
-    `Start: ${formatShamsiCalendarDate(utcDayIso(startMs)) ?? ''}`,
-    `End: ${formatShamsiCalendarDate(utcDayIso(endMs)) ?? ''}`,
+    `Start: ${formatShamsiCalendarDate(startIso) ?? ''}`,
+    `End: ${formatShamsiCalendarDate(endIso) ?? ''}`,
+    workingDays !== null
+      ? `Duration: ${workingDays} working day(s) (${calDays} calendar day(s))`
+      : null,
     row.assigneeName ? `Assignee: ${row.assigneeName}` : '',
     `Status: ${row.status}${row.done ? ' / done' : ''}`,
     row.progress > 0 ? `Progress: ${row.progress}%` : '',

@@ -6,6 +6,7 @@ import { AuthProvider } from '@/features/auth/AuthContext';
 import { TeamsProvider } from '@/features/teams/TeamsContext';
 import { router } from '@/app/router';
 import { adoptServerHolidays, adoptServerWeekend } from '@/lib/calendar';
+import { adoptServerScheduling } from '@/lib/scheduling';
 import { fetchSystemInfo } from '@/features/system/api';
 import './index.css';
 
@@ -17,6 +18,7 @@ void fetchSystemInfo()
   .then((info) => {
     adoptServerWeekend(info.calendarWeekend);
     adoptServerHolidays(info.calendarHolidays);
+    adoptServerScheduling(info);
   })
   .catch(() => undefined);
 

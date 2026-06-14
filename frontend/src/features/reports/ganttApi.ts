@@ -16,10 +16,12 @@ export interface GanttSubtaskRow {
   technicianId: string | null;
   technicianName: string | null;
   done: boolean;
+  workingDayCount: number | null;
 }
 
 export interface GanttReport {
   projectId: string;
+  workingDaysOnly: boolean;
   summary: {
     totalTasks: number;
     totalSubtasks: number;

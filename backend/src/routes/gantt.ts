@@ -27,10 +27,12 @@ const ganttSubtaskRow = z.object({
   technicianId: z.string().nullable(),
   technicianName: z.string().nullable(),
   done: z.boolean(),
+  workingDayCount: z.number().int().nullable(),
 });
 
 const ganttResponse = z.object({
   projectId: z.string(),
+  workingDaysOnly: z.boolean(),
   summary: z.object({
     totalTasks: z.number().int().nonnegative(),
     totalSubtasks: z.number().int().nonnegative(),

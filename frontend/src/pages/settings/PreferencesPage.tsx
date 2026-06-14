@@ -223,12 +223,100 @@ export default function PreferencesPage(): JSX.Element {
 
       {user?.globalRole === 'ADMIN' && <HolidaysSection />}
 
+      {user?.globalRole === 'ADMIN' && <SchedulingSection />}
+
       {/* v1.18: admin-only date-edit restriction. Instance-wide. */}
       {user?.globalRole === 'ADMIN' && <DateEditRestrictionSection />}
 
       {/* v1.29: admin-only dependency enforcement setting. Instance-wide. */}
       {user?.globalRole === 'ADMIN' && <DependencyEnforcementSection />}
     </section>
+  );
+}
+
+function SchedulingSection(): JSX.Element {
+  const qc = useQueryClient();
+  const t = useT();
+  const { data, isLoading } = useQuery({
+    queryKey: ['system', 'info'],
+    queryFn: fetchSystemInfo,
+    staleTime: 5 * 60_000,
+  });
+  const [rollOffday, setRollOffday] = useState(false);
+  const [workingDaysOnly, setWorkingDaysOnly] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data) {
+      setRollOffday(data.schedulingRollOffdayDueDates);
+      setWorkingDaysOnly(data.schedulingWorkingDaysOnly);
+    }
+  }, [data]);
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      await api.put('/settings/instance/scheduling.rollOffdayDueDates', { value: rollOffday });
+      await api.put('/settings/instance/scheduling.workingDaysOnly', { value: workingDaysOnly });
+    },
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ['system', 'info'] });
+    },
+    onError: (err) => setError(errorMessage(err, 'Could not save')),
+  });
+
+  const dirty =
+    data !== undefined
+    && (rollOffday !== data.schedulingRollOffdayDueDates
+      || workingDaysOnly !== data.schedulingWorkingDaysOnly);
+
+  return (
+    <form
+      onSubmit={(e: FormEvent) => { e.preventDefault(); saveMut.mutate(); }}
+      className="border border-slate-200 dark:border-slate-700 rounded p-4 space-y-3"
+    >
+      <h3 className="font-medium">{t('scheduling.title')}</h3>
+      <p className="text-sm text-slate-600 dark:text-slate-400">{t('scheduling.subtitle')}</p>
+      {isLoading && <p className="text-xs text-slate-400">Loading…</p>}
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={rollOffday}
+          onChange={(e) => setRollOffday(e.target.checked)}
+          className="mt-1"
+        />
+        <span className="text-slate-700 dark:text-slate-200">
+          <span className="font-medium">{t('scheduling.rollOffday')}</span>
+          <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            {t('scheduling.rollOffdayHint')}
+          </span>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={workingDaysOnly}
+          onChange={(e) => setWorkingDaysOnly(e.target.checked)}
+          className="mt-1"
+        />
+        <span className="text-slate-700 dark:text-slate-200">
+          <span className="font-medium">{t('scheduling.workingDaysOnly')}</span>
+          <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            {t('scheduling.workingDaysOnlyHint')}
+          </span>
+        </span>
+      </label>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex gap-2 pt-1">
+        <button
+          type="submit"
+          disabled={saveMut.isPending || !dirty}
+          className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
+        >
+          {saveMut.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </form>
   );
 }
 

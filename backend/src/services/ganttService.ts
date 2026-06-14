@@ -1,5 +1,7 @@
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { readSchedulingSettings } from '../lib/schedulingSettings.js';
+import { WorkingDayCalendar } from '../lib/workingDays.js';
 
 // v1.42: project Gantt aggregator. Returns every subtask in a project
 // grouped by its parent task, along with cross-row summary counters.
@@ -26,6 +28,8 @@ export interface GanttSubtaskRow {
   technicianId: string | null;
   technicianName: string | null;
   done: boolean;
+  /** Present when scheduling.workingDaysOnly is enabled — inclusive working-day count. */
+  workingDayCount: number | null;
 }
 
 export interface GanttReport {
@@ -43,6 +47,8 @@ export interface GanttReport {
     earliestStart: string | null;
     latestEnd: string | null;
   };
+  /** True when instance setting scheduling.workingDaysOnly is on. */
+  workingDaysOnly: boolean;
   // Every subtask in the project — scheduled and unscheduled. The SPA
   // typically filters to the scheduled set for the chart but renders
   // unscheduled separately as "needs scheduling".
@@ -61,6 +67,9 @@ export class GanttService {
     if (!project || project.teamId !== teamId) {
       throw Errors.notFound('Project not found');
     }
+
+    const scheduling = await readSchedulingSettings();
+    const cal = scheduling.workingDaysOnly ? await WorkingDayCalendar.load() : null;
 
     // One query for the task → subtask graph. Soft-deleted tasks excluded
     // (trash). Subtasks are kept regardless of done — closed work still
@@ -119,12 +128,17 @@ export class GanttService {
           technicianId: s.technicianId,
           technicianName: s.technician?.name ?? null,
           done: s.done,
+          workingDayCount:
+            cal && isScheduled && s.startDate && s.endDate
+              ? cal.countWorkingDaysInclusive(s.startDate, s.endDate)
+              : null,
         });
       }
     }
 
     return {
       projectId,
+      workingDaysOnly: scheduling.workingDaysOnly,
       summary: {
         totalTasks: tasks.length,
         totalSubtasks: rows.length,
