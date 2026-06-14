@@ -63,6 +63,17 @@ enum GroupAccessLevel {
   READONLY
 }
 
+// v1.58: custom field types for team-scoped task metadata.
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  SINGLE_SELECT
+  MULTI_SELECT
+  CHECKBOX
+  PERSON
+}
+
 enum GroupInviteStatus {
   PENDING
   ACCEPTED
@@ -299,6 +310,7 @@ model User {
   projectBuckets     UserProjectBucket[]
   userGroupMembers   UserGroupMember[]
   groupInvitesSent   UserGroupMember[] @relation("GroupInvitesSent")
+  customFieldValues  CustomFieldValue[] @relation("CustomFieldPerson")
 
   @@index([email])
 }
@@ -422,6 +434,7 @@ model Team {
   activities    Activity[]       @relation("TeamActivity")
   webhooks      Webhook[]
   userGroups    UserGroup[]
+  customFields  CustomFieldDefinition[]
   directory     Directory?       @relation("TeamDirectory", fields: [directoryId], references: [id], onDelete: SetNull)
 
   @@index([directoryId])
@@ -695,6 +708,7 @@ model Task {
   // constraint on TaskDependency prevents duplicate edges.
   dependencies TaskDependency[] @relation("TaskDependencyFrom")
   blockedTasks TaskDependency[] @relation("TaskDependencyTo")
+  customFieldValues CustomFieldValue[]
 
   // v1.30: tsvector for full-text search. Managed by raw SQL — the column
   // is GENERATED ALWAYS AS STORED with a GIN index. Prisma never reads it
@@ -791,6 +805,78 @@ model TaskLabel {
 
   @@id([taskId, labelId])
   @@index([labelId])
+}
+
+// v1.58: team-scoped custom field definitions. Reusable across all projects
+// in the team; per-task values live in CustomFieldValue. Project-scoped
+// restriction is deferred to a future release.
+model CustomFieldDefinition {
+  id          String          @id @default(cuid())
+  teamId      String
+  name        String
+  type        CustomFieldType
+  description String?
+  position    Int             @default(0)
+  required    Boolean         @default(false)
+  active      Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  team    Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  options CustomFieldOption[]
+  values  CustomFieldValue[]
+
+  @@unique([teamId, name])
+  @@index([teamId, active])
+}
+
+model CustomFieldOption {
+  id       String  @id @default(cuid())
+  fieldId  String
+  label    String
+  color    String?
+  position Int     @default(0)
+
+  field      CustomFieldDefinition     @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  selections CustomFieldValueOption[]
+
+  @@unique([fieldId, label])
+  @@index([fieldId])
+}
+
+// v1.58: typed per-task custom field values. One row per (field, task).
+// Select values use CustomFieldValueOption join for filterable multi-select.
+model CustomFieldValue {
+  id          String    @id @default(cuid())
+  fieldId     String
+  taskId      String
+  valueText   String?
+  valueNumber Decimal?  @db.Decimal(18, 4)
+  valueDate   DateTime?
+  valueBool   Boolean?
+  valueUserId String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  field      CustomFieldDefinition     @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  task       Task                      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  valueUser  User?                     @relation("CustomFieldPerson", fields: [valueUserId], references: [id], onDelete: SetNull)
+  selections CustomFieldValueOption[]
+
+  @@unique([fieldId, taskId])
+  @@index([taskId])
+  @@index([fieldId])
+}
+
+model CustomFieldValueOption {
+  valueId  String
+  optionId String
+
+  value  CustomFieldValue  @relation(fields: [valueId], references: [id], onDelete: Cascade)
+  option CustomFieldOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@id([valueId, optionId])
+  @@index([optionId])
 }
 
 model Attachment {

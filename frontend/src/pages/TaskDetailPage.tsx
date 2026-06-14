@@ -14,6 +14,7 @@ import { SubtaskList } from '@/features/subtasks/SubtaskList';
 import { AttachmentsSection } from '@/features/attachments/AttachmentsSection';
 import RecurrenceSection from '@/features/recurrence/RecurrenceSection';
 import DependenciesSection from '@/features/dependencies/DependenciesSection';
+import { TaskCustomFieldsSection } from '@/features/customFields/TaskCustomFieldsSection';
 import {
   formatRelativeTime,
   formatShamsiCalendarLong,
@@ -89,6 +90,11 @@ function describeActivity(a: activityApi.ActivityEntry): string {
       return `moved the task from ${meta.from} to ${meta.to}`;
     case 'task.updated':
       return `updated ${(meta.fields as string[] | undefined)?.join(', ') ?? 'the task'}`;
+    case 'task.customfield_set': {
+      const name = (meta.fieldName as string | undefined) ?? 'custom field';
+      const summary = (meta.summary as string | undefined) ?? '';
+      return meta.cleared ? `cleared ${name}` : `set ${name} to ${summary}`;
+    }
     case 'comment.added':
       return `added a comment: "${(meta.excerpt as string | undefined) ?? ''}"`;
     case 'comment.edited':
@@ -121,10 +127,11 @@ export default function TaskDetailPage(): JSX.Element {
   // v1.19: team members feed the Technician dropdown for managers/admins.
   // Fetched lazily — only when the viewer can actually change Technician.
   const canChangeTechnician = isManager || user?.globalRole === 'ADMIN';
+  const canEditTask = !!projectTeam;
   const { data: teamMembersRaw = [] } = useQuery({
     queryKey: ['teams', teamId, 'assignees'],
     queryFn: () => listTeamMembersForAssignees(teamId!),
-    enabled: !!teamId && canChangeTechnician,
+    enabled: !!teamId && (canChangeTechnician || canEditTask),
     staleTime: 30_000,
   });
   const teamMembers = visibleTeamMembers(teamMembersRaw);
@@ -433,6 +440,17 @@ export default function TaskDetailPage(): JSX.Element {
               }
             />
           </section>
+
+          {teamId && projectId && taskId && task && (
+            <TaskCustomFieldsSection
+              teamId={teamId}
+              projectId={projectId}
+              taskId={taskId}
+              customFields={task.customFields ?? []}
+              canEdit={canEditTask}
+              teamMembers={teamMembers}
+            />
+          )}
 
           <section className="bg-white rounded shadow p-6 mb-6">
             <h2 className="font-medium mb-3">Comments</h2>

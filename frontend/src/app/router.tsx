@@ -18,6 +18,7 @@ import RolesPage from '@/pages/settings/RolesPage';
 import BackupsPage from '@/pages/settings/BackupsPage';
 import TaskhubPage from '@/pages/settings/TaskhubPage';
 import LabelsPage from '@/pages/settings/LabelsPage';
+import CustomFieldsPage from '@/pages/settings/CustomFieldsPage';
 import SearchPage from '@/pages/SearchPage';
 import HelpPage from '@/pages/HelpPage';
 import AboutPage from '@/pages/AboutPage';
@@ -74,6 +75,7 @@ export const router = createBrowserRouter([
           { path: 'preferences', element: <PreferencesPage /> },
           { path: 'roles', element: <RolesPage /> },
           { path: 'labels', element: <LabelsPage /> },
+          { path: 'custom-fields', element: <CustomFieldsPage /> },
           { path: 'directories', element: <DirectoriesPage /> },
           { path: 'taskhub', element: <TaskhubPage /> },
           { path: 'security', element: <SecurityPage /> },

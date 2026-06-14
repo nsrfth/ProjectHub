@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { TaskCustomFieldValue } from '@/features/customFields/api';
 
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
@@ -62,6 +63,7 @@ export interface Task {
   // v1.29: number of FINISH_TO_START dependencies whose blocker isn't DONE.
   // Drives the kanban lock badge + the TaskDetail status-guard preview.
   incompleteBlockerCount: number;
+  customFields: TaskCustomFieldValue[];
 }
 
 export async function listTasks(

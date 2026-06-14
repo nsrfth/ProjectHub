@@ -53,6 +53,12 @@ const NAV: NavItem[] = [
     roles: ['ADMIN', 'MANAGER', 'MEMBER'],
   },
   {
+    to: '/settings/custom-fields',
+    labelKey: 'settings.nav.customFields',
+    descriptionKey: 'settings.nav.customFieldsDesc',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
     to: '/settings/directories',
     labelKey: 'settings.nav.directories',
     descriptionKey: 'settings.nav.directoriesDesc',

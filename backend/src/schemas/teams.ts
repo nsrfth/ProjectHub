@@ -108,6 +108,7 @@ export const teamCapabilitiesResponse = z.object({
   editDetails: z.boolean(),
   deleteTeam: z.boolean(),
   manageGroups: z.boolean(),
+  manageCustomFields: z.boolean(),
 });
 
 export const teamDetailResponse = teamResponse.extend({

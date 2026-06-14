@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.57.0** (2026-06-09)
+Version **v1.58.0** (2026-06-09)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -197,6 +197,26 @@ On the task detail page:
 
 Comments and labels generate audit-log entries; subtask + attachment changes don't (deliberate to keep the activity feed readable).
 
+### Custom fields (v1.58)
+
+Team managers (or anyone granted **`customfield.manage`**) define reusable fields under **Settings → Custom fields**. Seven types are supported:
+
+| Type | On the task |
+|------|-------------|
+| Text | Single-line text (up to 2000 characters) |
+| Number | Decimal with up to four fractional digits |
+| Date | Calendar date |
+| Single select | Pick one option from a list you define (with optional colours) |
+| Multi select | Pick one or more options |
+| Checkbox | Yes / no |
+| Person | A team member (picker lists roster members only) |
+
+**Defining fields:** enter a name, choose a type, optionally mark **Required** or add select options (one per line when creating). Toggle **Active** off to stop new values without deleting historical data. Deleting a field removes all its values from tasks.
+
+**Setting values:** open any task you can edit. The **Custom fields** section lists every active team field. Edit the control, click **Save**; click **Clear** to remove a value. Users with read-only project access see values but cannot change them. Required fields are enforced when you explicitly save a custom field value — existing tasks created before the field was added are **not** blocked from other edits.
+
+Custom field changes appear in the task activity feed (`set … to …` / `cleared …`).
+
 ---
 
 ## Recurring tasks
@@ -392,6 +412,7 @@ The **Settings** link in the left sidebar opens the Settings shell. Sidebar item
 - **Trash** — everyone (restore or purge soft-deleted projects and tasks).
 - **Roles** — team role templates and permission matrix.
 - **Labels** — team-scoped label management.
+- **Custom fields** (v1.58) — team-scoped field definitions (Text, Number, Date, Single/Multi select, Checkbox, Person). Requires **`customfield.manage`** (default: team Manager). Define fields under **Settings → Custom fields**; set values on each task from the task detail page.
 - **Security** — everyone (change password, 2FA). Global ADMIN additionally configures the **local password policy** (min length, complexity, lockout). Directory-linked accounts cannot change password here.
 - **TaskHub** — global ADMIN only (public HTTPS/port, upload TLS certificate for Caddy).
 - **Directories** — global ADMIN only (LDAP / SCIM config).

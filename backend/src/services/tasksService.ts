@@ -7,6 +7,10 @@ import { notifications } from './notificationsService.js';
 import { WebhookService } from './webhookService.js';
 import { DependenciesService } from './dependenciesService.js';
 import { userHasPermission } from '../middleware/requirePermission.js';
+import {
+  CustomFieldsService,
+  type TaskCustomFieldValueView,
+} from './customFieldsService.js';
 
 // v1.18: read the instance-level date-edit restriction at PATCH time. Members
 // can always ADD a date that's null; only MANAGERS / global ADMINs can MODIFY
@@ -55,6 +59,7 @@ const _webhooks = new WebhookService();
 // TaskView + run the status guard before status transitions. Held module-
 // level so the same instance is reused across calls.
 const _deps = new DependenciesService();
+const _customFields = new CustomFieldsService();
 
 // Tasks live inside a project, which lives inside a team. teamId is denormalized
 // on Task itself (see schema) so multi-tenancy queries are a single-column
@@ -127,6 +132,7 @@ export interface TaskView {
   // when every blocker is complete, or when toView was called before the
   // blocker map was hydrated (only on internal helper paths).
   incompleteBlockerCount: number;
+  customFields: TaskCustomFieldValueView[];
 }
 
 // Prisma `include` shape reused across list/get/update so the labels[] and
@@ -154,6 +160,7 @@ function toView(
   // paths all hydrate this; subtask + label-tweak paths that touch a
   // task without changing its dependency graph can rely on the default.
   incompleteBlockerCount = 0,
+  customFields: TaskCustomFieldValueView[] = [],
 ): TaskView {
   return {
     id: row.id,
@@ -194,6 +201,7 @@ function toView(
       position: s.position,
     })),
     incompleteBlockerCount,
+    customFields,
   };
 }
 
@@ -204,6 +212,20 @@ function normaliseBudget(v: number | string | null | undefined): Prisma.Decimal 
   const s = typeof v === 'number' ? String(v) : v.trim();
   if (s.length === 0) return null;
   return new Prisma.Decimal(s);
+}
+
+async function attachCustomFields(teamId: string, views: TaskView[]): Promise<TaskView[]> {
+  if (views.length === 0) return views;
+  const map = await _customFields.buildCustomFieldsForTasks(
+    teamId,
+    views.map((v) => v.id),
+  );
+  return views.map((v) => ({ ...v, customFields: map.get(v.id) ?? [] }));
+}
+
+async function withCustomFields(teamId: string, view: TaskView): Promise<TaskView> {
+  const results = await attachCustomFields(teamId, [view]);
+  return results[0] ?? view;
 }
 
 export class TasksService {
@@ -329,7 +351,7 @@ export class TasksService {
       // (including the dispatcher right after a synchronous test action)
       // can rely on the delivery row existing on return.
       await _webhooks.emit(view.teamId, 'task.created', view);
-      return view;
+      return withCustomFields(teamId, view);
     });
   }
 
@@ -355,7 +377,8 @@ export class TasksService {
     // v1.29: one round-trip yields a {taskId → count} map for the whole
     // page. Missing keys default to 0 in toView.
     const blockerCounts = await _deps.loadIncompleteBlockerCounts(rows.map((r) => r.id));
-    return rows.map((r) => toView(r, blockerCounts.get(r.id) ?? 0));
+    const views = rows.map((r) => toView(r, blockerCounts.get(r.id) ?? 0));
+    return attachCustomFields(teamId, views);
   }
 
   async get(teamId: string, projectId: string, taskId: string): Promise<TaskView> {
@@ -375,7 +398,7 @@ export class TasksService {
       throw Errors.notFound('Task not found');
     }
     const blockerCount = await _deps.countIncompleteBlockers(task.id);
-    return toView(task, blockerCount);
+    return withCustomFields(teamId, toView(task, blockerCount));
   }
 
   async update(
@@ -671,7 +694,7 @@ export class TasksService {
           task: result.view, fields: result.changedNonStatusFields,
         });
       }
-      return result.view;
+      return withCustomFields(teamId, result.view);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw Errors.notFound('Task not found');
@@ -781,7 +804,7 @@ export class TasksService {
         },
       });
       return toView(updated, blockerCount);
-    });
+    }).then((view) => withCustomFields(teamId, view));
   }
 
   // Rewrite every task in (projectId, status) with sparse positions. Used as

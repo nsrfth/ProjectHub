@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { taskCustomFieldValueResponse } from './customFields.js';
+
 export const taskStatusEnum = z.enum(['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE']);
 export const taskPriorityEnum = z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
 
@@ -141,6 +143,7 @@ export const taskResponse = z.object({
   // kanban lock badge + the TaskDetail status-guard preview. Always
   // present; 0 when there are no blockers or all blockers are DONE.
   incompleteBlockerCount: z.number().int().nonnegative(),
+  customFields: z.array(taskCustomFieldValueResponse),
 });
 
 export type CreateTaskBody = z.infer<typeof createTaskBody>;

@@ -7,6 +7,28 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.58.0] — 2026-06-09
+
+**Custom fields — team-defined typed metadata on tasks (Tier A foundation).**
+
+### Custom fields (backend + frontend)
+
+- Team-scoped **custom field definitions** with seven types: Text, Number, Date,
+  Single select, Multi select, Checkbox, and Person (team member).
+- **Typed per-task values** stored in queryable columns (`valueText`, `valueNumber`
+  `DECIMAL(18,4)`, `valueDate`, `valueBool`, `valueUserId`) plus a join table for
+  select options — foundation for upcoming automation, dashboard, and form features.
+- New permission **`customfield.manage`** (default Manager) for definition CRUD;
+  anyone who can edit a task can set values (no separate value permission).
+- API: `GET/POST/PATCH/DELETE /api/teams/:teamId/custom-fields`, option management,
+  and `PUT …/tasks/:taskId/custom-fields/:fieldId` for value upsert/clear.
+- Task list/detail responses include `customFields[]`. Activity logs definition
+  changes and value sets with readable summaries.
+- Settings → **Custom fields** (managers with permission). Task detail renders
+  active fields by type with save/clear.
+
+---
+
 ## [1.57.0] — 2026-06-09
 
 **Team add member — live search-all-users picker.**

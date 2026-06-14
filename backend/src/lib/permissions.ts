@@ -37,6 +37,9 @@ export const PERMISSIONS = [
   // v1.50: team user groups — create groups, assign members, grant projects.
   'group.manage',
 
+  // v1.58: team-scoped custom field definitions (create/edit/delete/reorder).
+  'customfield.manage',
+
   // Team membership + governance.
   'team.invite_member',
   'team.remove_member',
@@ -75,6 +78,7 @@ export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
   Comments: ['comment.delete_others'],
   Projects: ['project.edit', 'project.delete', 'project.set_accountable'],
   Groups: ['group.manage'],
+  CustomFields: ['customfield.manage'],
   Team: [
     'team.invite_member',
     'team.remove_member',

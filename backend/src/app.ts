@@ -32,6 +32,7 @@ import { trashRoutes } from './routes/trash.js';
 import { rolesRoutes } from './routes/roles.js';
 import { groupInvitesRoutes } from './routes/groupInvites.js';
 import { userGroupsRoutes } from './routes/userGroups.js';
+import { customFieldsRoutes, taskCustomFieldsRoutes } from './routes/customFields.js';
 import { backupsRoutes } from './routes/backups.js';
 import { taskhubRoutes } from './routes/taskhub.js';
 import { securitySettingsRoutes } from './routes/securitySettings.js';
@@ -195,6 +196,11 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(rolesRoutes, { prefix: '/teams/:teamId/roles' });
     // v1.50: team user groups for project access grants.
     await api.register(userGroupsRoutes, { prefix: '/teams/:teamId/groups' });
+    // v1.58: team-scoped custom field definitions + per-task typed values.
+    await api.register(customFieldsRoutes, { prefix: '/teams/:teamId/custom-fields' });
+    await api.register(taskCustomFieldsRoutes, {
+      prefix: '/teams/:teamId/projects/:projectId/tasks/:taskId/custom-fields',
+    });
   }, { prefix: '/api' });
 
   app.addHook('onClose', async () => {

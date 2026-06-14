@@ -88,6 +88,7 @@ export interface TeamCapabilities {
   editDetails: boolean;
   deleteTeam: boolean;
   manageGroups: boolean;
+  manageCustomFields: boolean;
 }
 
 export interface TeamDeleteBlockers {
@@ -427,6 +428,7 @@ export class TeamsService {
       editDetails: permGranted(perms, 'team.edit_details'),
       deleteTeam: permGranted(perms, 'team.delete'),
       manageGroups: permGranted(perms, 'group.manage'),
+      manageCustomFields: permGranted(perms, 'customfield.manage'),
     };
     const deleteBlockers = capabilities.deleteTeam
       ? await this.getDeleteBlockers(teamId)
