@@ -7,6 +7,17 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.70.0] — 2026-06-09
+
+**PWA — installable app-shell.** TaskHub is now an installable Progressive Web App: web
+manifest, maskable icons (generated from the Quad brand mark), standalone display mode,
+and a conservative service worker that precaches the static app shell for fast launch.
+**API responses are never cached** (`NetworkOnly` for all `/api/*` methods) so tasks,
+comments, and auth data always come from the network. Install requires **HTTPS** (or
+localhost for testing); on HTTP-only deployments the app still works as a normal SPA.
+
+---
+
 ## [1.69.2] — 2026-06-09
 
 **Navigation:** removed the redundant "+ New Task" shortcut from the top bar. Task creation is unchanged via Projects and the task board.

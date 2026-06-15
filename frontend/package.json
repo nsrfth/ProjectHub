@@ -1,13 +1,13 @@
 {
   "name": "taskhub-frontend",
-  "version": "1.69.2",
+  "version": "1.70.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "sync-manual": "node ./scripts/copy-manual.mjs",
-    "prebuild": "node ./scripts/copy-manual.mjs",
-    "predev": "node ./scripts/copy-manual.mjs",
+    "prebuild": "node ./scripts/copy-manual.mjs && node ./scripts/generate-pwa-icons.mjs",
+    "predev": "node ./scripts/copy-manual.mjs && node ./scripts/generate-pwa-icons.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -38,6 +38,8 @@
     "tailwindcss": "^3.4.4",
     "typescript": "^5.5.3",
     "vite": "^5.3.3",
+    "vite-plugin-pwa": "^0.21.1",
+    "sharp": "^0.33.5",
     "vitest": "^2.1.9"
   }
 }

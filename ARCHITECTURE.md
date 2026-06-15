@@ -171,6 +171,17 @@ listener binds. This is the single trustworthy source of config — no scattered
   palette (see schema table). Pre-paint bootstrap in `index.html` reads
   `localStorage` and sets `theme-*` + optional `dark` before React mounts.
   `AuthContext.adoptServerTheme()` syncs server preference on login.
+- **PWA (v1.70)** — installable app-shell via `vite-plugin-pwa` (Workbox).
+  `registerType: 'autoUpdate'` so a new deploy activates a fresh service worker
+  without a manual update prompt. The web manifest declares standalone display,
+  `#6366f1` theme colour, and PNG icons (192/512 + maskable 512) generated from
+  `BrandMark` artwork. **Precache:** built shell assets (JS/CSS/HTML/fonts/icons).
+  **Runtime caching:** `StaleWhileRevalidate` for scripts/styles,
+  `CacheFirst` for fonts/images, `navigateFallback` → `index.html` for SPA routes
+  (denylist `/api/`). **`/api/*` is always `NetworkOnly`** (GET/POST/PUT/PATCH/DELETE)
+  — task/comment/auth payloads are never stored in the SW cache. No offline data
+  sync. Install requires HTTPS (localhost OK for dev); HTTP-only deployments keep
+  working as a plain SPA without install.
 
 ## Planner (v1.44)
 

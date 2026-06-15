@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.58.0** (2026-06-09)
+Version **v1.70.0** (2026-06-09)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -33,7 +33,8 @@ This manual covers everything a member, manager, or admin needs to do day-to-day
     - [SCIM provisioning](#scim-provisioning)
     - [Webhooks](#webhooks)
     - [Audit log](#audit-log)
-18. [Troubleshooting](#troubleshooting)
+18. [Installing TaskHub as an app (PWA)](#installing-taskhub-as-an-app-pwa)
+19. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -688,6 +689,36 @@ Today's vocabulary covers task + comment events. As LDAP / SCIM / 2FA / webhook 
 
 ---
 
+## Installing TaskHub as an app (PWA)
+
+TaskHub ships as a **Progressive Web App (PWA)**. On a secure origin you can install it like a native app — it opens in its own window with the TaskHub icon and indigo theme bar.
+
+**HTTPS required.** Browsers only offer install on **HTTPS** (or `localhost` during development). If your instance runs on plain HTTP (some internal deployments), TaskHub still works normally in a browser tab — install simply won't be offered. That is expected, not a bug.
+
+### Desktop (Chrome / Edge)
+
+1. Sign in at your TaskHub URL (must be `https://…`).
+2. Look for the **install** icon in the address bar (⊕ or computer-with-arrow), or open the browser menu → **Install TaskHub** / **Apps → Install this site as an app**.
+3. Confirm. TaskHub opens in a standalone window without browser tabs.
+
+### Android (Chrome)
+
+1. Open TaskHub over **HTTPS** and sign in.
+2. Tap the browser menu → **Install app** or **Add to Home screen**.
+3. The home-screen icon uses the TaskHub brand mark (maskable on Android so it isn't cropped).
+
+### iOS (Safari)
+
+1. Open TaskHub over **HTTPS** in Safari and sign in.
+2. Tap **Share** → **Add to Home Screen**.
+3. Confirm the name **TaskHub**. The icon comes from the apple-touch-icon asset.
+
+**What the PWA caches.** Only the static app shell (HTML, JS, CSS, fonts, icons) is cached for faster launch. **Task and comment data is never cached** — every `/api/*` request goes to the server so you always see live data. There is no offline sync in v1.
+
+After a server upgrade, the app updates automatically on the next visit (no manual cache clear).
+
+---
+
 ## Troubleshooting
 
 **"I can't see Settings"** — the **Settings** link is shown to every signed-in user. If it's missing, refresh once (the bundle may be cached). If your global role just changed, sign out and back in.
@@ -703,6 +734,8 @@ Today's vocabulary covers task + comment events. As LDAP / SCIM / 2FA / webhook 
 **"I lost my 2FA device and my recovery codes"** — ask a global ADMIN to log into the database and clear `totpEnabled` + `totpSecretEnc` for your row. There's no self-service "I lost everything" flow by design — that would defeat 2FA.
 
 **"The bell isn't updating in real time"** — the WebSocket connects on page load. If you've left the tab open across a server restart, the connection drops; refreshing reconnects.
+
+**"I don't see Install TaskHub"** — install is only offered on **HTTPS** (or `localhost`). Plain HTTP instances work as a normal website; ask your operator for an HTTPS URL if you want the standalone app.
 
 ---
 
