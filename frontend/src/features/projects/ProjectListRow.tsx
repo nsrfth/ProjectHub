@@ -77,9 +77,9 @@ export default function ProjectListRow({
             <span className="text-xs uppercase tracking-wide text-slate-500 shrink-0">
               {statusLabel}
             </span>
-            {project.labels.length > 0 && (
+            {(project.labels?.length ?? 0) > 0 && (
               <span className="flex flex-wrap items-center gap-1" dir="ltr">
-                {project.labels.map((l) => (
+                {(project.labels ?? []).map((l) => (
                   <LabelChip key={l.id} label={l} />
                 ))}
               </span>

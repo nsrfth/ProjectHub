@@ -28,8 +28,13 @@ export interface Project {
   updatedAt: string;
 }
 
+function normalizeProject<P extends Project>(p: P): P {
+  return { ...p, labels: p.labels ?? [] };
+}
+
 export async function listProjects(teamId: string): Promise<Project[]> {
-  return (await api.get<Project[]>(`/teams/${teamId}/projects`)).data;
+  const rows = (await api.get<Project[]>(`/teams/${teamId}/projects`)).data;
+  return rows.map(normalizeProject);
 }
 
 // v1.40: cross-team list — every project the caller can see across every
@@ -41,7 +46,8 @@ export interface ProjectCrossTeam extends Project {
 }
 
 export async function listAllProjects(): Promise<ProjectCrossTeam[]> {
-  return (await api.get<ProjectCrossTeam[]>('/projects')).data;
+  const rows = (await api.get<ProjectCrossTeam[]>('/projects')).data;
+  return rows.map(normalizeProject);
 }
 
 export async function createProject(
@@ -59,7 +65,7 @@ export async function createProject(
     labelIds?: string[];
   },
 ): Promise<Project> {
-  return (await api.post<Project>(`/teams/${teamId}/projects`, input)).data;
+  return normalizeProject((await api.post<Project>(`/teams/${teamId}/projects`, input)).data);
 }
 
 export async function updateProject(
@@ -78,7 +84,9 @@ export async function updateProject(
     labelIds?: string[];
   },
 ): Promise<Project> {
-  return (await api.patch<Project>(`/teams/${teamId}/projects/${projectId}`, input)).data;
+  return normalizeProject(
+    (await api.patch<Project>(`/teams/${teamId}/projects/${projectId}`, input)).data,
+  );
 }
 
 export async function deleteProject(teamId: string, projectId: string): Promise<void> {
