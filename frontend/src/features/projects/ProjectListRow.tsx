@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import type { ProjectCrossTeam } from '@/features/projects/api';
 import ProjectActionsMenu from '@/features/projects/ProjectActionsMenu';
 import { shouldShowProjectActionsMenu } from '@/features/projects/projectActionsLogic';
+import { LabelChip } from '@/features/labels/LabelChip';
 import { budgetLocaleFromLanguage, formatBudget } from '@/lib/formatBudget';
 import { formatShamsiTimestampDate } from '@/lib/shamsi';
 import { getLanguage, useT } from '@/lib/i18n';
@@ -76,6 +77,13 @@ export default function ProjectListRow({
             <span className="text-xs uppercase tracking-wide text-slate-500 shrink-0">
               {statusLabel}
             </span>
+            {project.labels.length > 0 && (
+              <span className="flex flex-wrap items-center gap-1" dir="ltr">
+                {project.labels.map((l) => (
+                  <LabelChip key={l.id} label={l} />
+                ))}
+              </span>
+            )}
           </div>
           {project.description && (
             <button

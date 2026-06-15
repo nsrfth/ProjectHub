@@ -207,6 +207,7 @@ export default function ProjectsPage(): JSX.Element {
             budgetCurrency: values.budgetCurrency,
             startDate: values.startDate,
             endDate: values.endDate,
+            labelIds: values.labelIds,
           };
       return projectsApi.updateProject(args.teamId, args.projectId, payload);
     },

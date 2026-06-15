@@ -24,10 +24,11 @@ afterAll(async () => {
 beforeEach(async () => {
   await prisma.refreshToken.deleteMany();
   await prisma.passwordReset.deleteMany();
-  // TaskLabel + Label cascade from Task / Team respectively; clearing tasks
-  // and teams covers both — but be explicit so a future schema change can't
-  // silently leak rows between tests.
-  await prisma.taskLabel.deleteMany();
+    // TaskLabel + ProjectLabel rows cascade from Label; clearing tasks
+    // and teams covers both — but be explicit so a future schema change can't
+    // silently leak rows between tests.
+    await prisma.projectLabel.deleteMany();
+    await prisma.taskLabel.deleteMany();
   await prisma.label.deleteMany();
   await prisma.task.deleteMany();
   await prisma.project.deleteMany();

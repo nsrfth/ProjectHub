@@ -29,4 +29,5 @@ export const PROJECT_ACTION_I18N_KEYS = [
   'projects.bucketAssign',
   'projects.budget.label',
   'projects.budget.planned',
+  'projects.labels',
 ] as const;

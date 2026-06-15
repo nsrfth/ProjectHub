@@ -53,6 +53,7 @@ export default function CreateProjectForm({
     budgetCurrency: selectedTeam?.defaultCurrency ?? 'IRR',
     startDate: null,
     endDate: null,
+    labelIds: [],
   });
   const [dateError, setDateError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -74,6 +75,7 @@ export default function CreateProjectForm({
         budgetCurrency: input.budgetCurrency,
         startDate: input.startDate,
         endDate: input.endDate,
+        labelIds: input.labelIds.length > 0 ? input.labelIds : undefined,
       }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['projects', 'all'] });
@@ -126,6 +128,7 @@ export default function CreateProjectForm({
       )}
 
       <ProjectFormFields
+        teamId={effectiveFormTeamId}
         values={values}
         onChange={patch}
         members={formMembers}

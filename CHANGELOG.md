@@ -7,6 +7,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.74.0] — 2026-06-21
+
+**Projects — team labels.** Assign the existing team `Label` catalog to projects at create and edit
+via optional `labelIds` (replace-set on update). `ProjectLabel` join table; labels appear as colored
+chips on project rows. Cross-team label assignment rejected (400). Deleting a label cascades off
+projects without deleting them. Task labels unchanged.
+
+---
+
 ## [1.73.0] — 2026-06-15
 
 **Projects — remove manual actual spent field.** Dropped `Project.actualSpent` (destructive migration —

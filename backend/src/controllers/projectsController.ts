@@ -30,6 +30,7 @@ function serialize(p: {
   budgetCurrency: string;
   startDate: string | null;
   endDate: string | null;
+  labels: Array<{ id: string; name: string; color: string }>;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -46,6 +47,7 @@ function serialize(p: {
     budgetCurrency: p.budgetCurrency,
     startDate: p.startDate,
     endDate: p.endDate,
+    labels: p.labels,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };

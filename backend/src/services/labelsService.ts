@@ -57,7 +57,7 @@ export class LabelsService {
   async remove(teamId: string, labelId: string): Promise<void> {
     const existing = await prisma.label.findUnique({ where: { id: labelId } });
     if (!existing || existing.teamId !== teamId) throw Errors.notFound('Label not found');
-    // TaskLabel rows cascade from Label, so detaching from tasks is automatic.
+    // TaskLabel / ProjectLabel rows cascade from Label, so detaching is automatic.
     await prisma.label.delete({ where: { id: labelId } });
   }
 

@@ -569,6 +569,7 @@ model Project {
   tasks         Task[]
   groupGrants   ProjectGroupGrant[]
   intakeForms   IntakeForm[]
+  labels        ProjectLabel[]
 
   // v1.30: tsvector for full-text search. See Task.searchVector for
   // rationale + lifecycle (managed by raw SQL, never read via Prisma).
@@ -839,8 +840,19 @@ model Label {
   color  String
   team   Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
   tasks  TaskLabel[]
+  projects ProjectLabel[]
 
   @@unique([teamId, name])
+}
+
+model ProjectLabel {
+  projectId String
+  labelId   String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  label     Label   @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, labelId])
+  @@index([labelId])
 }
 
 model TaskLabel {

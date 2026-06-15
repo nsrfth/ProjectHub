@@ -1,5 +1,6 @@
 import type { TeamMember } from '@/features/teams/api';
 import CurrencySelector from '@/features/budget/CurrencySelector';
+import { LabelMultiSelect } from '@/features/labels/LabelMultiSelect';
 import type { BudgetCurrency } from '@/lib/formatBudget';
 import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
 import { useT } from '@/lib/i18n';
@@ -14,9 +15,11 @@ export interface ProjectFormValues {
   budgetCurrency: BudgetCurrency;
   startDate: string | null;
   endDate: string | null;
+  labelIds: string[];
 }
 
 interface ProjectFormFieldsProps {
+  teamId: string;
   values: ProjectFormValues;
   onChange: (patch: Partial<ProjectFormValues>) => void;
   members: TeamMember[];
@@ -35,6 +38,7 @@ export function projectFormValuesFromProject(p: {
   budgetCurrency: BudgetCurrency;
   startDate: string | null;
   endDate: string | null;
+  labels?: Array<{ id: string }>;
 }): ProjectFormValues {
   return {
     name: p.name,
@@ -45,6 +49,7 @@ export function projectFormValuesFromProject(p: {
     budgetCurrency: p.budgetCurrency,
     startDate: p.startDate,
     endDate: p.endDate,
+    labelIds: p.labels?.map((l) => l.id) ?? [],
   };
 }
 
@@ -60,6 +65,7 @@ export function validateProjectDateRange(
 }
 
 export default function ProjectFormFields({
+  teamId,
   values,
   onChange,
   members,
@@ -151,6 +157,13 @@ export default function ProjectFormFields({
           ))}
         </select>
       </label>
+
+      <LabelMultiSelect
+        teamId={teamId}
+        value={values.labelIds}
+        onChange={(labelIds) => onChange({ labelIds })}
+        disabled={locked}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="flex flex-col gap-1 text-sm sm:col-span-2">

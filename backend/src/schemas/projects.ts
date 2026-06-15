@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { currencyEnum } from './currency.js';
 import { calendarDateField, refineCalendarDateRange } from '../lib/calendarDate.js';
+import { taskLabelResponse } from './tasks.js';
 
 export const projectStatusEnum = z.enum(['ACTIVE', 'ARCHIVED', 'ON_HOLD']);
 
@@ -43,6 +44,7 @@ export const createProjectBody = z
     budgetCurrency: currencyEnum.optional(),
     startDate: calendarDateField,
     endDate: calendarDateField,
+    labelIds: z.array(z.string()).optional(),
   })
   .superRefine(refineCalendarDateRange);
 
@@ -56,6 +58,7 @@ export const updateProjectBody = z
     budgetCurrency: currencyEnum.optional(),
     startDate: calendarDateField,
     endDate: calendarDateField,
+    labelIds: z.array(z.string()).optional(),
   })
   .superRefine(refineCalendarDateRange)
   .refine(
@@ -67,7 +70,8 @@ export const updateProjectBody = z
       v.plannedBudget !== undefined ||
       v.budgetCurrency !== undefined ||
       v.startDate !== undefined ||
-      v.endDate !== undefined,
+      v.endDate !== undefined ||
+      v.labelIds !== undefined,
     'Provide at least one field to update',
   );
 
@@ -84,6 +88,7 @@ export const projectResponse = z.object({
   budgetCurrency: currencyEnum,
   startDate: z.string().datetime().nullable(),
   endDate: z.string().datetime().nullable(),
+  labels: z.array(taskLabelResponse),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

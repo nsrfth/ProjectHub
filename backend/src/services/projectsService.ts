@@ -19,6 +19,12 @@ import { listMembershipPermissions } from '../middleware/requirePermission.js';
 // - group grant → see + nested routes (owner-equivalent for tasks/…)
 // - everyone else → own projects only
 
+export interface ProjectLabelView {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface ProjectView {
   id: string;
   teamId: string;
@@ -32,9 +38,20 @@ export interface ProjectView {
   budgetCurrency: Currency;
   startDate: string | null;
   endDate: string | null;
+  labels: ProjectLabelView[];
   createdAt: Date;
   updatedAt: Date;
 }
+
+const projectInclude = {
+  accountable: { select: { name: true } },
+  labels: {
+    include: { label: true },
+    orderBy: { label: { name: 'asc' as const } },
+  },
+} satisfies Prisma.ProjectInclude;
+
+type ProjectRow = Prisma.ProjectGetPayload<{ include: typeof projectInclude }>;
 
 function normaliseBudget(v: number | string | null | undefined): Prisma.Decimal | null | undefined {
   if (v === undefined) return undefined;
@@ -44,11 +61,15 @@ function normaliseBudget(v: number | string | null | undefined): Prisma.Decimal 
   return new Prisma.Decimal(s);
 }
 
-function toView(
-  p: Awaited<ReturnType<typeof prisma.project.findFirstOrThrow>> & {
-    accountable?: { name: string } | null;
-  },
-): ProjectView {
+function mapLabels(row: ProjectRow): ProjectLabelView[] {
+  return row.labels.map((pl) => ({
+    id: pl.label.id,
+    name: pl.label.name,
+    color: pl.label.color,
+  }));
+}
+
+function toView(p: ProjectRow): ProjectView {
   return {
     id: p.id,
     teamId: p.teamId,
@@ -62,6 +83,7 @@ function toView(
     budgetCurrency: p.budgetCurrency,
     startDate: calendarDateToIso(p.startDate),
     endDate: calendarDateToIso(p.endDate),
+    labels: mapLabels(p),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -87,6 +109,35 @@ async function assertAccountableInTeam(
   }
 }
 
+async function assertLabelsBelongToTeam(teamId: string, labelIds: string[]): Promise<void> {
+  if (labelIds.length === 0) return;
+  const unique = [...new Set(labelIds)];
+  const count = await prisma.label.count({
+    where: { id: { in: unique }, teamId },
+  });
+  if (count !== unique.length) {
+    throw Errors.badRequest('One or more labels do not belong to this team');
+  }
+}
+
+async function syncProjectLabels(projectId: string, labelIds: string[]): Promise<void> {
+  const unique = [...new Set(labelIds)];
+  await prisma.$transaction(async (tx) => {
+    await tx.projectLabel.deleteMany({
+      where: {
+        projectId,
+        ...(unique.length > 0 ? { labelId: { notIn: unique } } : {}),
+      },
+    });
+    if (unique.length > 0) {
+      await tx.projectLabel.createMany({
+        data: unique.map((labelId) => ({ projectId, labelId })),
+        skipDuplicates: true,
+      });
+    }
+  });
+}
+
 async function callerHasProjectEdit(
   teamId: string,
   callerUserId: string,
@@ -109,6 +160,7 @@ function updateTouchesNonNameFields(input: {
   budgetCurrency?: Currency;
   startDate?: string | null;
   endDate?: string | null;
+  labelIds?: string[];
 }): boolean {
   return (
     input.description !== undefined
@@ -118,6 +170,7 @@ function updateTouchesNonNameFields(input: {
     || input.budgetCurrency !== undefined
     || input.startDate !== undefined
     || input.endDate !== undefined
+    || input.labelIds !== undefined
   );
 }
 
@@ -134,10 +187,14 @@ export class ProjectsService {
       budgetCurrency?: Currency;
       startDate?: string | null;
       endDate?: string | null;
+      labelIds?: string[];
     },
   ): Promise<ProjectView> {
     if (input.accountableId !== undefined) {
       await assertAccountableInTeam(teamId, input.accountableId);
+    }
+    if (input.labelIds !== undefined) {
+      await assertLabelsBelongToTeam(teamId, input.labelIds);
     }
     const planned = normaliseBudget(input.plannedBudget);
     const startDate = normalizeOptionalCalendarDate(input.startDate);
@@ -165,8 +222,16 @@ export class ProjectsService {
         ...(startDate !== undefined && { startDate }),
         ...(endDate !== undefined && { endDate }),
       },
-      include: { accountable: { select: { name: true } } },
+      include: projectInclude,
     });
+    if (input.labelIds !== undefined && input.labelIds.length > 0) {
+      await syncProjectLabels(p.id, input.labelIds);
+      const hydrated = await prisma.project.findUniqueOrThrow({
+        where: { id: p.id },
+        include: projectInclude,
+      });
+      return toView(hydrated);
+    }
     return toView(p);
   }
 
@@ -179,7 +244,7 @@ export class ProjectsService {
     const rows = await prisma.project.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { accountable: { select: { name: true } } },
+      include: projectInclude,
     });
     return rows.map(toView);
   }
@@ -192,7 +257,7 @@ export class ProjectsService {
   ): Promise<ProjectView> {
     const p = await prisma.project.findUnique({
       where: { id: projectId },
-      include: { accountable: { select: { name: true } } },
+      include: projectInclude,
     });
     if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
     if ((await resolveProjectAccess(projectId, teamId, callerUserId, callerGlobalRole, 'view')) === 'NONE') {
@@ -215,6 +280,7 @@ export class ProjectsService {
       budgetCurrency?: Currency;
       startDate?: string | null;
       endDate?: string | null;
+      labelIds?: string[];
     },
   ): Promise<ProjectView> {
     const p = await prisma.project.findUnique({
@@ -243,6 +309,9 @@ export class ProjectsService {
     if (input.accountableId !== undefined) {
       await assertAccountableInTeam(teamId, input.accountableId);
     }
+    if (input.labelIds !== undefined) {
+      await assertLabelsBelongToTeam(teamId, input.labelIds);
+    }
     const plannedPatch = normaliseBudget(input.plannedBudget);
     const startPatch = normalizeOptionalCalendarDate(input.startDate);
     const endPatch = normalizeOptionalCalendarDate(input.endDate);
@@ -263,8 +332,16 @@ export class ProjectsService {
           ...(startPatch !== undefined && { startDate: startPatch }),
           ...(endPatch !== undefined && { endDate: endPatch }),
         },
-        include: { accountable: { select: { name: true } } },
+        include: projectInclude,
       });
+      if (input.labelIds !== undefined) {
+        await syncProjectLabels(projectId, input.labelIds);
+        const hydrated = await prisma.project.findUniqueOrThrow({
+          where: { id: projectId },
+          include: projectInclude,
+        });
+        return toView(hydrated);
+      }
       return toView(updated);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
@@ -301,7 +378,7 @@ export class ProjectsService {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        accountable: { select: { name: true } },
+        ...projectInclude,
         team: { select: { name: true, slug: true } },
       },
     });

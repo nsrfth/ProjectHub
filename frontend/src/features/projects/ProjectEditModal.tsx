@@ -83,6 +83,7 @@ export default function ProjectEditModal({
           <p className="text-xs text-slate-500 dark:text-slate-400">{t('projects.edit.nameOnlyHint')}</p>
         )}
         <ProjectFormFields
+          teamId={project.teamId}
           values={values}
           onChange={patch}
           members={members}

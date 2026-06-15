@@ -1,5 +1,6 @@
 import { api } from '@/lib/api';
 import type { BudgetCurrency } from '@/lib/formatBudget';
+import type { TaskLabel } from '@/features/labels/api';
 
 export type ProjectStatus = 'ACTIVE' | 'ARCHIVED' | 'ON_HOLD';
 
@@ -22,6 +23,7 @@ export interface Project {
   budgetCurrency: BudgetCurrency;
   startDate: string | null;
   endDate: string | null;
+  labels: TaskLabel[];
   createdAt: string;
   updatedAt: string;
 }
@@ -54,6 +56,7 @@ export async function createProject(
     budgetCurrency?: BudgetCurrency;
     startDate?: string | null;
     endDate?: string | null;
+    labelIds?: string[];
   },
 ): Promise<Project> {
   return (await api.post<Project>(`/teams/${teamId}/projects`, input)).data;
@@ -72,6 +75,7 @@ export async function updateProject(
     budgetCurrency?: BudgetCurrency;
     startDate?: string | null;
     endDate?: string | null;
+    labelIds?: string[];
   },
 ): Promise<Project> {
   return (await api.patch<Project>(`/teams/${teamId}/projects/${projectId}`, input)).data;
