@@ -40,6 +40,9 @@ export const PERMISSIONS = [
   // v1.58: team-scoped custom field definitions (create/edit/delete/reorder).
   'customfield.manage',
 
+  // v1.69: intake form builder + public-token management.
+  'form.manage',
+
   // Team membership + governance.
   'team.invite_member',
   'team.remove_member',
@@ -81,6 +84,7 @@ export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
   Projects: ['project.edit', 'project.delete', 'project.set_accountable'],
   Groups: ['group.manage'],
   CustomFields: ['customfield.manage'],
+  Forms: ['form.manage'],
   Team: [
     'team.invite_member',
     'team.remove_member',

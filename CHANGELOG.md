@@ -7,6 +7,22 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.69.0] — 2026-06-09
+
+**Intake forms — team submission + opt-in public links (S-9 aware).**
+
+- Schema: `IntakeForm` + `IntakeFormField` (migration `20260620120000_intake_forms`).
+- Permission: `form.manage` (Manager default) gates builder CRUD + token rotation.
+- API: `/api/teams/:teamId/forms` — CRUD, authenticated `POST …/submit`.
+- Public (opt-in, OFF by default): `GET/POST /api/public/forms/:publicToken` — opaque
+  token, IP rate-limit, honeypot, minimal render payload, system-user actor, no team leak.
+- Submissions create tasks via `TasksService.create` + `CustomFieldsService.setTaskValue`
+  (existing validators — no bypass). `task.created` webhooks/automations unchanged.
+- Frontend: Settings → Intake forms (builder), `/forms/:id` (team submit),
+  `/public/forms/:token` (standalone public page). i18n EN + FA.
+
+---
+
 ## [1.68.0] — 2026-06-09
 
 **Team workload / capacity view — built on existing `/reports/workload`.**

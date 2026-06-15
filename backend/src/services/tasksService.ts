@@ -265,8 +265,18 @@ export class TasksService {
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
     },
+    opts?: { intake?: boolean },
   ): Promise<TaskView> {
-    await assertCanWriteProject(projectId, teamId, creatorId, creatorGlobalRole);
+    if (opts?.intake) {
+      if (creatorGlobalRole !== 'ADMIN') {
+        const membership = await prisma.teamMembership.findUnique({
+          where: { userId_teamId: { userId: creatorId, teamId } },
+        });
+        if (!membership) throw Errors.forbidden('Not a team member');
+      }
+    } else {
+      await assertCanWriteProject(projectId, teamId, creatorId, creatorGlobalRole);
+    }
     await this.ensureProjectInTeam(teamId, projectId);
 
     if (input.assigneeId) {

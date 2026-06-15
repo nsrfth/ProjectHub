@@ -370,6 +370,29 @@ Charts use Recharts stacked bars (`dir="ltr"` under RTL). Read-only — no task 
 
 ---
 
+## Intake forms (v1.69)
+
+**Settings → Intake forms** lets managers build forms that create tasks in a chosen project. Team members submit at `/forms/:formId` inside the app.
+
+- **Field targets:** title (required), description, priority, due date, assignee, labels, and any team custom field.
+- **Default mode:** **Team members only** — authenticated submission.
+- **Public mode (opt-in):** enables an opaque share link (`/public/forms/:token`). **Off by default.** Public forms accept anonymous submissions; anyone with the link can create tasks in the target project.
+
+### Public form security
+
+Treat public intake like the removed public registration endpoint (S-9): it is a deliberate, opt-in exposure surface.
+
+- Enable public mode only when you need external submissions.
+- **Rotate the link** if it leaks; the old URL stops working immediately.
+- Public forms **cannot** include assignee or person custom fields (no team member list is exposed).
+- Submissions are **rate-limited by IP** and include a **honeypot** field for bots.
+- Tasks are created under the hidden system account, not the submitter.
+- The public API returns only field labels and types needed to render the form — never team rosters or project internals.
+
+Custom field values use the same server validators as in-app task editing — invalid values are rejected with 400.
+
+---
+
 ## Notifications
 
 The bell icon (top-right after sign-in) lights up when you have unread notifications. Types:

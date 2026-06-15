@@ -22,6 +22,10 @@ import BackupsPage from '@/pages/settings/BackupsPage';
 import TaskhubPage from '@/pages/settings/TaskhubPage';
 import LabelsPage from '@/pages/settings/LabelsPage';
 import CustomFieldsPage from '@/pages/settings/CustomFieldsPage';
+import FormsListPage from '@/pages/settings/FormsListPage';
+import FormEditorPage from '@/pages/settings/FormEditorPage';
+import FormSubmitPage from '@/pages/FormSubmitPage';
+import PublicFormPage from '@/pages/PublicFormPage';
 import AutomationsPage from '@/pages/settings/AutomationsPage';
 import SearchPage from '@/pages/SearchPage';
 import HelpPage from '@/pages/HelpPage';
@@ -38,6 +42,7 @@ import ProtectedRoute from './ProtectedRoute';
 export const router = createBrowserRouter([
   { path: '/', element: <Navigate to="/dashboard" replace /> },
   { path: '/login', element: <LoginPage /> },
+  { path: '/public/forms/:token', element: <PublicFormPage /> },
   // v1.30.11 (S-9): /register route + RegisterPage removed. Public
   // self-registration was an account-enumeration channel. New accounts
   // come from the v1.26 admin-provisioning flow at Settings → Admin →
@@ -58,6 +63,7 @@ export const router = createBrowserRouter([
       { path: '/workload', element: <WorkloadPage /> },
       { path: '/dashboards', element: <DashboardsListPage /> },
       { path: '/dashboards/:dashboardId', element: <DashboardEditorPage /> },
+      { path: '/forms/:formId', element: <FormSubmitPage /> },
       { path: '/calendar', element: <Navigate to="/planner/calendar" replace /> },
       {
         path: '/planner',
@@ -83,6 +89,8 @@ export const router = createBrowserRouter([
           { path: 'roles', element: <RolesPage /> },
           { path: 'labels', element: <LabelsPage /> },
           { path: 'custom-fields', element: <CustomFieldsPage /> },
+          { path: 'forms', element: <FormsListPage /> },
+          { path: 'forms/:formId', element: <FormEditorPage /> },
           { path: 'automations', element: <AutomationsPage /> },
           { path: 'directories', element: <DirectoriesPage /> },
           { path: 'taskhub', element: <TaskhubPage /> },

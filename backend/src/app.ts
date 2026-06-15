@@ -36,6 +36,7 @@ import { userGroupsRoutes } from './routes/userGroups.js';
 import { customFieldsRoutes, taskCustomFieldsRoutes } from './routes/customFields.js';
 import { automationsRoutes } from './routes/automations.js';
 import { dashboardsRoutes } from './routes/dashboards.js';
+import { intakeFormsRoutes, publicIntakeFormsRoutes } from './routes/intakeForms.js';
 import { backupsRoutes } from './routes/backups.js';
 import { taskhubRoutes } from './routes/taskhub.js';
 import { securitySettingsRoutes } from './routes/securitySettings.js';
@@ -208,6 +209,10 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(automationsRoutes, { prefix: '/teams/:teamId/automations' });
     // v1.67: team-scoped configurable widget dashboards.
     await api.register(dashboardsRoutes, { prefix: '/teams/:teamId/dashboards' });
+    // v1.69: intake forms — team CRUD + authenticated submit; public routes
+    // registered separately under /public/forms (no auth).
+    await api.register(intakeFormsRoutes, { prefix: '/teams/:teamId/forms' });
+    await api.register(publicIntakeFormsRoutes, { prefix: '/public/forms', env });
   }, { prefix: '/api' });
 
   app.addHook('onClose', async () => {

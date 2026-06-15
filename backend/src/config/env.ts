@@ -24,6 +24,9 @@ const envSchema = z.object({
   UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
   UPLOAD_DIR: z.string().default('./uploads'),
 
+  PUBLIC_FORM_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
+  PUBLIC_FORM_RATE_LIMIT_WINDOW: z.string().default('1 minute'),
+
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   AUTH_RATE_LIMIT_WINDOW: z.string().default('1 minute'),
 
@@ -189,4 +192,9 @@ export function loadEnv(): Env {
     .filter(Boolean);
   cached = { ...parsed.data, corsOrigins };
   return cached;
+}
+
+/** Test-only: allow rebuilding the app with different env vars mid-suite. */
+export function resetEnvCacheForTests(): void {
+  cached = null;
 }

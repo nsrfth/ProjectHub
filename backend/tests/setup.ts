@@ -46,6 +46,7 @@ if (!bypass) {
 // the integration suite the moment a single test file does >10 registrations.
 // Bump it for the test process unless the runner already set one explicitly.
 process.env.AUTH_RATE_LIMIT_MAX ??= '10000';
+process.env.PUBLIC_FORM_RATE_LIMIT_MAX ??= '10000';
 process.env.GLOBAL_RATE_LIMIT_MAX ??= '100000';
 
 // JWT + cookie defaults so individual test files don't have to repeat them.

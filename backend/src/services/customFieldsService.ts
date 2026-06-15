@@ -329,6 +329,20 @@ export class CustomFieldsService {
       });
   }
 
+  /** Validate a value without persisting — intake forms call this before task create. */
+  async validateTaskValue(
+    teamId: string,
+    fieldId: string,
+    input: SetTaskCustomFieldValueBody,
+  ): Promise<void> {
+    const field = await prisma.customFieldDefinition.findUnique({
+      where: { id: fieldId },
+      include: { options: true },
+    });
+    if (!field || field.teamId !== teamId) throw Errors.notFound('Custom field not found');
+    await this.validateAndBuildValueData(field, teamId, input);
+  }
+
   async setTaskValue(
     teamId: string,
     projectId: string,

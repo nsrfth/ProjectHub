@@ -65,6 +65,7 @@ export interface TeamCapabilities {
   manageGroups: boolean;
   manageCustomFields: boolean;
   manageAutomations: boolean;
+  manageForms: boolean;
 }
 
 export interface TeamDetail extends Team {

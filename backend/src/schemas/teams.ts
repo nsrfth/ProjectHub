@@ -115,6 +115,7 @@ export const teamCapabilitiesResponse = z.object({
   manageGroups: z.boolean(),
   manageCustomFields: z.boolean(),
   manageAutomations: z.boolean(),
+  manageForms: z.boolean(),
 });
 
 export const teamDetailResponse = teamResponse.extend({

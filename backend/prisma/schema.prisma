@@ -344,6 +344,7 @@ model User {
   customFieldValues  CustomFieldValue[] @relation("CustomFieldPerson")
   holidaysCreated    Holiday[]          @relation("HolidayCreatedBy")
   ownedDashboards    Dashboard[]        @relation("DashboardOwner")
+  createdIntakeForms IntakeForm[]       @relation("IntakeFormCreator")
 
   @@index([email])
 }
@@ -472,6 +473,7 @@ model Team {
   customFields  CustomFieldDefinition[]
   automationRules AutomationRule[]
   dashboards    Dashboard[]
+  intakeForms   IntakeForm[]
   directory     Directory?       @relation("TeamDirectory", fields: [directoryId], references: [id], onDelete: SetNull)
 
   @@index([directoryId])
@@ -564,6 +566,7 @@ model Project {
   accountable   User?         @relation("ProjectAccountable", fields: [accountableId], references: [id], onDelete: SetNull)
   tasks         Task[]
   groupGrants   ProjectGroupGrant[]
+  intakeForms   IntakeForm[]
 
   // v1.30: tsvector for full-text search. See Task.searchVector for
   // rationale + lifecycle (managed by raw SQL, never read via Prisma).
@@ -862,9 +865,10 @@ model CustomFieldDefinition {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  team    Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  options CustomFieldOption[]
-  values  CustomFieldValue[]
+  team            Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  options         CustomFieldOption[]
+  values          CustomFieldValue[]
+  intakeFormFields IntakeFormField[]
 
   @@unique([teamId, name])
   @@index([teamId, active])
@@ -954,6 +958,48 @@ model DashboardWidget {
   dashboard Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
 
   @@index([dashboardId])
+}
+
+// v1.69: intake forms — map submissions to tasks in a chosen project.
+model IntakeForm {
+  id          String   @id @default(cuid())
+  teamId      String
+  projectId   String
+  name        String
+  description String?
+  // TEAM = authenticated team members (default). PUBLIC = opaque-token URL.
+  mode        String   @default("TEAM")
+  publicToken String?  @unique
+  enabled     Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  team    Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator User?             @relation("IntakeFormCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  fields  IntakeFormField[]
+
+  @@index([teamId])
+  @@index([publicToken])
+}
+
+model IntakeFormField {
+  id            String  @id @default(cuid())
+  formId        String
+  label         String
+  // Built-in: title | description | priority | dueDate | assignee | labels
+  // Custom: customField (requires customFieldId)
+  target        String
+  customFieldId String?
+  required      Boolean @default(false)
+  helpText      String?
+  position      Int
+
+  form        IntakeForm             @relation(fields: [formId], references: [id], onDelete: Cascade)
+  customField CustomFieldDefinition? @relation(fields: [customFieldId], references: [id], onDelete: SetNull)
+
+  @@index([formId])
 }
 
 model Attachment {
