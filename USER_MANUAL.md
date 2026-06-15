@@ -86,7 +86,7 @@ The subtitle under the greeting shows how many teams are included (e.g. “Acros
 
 The **left sidebar** (always visible on desktop) links to **Dashboard**, **Teams**, **Projects**, **Planner**, **Reports**, **Dashboards**, and **Settings**. Your avatar and name appear at the bottom (links to **Settings → Preferences**).
 
-The **top bar** adds global search, notifications, and **+ New Task**.
+The **top bar** adds global search and notifications.
 
 ---
 

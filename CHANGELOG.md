@@ -7,6 +7,12 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.69.2] — 2026-06-09
+
+**Navigation:** removed the redundant "+ New Task" shortcut from the top bar. Task creation is unchanged via Projects and the task board.
+
+---
+
 ## [1.69.1] — 2026-06-09
 
 **About page:** credits author Naser Fathi with a LinkedIn link (creator credit, not ownership).
