@@ -180,6 +180,78 @@ describe('PATCH /api/admin/users/:userId', () => {
     expect(res.statusCode).toBe(409);
   });
 
+  // v1.78.1: changing a user's globalRole revokes their refresh tokens.
+  // The access JWT carries globalRole as a signed claim and requireAuth
+  // doesn't re-read the DB on the JWT path, so without this the promoted
+  // user would hit the API with stale role bits up to their refresh
+  // token's lifetime. Forcing re-auth via the standard refresh→401 path
+  // is the cheapest fix and bounded by the access TTL.
+  it('revokes the targets refresh tokens when globalRole changes (v1.78.1)', async () => {
+    const admin = await register('admin@example.com');
+    // Bootstrap directly so we capture the fresh refresh cookie that
+    // bootstrapUser returns (the `register` helper above discards it).
+    const member = await bootstrapUser(app, {
+      email: 'member@example.com',
+      name: 'member',
+      password: PASSWORD,
+    });
+    expect(member.refreshCookie).toBeTruthy();
+    // Sanity: the member's refresh works before the promotion.
+    const before = await inject({
+      method: 'POST',
+      url: '/api/auth/refresh',
+      cookies: { th_refresh: member.refreshCookie! },
+    });
+    expect(before.statusCode).toBe(200);
+
+    // Admin promotes member to ADMIN.
+    const promote = await inject({
+      method: 'PATCH',
+      url: `/api/admin/users/${member.userId}`,
+      headers: { authorization: `Bearer ${admin.token}` },
+      payload: { globalRole: 'ADMIN' },
+    });
+    expect(promote.statusCode).toBe(200);
+
+    // The original refresh cookie is now revoked — the SPA must log in
+    // again to get a JWT carrying the new globalRole. Either 401 or the
+    // family-revocation 401 is acceptable; only the rotated cookie from
+    // `before` would still work for one more rotation, and we throw it
+    // away by re-using the original.
+    const after = await inject({
+      method: 'POST',
+      url: '/api/auth/refresh',
+      cookies: { th_refresh: member.refreshCookie! },
+    });
+    expect(after.statusCode).toBe(401);
+  });
+
+  // v1.78.1: a no-op role change (PATCH from ADMIN to ADMIN, etc.) must
+  // NOT revoke refresh tokens — otherwise an admin editing some other
+  // field that happens to round-trip globalRole would log themselves out.
+  it('does NOT revoke refresh tokens when the role is unchanged (v1.78.1)', async () => {
+    const admin = await register('admin@example.com');
+    const target = await bootstrapUser(app, {
+      email: 't@example.com',
+      name: 't',
+      password: PASSWORD,
+    });
+    // Same role re-set: MEMBER → MEMBER.
+    const patch = await inject({
+      method: 'PATCH',
+      url: `/api/admin/users/${target.userId}`,
+      headers: { authorization: `Bearer ${admin.token}` },
+      payload: { globalRole: 'MEMBER' },
+    });
+    expect(patch.statusCode).toBe(200);
+    const refresh = await inject({
+      method: 'POST',
+      url: '/api/auth/refresh',
+      cookies: { th_refresh: target.refreshCookie! },
+    });
+    expect(refresh.statusCode).toBe(200);
+  });
+
   it('allows another admin to demote a non-last admin', async () => {
     const a = await register('a@example.com');
     const b = await register('b@example.com');

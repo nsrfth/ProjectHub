@@ -9,6 +9,7 @@ import { parseTaskViewMode, type TaskViewMode } from '@/features/tasks/taskViewM
 import * as labelsApi from '@/features/labels/api';
 import { formatShamsiDate, formatShamsiTimestampDate } from '@/lib/shamsi';
 import { LabelChip } from '@/features/labels/LabelChip';
+import { LabelMultiSelect } from '@/features/labels/LabelMultiSelect';
 import { useT } from '@/lib/i18n';
 import PlannerNav from '@/features/planner/PlannerNav';
 import GroupedBoard from '@/features/planner/GroupedBoard';
@@ -142,6 +143,9 @@ export default function TasksPage(): JSX.Element {
   const [startDate, setStartDate] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [responsibleId, setResponsibleId] = useState('');
+  // v1.78.2: optional bulk label attach at create time. The team-scoped
+  // catalog renders via LabelMultiSelect (also covers inline-create).
+  const [newTaskLabelIds, setNewTaskLabelIds] = useState<string[]>([]);
   const [createError, setCreateError] = useState<string | null>(null);
 
   const createMut = useMutation({
@@ -151,6 +155,7 @@ export default function TasksPage(): JSX.Element {
       startDate?: string;
       dueDate?: string;
       responsibleId?: string;
+      labelIds?: string[];
     }) => tasksApi.createTask(teamId!, projectId!, input),
     onSuccess: async () => {
       setTitle('');
@@ -158,6 +163,7 @@ export default function TasksPage(): JSX.Element {
       setStartDate(null);
       setDueDate(null);
       setResponsibleId('');
+      setNewTaskLabelIds([]);
       setCreateError(null);
       await qc.invalidateQueries({ queryKey: ['tasks', teamId, projectId] });
     },
@@ -290,6 +296,9 @@ export default function TasksPage(): JSX.Element {
       ...(startDate ? { startDate } : {}),
       ...(dueDate ? { dueDate } : {}),
       ...(responsibleId ? { responsibleId } : {}),
+      // v1.78.2: only include labelIds when the user picked something —
+      // omitted is identical to [] server-side but keeps the wire body small.
+      ...(newTaskLabelIds.length > 0 ? { labelIds: newTaskLabelIds } : {}),
     });
   }
 
@@ -373,6 +382,24 @@ export default function TasksPage(): JSX.Element {
               </label>
             )}
           </div>
+
+          {/* v1.78.2: optional bulk label attach at create time. The
+              LabelMultiSelect renders the team catalog with toggle
+              semantics + inline-create. Server validates the ids and
+              rejects cross-team with 400. */}
+          {teamId && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {t('tasks.col.labels')}
+              </span>
+              <LabelMultiSelect
+                teamId={teamId}
+                value={newTaskLabelIds}
+                onChange={setNewTaskLabelIds}
+                disabled={createMut.isPending}
+              />
+            </div>
+          )}
 
           {/* v1.20: view-mode toggle. v1.33: added List. */}
           <div className="flex flex-wrap items-center gap-2">

@@ -117,6 +117,10 @@ export async function createTask(
     // v1.42: optional task-level budget pair (number | string | null).
     plannedBudget?: number | string | null;
     actualSpent?: number | string | null;
+    // v1.78.2: optional bulk label attach at create time. Empty array /
+    // omitted = no labels. Server validates each id belongs to the
+    // task's team and rejects cross-team ids with 400.
+    labelIds?: string[];
   },
 ): Promise<Task> {
   return (await api.post<Task>(`/teams/${teamId}/projects/${projectId}/tasks`, input)).data;
@@ -143,6 +147,10 @@ export async function updateTask(
     // v1.42: budget patch — undefined leaves, null clears, value sets.
     plannedBudget: number | string | null;
     actualSpent: number | string | null;
+    // v1.78.2: replace-set on labels. undefined = leave existing labels
+    // alone; an array (incl. []) replaces the entire set. The per-id
+    // attachLabel/detachLabel calls remain available for fine-grained edits.
+    labelIds: string[];
   }>,
 ): Promise<Task> {
   return (

@@ -240,14 +240,35 @@ export class AdminService {
       }
     }
 
-    const updated = await prisma.user.update({
-      where: { id: targetUserId },
-      data: { globalRole: newRole },
-      include: {
-        _count: { select: { memberships: true } },
-        directory: { select: { name: true, host: true } },
-      },
-    });
+    // v1.78.1: revoke the target's active refresh tokens whenever their
+    // globalRole actually changes. The access JWT carries globalRole as a
+    // signed claim; requireAuth verifies it WITHOUT a DB re-read (the API-
+    // token path does re-read, but the JWT path doesn't — by design, to
+    // keep requireAuth a pure verify). Without revocation the target would
+    // keep hitting the API with stale role bits up to their refresh token's
+    // lifetime — meaning a freshly-promoted ADMIN couldn't see the cross-
+    // team /api/projects list until they logged out and back in. Mirrors
+    // the soft-revoke idiom from changePassword / performPasswordReset in
+    // authService — set revokedAt; the row stays for audit history.
+    const roleChanged = target.globalRole !== newRole;
+    const [updated] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: targetUserId },
+        data: { globalRole: newRole },
+        include: {
+          _count: { select: { memberships: true } },
+          directory: { select: { name: true, host: true } },
+        },
+      }),
+      ...(roleChanged
+        ? [
+            prisma.refreshToken.updateMany({
+              where: { userId: targetUserId, revokedAt: null },
+              data: { revokedAt: new Date() },
+            }),
+          ]
+        : []),
+    ]);
     return toAdminUserView(updated);
   }
 

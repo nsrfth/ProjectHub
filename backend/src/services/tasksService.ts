@@ -113,9 +113,10 @@ export interface TaskView {
   // to preserve the task's history. Frontend renders as "(deleted user)".
   creatorId: string | null;
   assigneeId: string | null;
-  // v1.19: "Assigned Technician" — the person actually doing the work.
-  // Defaults to creator at create-time; only team MANAGERS / global ADMINs
-  // can change it after. responsibleName is joined for the UI.
+  // v1.19 (renamed v1.77): "Responsible" — the person actually doing the
+  // work. Defaults to creator at create-time; only team MANAGERS / global
+  // ADMINs can change it after via `task.change_responsible`. responsibleName
+  // is joined for the UI.
   responsibleId: string | null;
   responsibleName: string | null;
   title: string;
@@ -227,6 +228,27 @@ function normaliseBudget(v: number | string | null | undefined): Prisma.Decimal 
   return new Prisma.Decimal(s);
 }
 
+// v1.78.2: validate a set of label ids against the task's team. Deduplicates,
+// then verifies every id resolves to a Label in this team. Rejects cross-team
+// ids with 400 — keeps team isolation, mirroring the existing
+// labelsService.attach guard. Returns the deduplicated list of ids that
+// the caller should write into TaskLabel.
+async function assertLabelsInTeam(teamId: string, labelIds: string[]): Promise<string[]> {
+  const unique = Array.from(new Set(labelIds));
+  if (unique.length === 0) return unique;
+  const rows = await prisma.label.findMany({
+    where: { id: { in: unique }, teamId },
+    select: { id: true },
+  });
+  if (rows.length !== unique.length) {
+    // Don't disclose which ids were cross-team vs. nonexistent — the
+    // generic 400 matches the existing attach() 404 posture (never leak
+    // existence of other teams' resources).
+    throw Errors.badRequest('One or more labels do not belong to this team');
+  }
+  return unique;
+}
+
 async function attachCustomFields(teamId: string, views: TaskView[]): Promise<TaskView[]> {
   if (views.length === 0) return views;
   const map = await _customFields.buildCustomFieldsForTasks(
@@ -272,6 +294,10 @@ export class TasksService {
       // v1.42: optional budget pair. number | string | null.
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
+      // v1.78.2: optional list of team-label ids to attach at create
+      // time. Empty array / omitted = no labels. Validated to belong to
+      // the task's team (cross-team → 400). Deduped before insert.
+      labelIds?: string[];
     },
     opts?: { intake?: boolean },
   ): Promise<TaskView> {
@@ -352,6 +378,13 @@ export class TasksService {
 
     const dueResolvedForCreate = dueResolved;
 
+    // v1.78.2: validate label ids OUTSIDE the transaction so the cross-team
+    // 400 surfaces before we lock the task table for write.
+    const validatedLabelIds =
+      input.labelIds && input.labelIds.length > 0
+        ? await assertLabelsInTeam(teamId, input.labelIds)
+        : [];
+
     return prisma.$transaction(async (tx) => {
       const task = await tx.task.create({
         data: {
@@ -380,6 +413,25 @@ export class TasksService {
         },
         include: TASK_INCLUDE,
       });
+      // v1.78.2: bulk-attach validated labels. createMany is one INSERT
+      // (no row-by-row round trips); skipDuplicates is defensive — the
+      // task is newly created so no collision should happen in practice.
+      // We then re-fetch with TASK_INCLUDE so the returned view's
+      // `labels` array reflects the new attachments (the original create
+      // returned an empty `labels` array since the join rows didn't
+      // exist yet at that point in the transaction).
+      let rowForView = task;
+      if (validatedLabelIds.length > 0) {
+        await tx.taskLabel.createMany({
+          data: validatedLabelIds.map((labelId) => ({ taskId: task.id, labelId })),
+          skipDuplicates: true,
+        });
+        const refreshed = await tx.task.findUnique({
+          where: { id: task.id },
+          include: TASK_INCLUDE,
+        });
+        if (refreshed) rowForView = refreshed;
+      }
       await logActivity(tx, {
         taskId: task.id,
         actorId: creatorId,
@@ -406,7 +458,10 @@ export class TasksService {
         });
       }
       const blockerCount = await _deps.countIncompleteBlockers(task.id);
-      return toView(task, blockerCount);
+      // v1.78.2: rowForView is `task` when no labels were attached
+      // (the existing snapshot is fine) or the re-fetched task with the
+      // populated labels array when labels were attached.
+      return toView(rowForView, blockerCount);
     }).then(async (view) => {
       // Webhook emit after commit — never inside the transaction (the
       // dispatcher reads from the same table and we don't want to hold
@@ -509,10 +564,21 @@ export class TasksService {
       // v1.42: budget patch — undefined leaves, null clears.
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
+      // v1.78.2: replace-set on labels. undefined = leave the task's
+      // current labels alone; an array (incl. []) replaces the entire
+      // set. Each id must belong to this team (cross-team → 400).
+      labelIds?: string[];
     },
   ): Promise<TaskView> {
     await assertCanWriteProject(projectId, teamId, actorId, actorGlobalRole);
     const existing = await this.get(teamId, projectId, taskId);
+
+    // v1.78.2: validate labelIds outside the transaction so cross-team
+    // 400 surfaces before any write. Skipped when undefined (leave-as-is).
+    let validatedReplaceLabelIds: string[] | undefined;
+    if (input.labelIds !== undefined) {
+      validatedReplaceLabelIds = await assertLabelsInTeam(teamId, input.labelIds);
+    }
 
     if (input.assigneeId) {
       const membership = await prisma.teamMembership.findUnique({
@@ -705,6 +771,27 @@ export class TasksService {
           include: TASK_INCLUDE,
         });
 
+        // v1.78.2: replace-set semantics. Delete-then-insert inside the
+        // transaction (no diff/merge — simpler, and createMany with
+        // skipDuplicates would not remove labels the user un-checked).
+        // Re-fetch the row so `labels[]` in the returned view reflects
+        // the post-replace state.
+        let postLabelsRow = updated;
+        if (validatedReplaceLabelIds !== undefined) {
+          await tx.taskLabel.deleteMany({ where: { taskId } });
+          if (validatedReplaceLabelIds.length > 0) {
+            await tx.taskLabel.createMany({
+              data: validatedReplaceLabelIds.map((labelId) => ({ taskId, labelId })),
+              skipDuplicates: true,
+            });
+          }
+          const refreshed = await tx.task.findUnique({
+            where: { id: taskId },
+            include: TASK_INCLUDE,
+          });
+          if (refreshed) postLabelsRow = refreshed;
+        }
+
         // Emit one status-change row and (separately) one updated-fields row
         // so the timeline reads naturally. A no-op PATCH (everything matched)
         // emits nothing — don't spam the audit log.
@@ -775,7 +862,9 @@ export class TasksService {
           },
         });
         return {
-          view: toView(updated, blockerCount),
+          // v1.78.2: surface the post-label-replace snapshot when labels
+          // were touched; otherwise `updated` already has TASK_INCLUDE.
+          view: toView(postLabelsRow, blockerCount),
           statusChanged,
           changedNonStatusFields,
           fromStatus: existing.status,

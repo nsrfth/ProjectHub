@@ -53,6 +53,12 @@ export const createTaskBody = z.object({
   // v1.42: optional task-level budget fields, mirrors Project budget rules.
   plannedBudget: budgetSchema,
   actualSpent: budgetSchema,
+  // v1.78.2: optional list of team-label ids to attach at create time.
+  // Omitted = no labels (same as existing behaviour). Empty array = no
+  // labels (explicit). Each id must belong to the task's team; the
+  // service rejects cross-team ids with 400. Deduped server-side. The
+  // catalog-based attach/detach endpoints continue to work post-create.
+  labelIds: z.array(z.string().min(1)).max(50).optional(),
 }).superRefine(refineTaskDueDateRange);
 
 export const updateTaskBody = z
@@ -73,6 +79,12 @@ export const updateTaskBody = z
     // v1.42: optional budget patch — undefined leaves, null clears.
     plannedBudget: budgetSchema,
     actualSpent: budgetSchema,
+    // v1.78.2: replace-set semantics on PATCH. Undefined = leave the
+    // task's labels alone. An array (including empty) replaces the
+    // current set entirely. Same per-id validation as create. The
+    // catalog-based POST .../labels/:labelId / DELETE remain available
+    // for one-at-a-time edits from the LabelPicker.
+    labelIds: z.array(z.string().min(1)).max(50).optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'Provide at least one field to update');
 
@@ -133,8 +145,9 @@ export const taskResponse = z.object({
   // (FK SetNull preserves task history).
   creatorId: z.string().nullable(),
   assigneeId: z.string().nullable(),
-  // v1.19: assigned Technician — distinct from assignee. Defaults to creator
-  // on create; changes gated to team MANAGER / global ADMIN.
+  // v1.19 (renamed v1.77): assigned Responsible — distinct from assignee.
+  // Defaults to creator on create; changes gated to team MANAGER /
+  // global ADMIN via the `task.change_responsible` permission.
   responsibleId: z.string().nullable(),
   responsibleName: z.string().nullable(),
   title: z.string(),

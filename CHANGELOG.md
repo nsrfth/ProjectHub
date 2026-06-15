@@ -7,6 +7,127 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.78.2] — 2026-06-15
+
+**Tasks — bulk-attach labels at create time + replace-set on PATCH.**
+The team-label catalog, attach/detach endpoints, LabelPicker (TaskDetail),
+LabelChip (rows + cards) and label filter (TasksPage) were all already in
+place — but the task body itself didn't accept labels, so labels had to
+be attached one-at-a-time AFTER creating a task. This release wires
+`labelIds: string[]` into `createTaskBody` and `updateTaskBody`:
+
+- **Create**: `POST .../tasks { ..., labelIds: [id, id, ...] }` attaches
+  every label in one shot. Empty array / omitted = no labels.
+- **PATCH replace-set**: `PATCH .../tasks/:id { labelIds: [...] }`
+  replaces the task's entire label set. Adding + removing in one call;
+  empty array clears all. Omitted = leave existing labels alone.
+- Cross-team validation: every id must belong to the task's team; one
+  bad id → 400 (the existing per-id POST .../labels/:labelId 404s the
+  same way — keeps the no-existence-leak posture).
+
+The per-id attach/detach endpoints remain available for the LabelPicker's
+one-at-a-time UX on the task-detail page.
+
+### Backend
+
+- `schemas/tasks.ts` — `createTaskBody.labelIds: z.array(z.string().min(1)).max(50).optional()`;
+  same on `updateTaskBody`.
+- `services/tasksService.ts` — new `assertLabelsInTeam(teamId, ids)`
+  helper: dedupes, `findMany({ where: { id: { in }, teamId }})`, rejects
+  if any id is missing (single 400 — never leaks which ids were cross-team
+  vs nonexistent). `create()` writes `tx.taskLabel.createMany` after the
+  task row exists, then re-fetches the task with `TASK_INCLUDE` so the
+  returned view's `labels[]` is populated. `update()` deletes-then-inserts
+  the join rows inside the transaction (no diff/merge; simpler).
+
+### Frontend
+
+- `features/tasks/api.ts` — `createTask` and `updateTask` accept `labelIds`.
+- `pages/TasksPage.tsx` — new-task form gains a `LabelMultiSelect` row
+  using the existing component (toggle semantics + inline-create) and
+  passes the selection through `createMut.mutate`.
+- No changes to TaskDetailPage (LabelPicker already covers edit) or
+  GroupedBoard (chips already render). Filtering by labels already
+  worked.
+
+### Tests
+
+- `tests/integration/labels.test.ts` — 6 new cases:
+  - bulk attach on create echoes `labels[]`
+  - omitted `labelIds` creates a task with no labels (back-compat)
+  - cross-team label id → 400
+  - PATCH replace-set: add + remove in one call
+  - PATCH `labelIds: []` clears all labels
+  - PATCH without `labelIds` leaves the existing set intact
+  - team-label delete cascades to TaskLabel (task survives, label gone)
+
+### Verified
+
+- Backend: 15/15 `labels.test.ts` (9 pre-existing + 6 new). Backend
+  `tsc --noEmit` clean.
+- Frontend: `tsc --noEmit` clean; `vite build` clean.
+- Live smoke: deferred.
+
+### Phase boundary notes
+
+- `labelIds.max(50)` is the per-request cap. The team catalog is
+  small in practice and even teams with a heavy label habit don't tag
+  one task with > 50 — if we ever need more it's a one-line bump.
+- The replace-set semantics use delete-then-insert (not diff/merge).
+  Simpler, and on the corpus sizes TaskHub targets the cost is noise.
+
+## [1.78.1] — 2026-06-15
+
+**Fix: stale-JWT after role change.** Promoting a user MEMBER → ADMIN
+(or demoting) used to leave their existing access token signed with the
+old `globalRole`. Because `requireAuth` verifies the JWT without
+re-reading the DB on the JWT path (by design — the API-token path *does*
+re-read), the just-promoted user kept hitting the API with stale role
+bits for up to the refresh-token lifetime. The visible symptom: a
+freshly-promoted ADMIN sees an empty `/projects` page because the
+cross-team list's owner filter applies as if they were still MEMBER.
+
+Fix: `adminService.updateUserRole` now revokes the target's active
+refresh tokens whenever `globalRole` actually changes, mirroring the
+soft-revoke idiom from `changePassword` / `performPasswordReset` in
+`authService`. The user must re-login; once they do, the new JWT
+carries the new role. A no-op role change (PATCH from MEMBER to MEMBER,
+etc.) does NOT revoke — that would log out admins who happen to PATCH
+the field to the same value.
+
+### Backend
+
+- `services/adminService.ts` — `updateUserRole` now runs the user-update
+  and a `refreshToken.updateMany({ revokedAt: now })` in one
+  `$transaction`, gated on `roleChanged`. No new dependencies.
+
+### Tests
+
+- `tests/integration/admin.test.ts` — two new cases:
+  - Refresh token issued before promotion → `/api/auth/refresh` returns
+    401 after promotion.
+  - No-op role change leaves refresh tokens intact (refresh still 200s).
+
+### Cosmetic
+
+- `schemas/tasks.ts` and `services/tasksService.ts` — two stale comments
+  still saying "assigned Technician" updated to reflect the v1.77
+  rename ("Responsible").
+
+### Verified
+
+- Backend: 15/15 `admin.test.ts`. Backend `tsc --noEmit` clean.
+- Frontend: `tsc --noEmit` clean; `vite build` clean.
+- Live smoke: deferred.
+
+### Phase boundary notes
+
+- The fix bounds staleness to one access-token TTL (default 15 min) for
+  in-flight sessions, and is instantaneous for any new login after the
+  role change. Considered + rejected: re-reading `globalRole` from DB on
+  every authenticated request — adds 1 Prisma round-trip per request
+  for a corner case that re-auth fully covers.
+
 ## [1.78.0] — 2026-06-15
 
 **Tasks — start/due dates + responsible at creation.** Project task form accepts optional

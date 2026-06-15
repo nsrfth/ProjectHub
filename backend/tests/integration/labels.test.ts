@@ -287,3 +287,181 @@ describe('DELETE /api/teams/:teamId/labels/:labelId', () => {
     expect(list.json()[0].labels).toHaveLength(0);
   });
 });
+
+// v1.78.2: bulk attach at create time + replace-set on update via the
+// task body's `labelIds` field. The per-id POST .../labels/:labelId and
+// DELETE remain available for one-at-a-time edits from the LabelPicker.
+describe('task body labelIds (v1.78.2)', () => {
+  async function makeLabel(s: { token: string; teamId: string }, name: string, color = '#aabbcc') {
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/labels`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { name, color },
+    });
+    return res.json() as { id: string; name: string; color: string };
+  }
+
+  it('attaches multiple labels at create time via labelIds[]', async () => {
+    const s = await setup();
+    const bug = await makeLabel(s, 'bug');
+    const ux = await makeLabel(s, 'ux');
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { title: 'Bulk labels', labelIds: [bug.id, ux.id] },
+    });
+    expect(res.statusCode).toBe(201);
+    const labels = res.json().labels as Array<{ id: string; name: string }>;
+    expect(labels.map((l) => l.id).sort()).toEqual([bug.id, ux.id].sort());
+  });
+
+  it('omitted labelIds creates a task with no labels (back-compat)', async () => {
+    const s = await setup();
+    await makeLabel(s, 'bug');
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { title: 'No labels here' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().labels).toEqual([]);
+  });
+
+  it('rejects a labelId that belongs to a different team (400)', async () => {
+    const s = await setup('team-l1');
+    // Bootstrap a second team owned by a separate admin so its label
+    // id is real but cross-team.
+    const other = await bootstrapUser(app, {
+      email: 'b@example.com',
+      name: 'Bob',
+      password: PASSWORD,
+    });
+    const otherTeam = (
+      await inject({
+        method: 'POST',
+        url: '/api/teams',
+        headers: { authorization: `Bearer ${other.token}` },
+        payload: { name: 'OT', slug: 'other-team' },
+      })
+    ).json();
+    const otherLabel = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${otherTeam.id}/labels`,
+        headers: { authorization: `Bearer ${other.token}` },
+        payload: { name: 'cross-team', color: '#ff0000' },
+      })
+    ).json();
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { title: 'Sneak', labelIds: [otherLabel.id] },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('PATCH labelIds replaces the entire set (add + remove in one call)', async () => {
+    const s = await setup();
+    const bug = await makeLabel(s, 'bug');
+    const ux = await makeLabel(s, 'ux');
+    const docs = await makeLabel(s, 'docs');
+    // Create with [bug, ux].
+    const created = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+        headers: { authorization: `Bearer ${s.token}` },
+        payload: { title: 'Replace me', labelIds: [bug.id, ux.id] },
+      })
+    ).json();
+    // PATCH to [ux, docs] — bug should be removed, docs added, ux kept.
+    const patched = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${created.id}`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { labelIds: [ux.id, docs.id] },
+    });
+    expect(patched.statusCode).toBe(200);
+    const ids = (patched.json().labels as Array<{ id: string }>).map((l) => l.id).sort();
+    expect(ids).toEqual([docs.id, ux.id].sort());
+  });
+
+  it('PATCH labelIds=[] clears all labels (replace-set with empty array)', async () => {
+    const s = await setup();
+    const bug = await makeLabel(s, 'bug');
+    const created = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+        headers: { authorization: `Bearer ${s.token}` },
+        payload: { title: 'Will be empty', labelIds: [bug.id] },
+      })
+    ).json();
+    const patched = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${created.id}`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { labelIds: [] },
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().labels).toEqual([]);
+  });
+
+  it('PATCH without labelIds leaves the existing labels intact', async () => {
+    const s = await setup();
+    const bug = await makeLabel(s, 'bug');
+    const created = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+        headers: { authorization: `Bearer ${s.token}` },
+        payload: { title: 'Keep labels', labelIds: [bug.id] },
+      })
+    ).json();
+    // PATCH a different field; labels should NOT change.
+    const patched = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${created.id}`,
+      headers: { authorization: `Bearer ${s.token}` },
+      payload: { title: 'Renamed' },
+    });
+    expect(patched.statusCode).toBe(200);
+    expect((patched.json().labels as Array<{ id: string }>).map((l) => l.id)).toEqual([bug.id]);
+  });
+
+  it('deletes a team label → it is detached from tasks (TaskLabel cascade)', async () => {
+    const s = await setup();
+    const bug = await makeLabel(s, 'bug');
+    const ux = await makeLabel(s, 'ux');
+    const created = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+        headers: { authorization: `Bearer ${s.token}` },
+        payload: { title: 'Cascade me', labelIds: [bug.id, ux.id] },
+      })
+    ).json();
+    // Delete `bug` at the team level — should cascade-detach from the task.
+    const del = await inject({
+      method: 'DELETE',
+      url: `/api/teams/${s.teamId}/labels/${bug.id}`,
+      headers: { authorization: `Bearer ${s.token}` },
+    });
+    expect(del.statusCode).toBe(204);
+    // Re-fetch the task — only `ux` should remain; the task itself survives.
+    const list = await inject({
+      method: 'GET',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+      headers: { authorization: `Bearer ${s.token}` },
+    });
+    const row = (list.json() as Array<{ id: string; labels: Array<{ id: string }> }>).find(
+      (t) => t.id === created.id,
+    );
+    expect(row).toBeTruthy();
+    expect(row!.labels.map((l) => l.id)).toEqual([ux.id]);
+  });
+});
