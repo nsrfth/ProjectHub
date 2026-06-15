@@ -38,15 +38,9 @@ export const createProjectBody = z
     name: z.string().min(1).max(120).trim(),
     description: z.string().max(2000).trim().optional(),
     status: projectStatusEnum.optional(),
-    // v1.17: RACI "Accountable" person — optional team member id. Service
-    // validates that the user is a team member before saving.
     accountableId: z.string().nullable().optional(),
-    // v1.41: optional budget fields.
     plannedBudget: budgetSchema,
-    actualSpent: budgetSchema,
-    // v1.59: budget currency (defaults to team defaultCurrency on create).
     budgetCurrency: currencyEnum.optional(),
-    // v1.72: optional schedule window (UTC-midnight calendar dates).
     startDate: calendarDateField,
     endDate: calendarDateField,
   })
@@ -57,10 +51,8 @@ export const updateProjectBody = z
     name: z.string().min(1).max(120).trim().optional(),
     description: z.string().max(2000).trim().nullable().optional(),
     status: projectStatusEnum.optional(),
-    // Explicit null = clear; undefined = leave as-is.
     accountableId: z.string().nullable().optional(),
     plannedBudget: budgetSchema,
-    actualSpent: budgetSchema,
     budgetCurrency: currencyEnum.optional(),
     startDate: calendarDateField,
     endDate: calendarDateField,
@@ -73,7 +65,6 @@ export const updateProjectBody = z
       v.status !== undefined ||
       v.accountableId !== undefined ||
       v.plannedBudget !== undefined ||
-      v.actualSpent !== undefined ||
       v.budgetCurrency !== undefined ||
       v.startDate !== undefined ||
       v.endDate !== undefined,
@@ -83,20 +74,13 @@ export const updateProjectBody = z
 export const projectResponse = z.object({
   id: z.string(),
   teamId: z.string(),
-  // Nullable since the owning user may have been deleted (FK SetNull).
   ownerId: z.string().nullable(),
-  // v1.17: same nullability story — accountable user can be deleted; the
-  // FK is SetNull so the project itself survives.
   accountableId: z.string().nullable(),
   accountableName: z.string().nullable(),
   name: z.string(),
   description: z.string().nullable(),
   status: projectStatusEnum,
-  // v1.41: budget fields. Serialized as strings (Decimal serializes to a
-  // string in Prisma's JSON output; we keep that wire shape to preserve
-  // precision past JS number limits).
   plannedBudget: z.string().nullable(),
-  actualSpent: z.string().nullable(),
   budgetCurrency: currencyEnum,
   startDate: z.string().datetime().nullable(),
   endDate: z.string().datetime().nullable(),
@@ -104,8 +88,6 @@ export const projectResponse = z.object({
   updatedAt: z.string(),
 });
 
-// v1.40: cross-team list response — projectResponse plus the parent team
-// fields so the SPA can render a team chip per row without a second fetch.
 export const projectCrossTeamResponse = projectResponse.extend({
   teamName: z.string(),
   teamSlug: z.string(),

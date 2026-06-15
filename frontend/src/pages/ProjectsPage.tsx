@@ -204,7 +204,6 @@ export default function ProjectsPage(): JSX.Element {
             status: values.status,
             accountableId: values.accountableId,
             plannedBudget: values.plannedBudget.trim() ? values.plannedBudget.trim() : null,
-            actualSpent: values.actualSpent.trim() ? values.actualSpent.trim() : null,
             budgetCurrency: values.budgetCurrency,
             startDate: values.startDate,
             endDate: values.endDate,

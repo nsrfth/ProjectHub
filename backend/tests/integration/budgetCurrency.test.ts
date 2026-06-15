@@ -232,7 +232,6 @@ describe('v1.59 Budget currency', () => {
         ownerId: mgr.userId,
         name: 'Legacy project',
         plannedBudget: '9999.99',
-        actualSpent: '100.00',
         budgetCurrency: 'IRR',
       },
     });
@@ -246,7 +245,6 @@ describe('v1.59 Budget currency', () => {
     const body = res.json();
     expect(body.budgetCurrency).toBe('IRR');
     expect(body.plannedBudget).toBe('9999.99');
-    expect(body.actualSpent).toBe('100.00');
   });
 
   it('9) IRR 12000.00 displays with 0 decimals; stored Decimal unchanged', async () => {

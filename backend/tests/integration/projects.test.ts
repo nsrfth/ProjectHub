@@ -620,11 +620,10 @@ describe('v1.40 cross-team /api/projects list', () => {
       method: 'POST',
       url: `/api/teams/${team.id}/projects`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { name: 'Budgeted', plannedBudget: '1000', actualSpent: 250.5 },
+      payload: { name: 'Budgeted', plannedBudget: '1000' },
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().plannedBudget).toBe('1000.00');
-    expect(res.json().actualSpent).toBe('250.50');
   });
 
   it('budget fields — create without values defaults to null', async () => {
@@ -638,7 +637,6 @@ describe('v1.40 cross-team /api/projects list', () => {
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().plannedBudget).toBeNull();
-    expect(res.json().actualSpent).toBeNull();
   });
 
   it('budget fields — PATCH sets and PATCH null clears', async () => {
@@ -656,21 +654,19 @@ describe('v1.40 cross-team /api/projects list', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${proj.id}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { plannedBudget: '500.75', actualSpent: '0' },
+      payload: { plannedBudget: '500.75' },
     });
     expect(set.statusCode).toBe(200);
     expect(set.json().plannedBudget).toBe('500.75');
-    expect(set.json().actualSpent).toBe('0.00');
 
     const clear = await inject({
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${proj.id}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { plannedBudget: null, actualSpent: null },
+      payload: { plannedBudget: null },
     });
     expect(clear.statusCode).toBe(200);
     expect(clear.json().plannedBudget).toBeNull();
-    expect(clear.json().actualSpent).toBeNull();
   });
 
   it('budget fields — rejects negative values (400)', async () => {
@@ -794,7 +790,6 @@ describe('v1.72 project start/end dates', () => {
         description: 'Updated desc',
         status: 'ON_HOLD',
         plannedBudget: '1200',
-        actualSpent: '300',
         budgetCurrency: 'EUR',
         startDate: start,
         endDate: end,
@@ -806,7 +801,6 @@ describe('v1.72 project start/end dates', () => {
       description: 'Updated desc',
       status: 'ON_HOLD',
       plannedBudget: '1200.00',
-      actualSpent: '300.00',
       budgetCurrency: 'EUR',
       startDate: start,
       endDate: end,

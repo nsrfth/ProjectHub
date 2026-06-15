@@ -60,18 +60,16 @@ async function createProject(
 }
 
 describe('GET /api/teams/:teamId/reports/budget', () => {
-  it('returns per-project planned/actual/variance and per-currency rollup', async () => {
+  it('returns per-project planned budgets and per-currency rollup', async () => {
     const { token, teamId } = await setupTeam();
     const irr = await createProject(token, teamId, {
       name: 'IRR Project',
       plannedBudget: '1000.00',
-      actualSpent: '800.00',
       budgetCurrency: 'IRR',
     });
     const usd = await createProject(token, teamId, {
       name: 'USD Project',
       plannedBudget: '500.00',
-      actualSpent: '600.00',
       budgetCurrency: 'USD',
     });
     await createProject(token, teamId, { name: 'No budget' });
@@ -87,40 +85,36 @@ describe('GET /api/teams/:teamId/reports/budget', () => {
         projectId: string;
         projectName: string;
         hasBudget: boolean;
-        variance: string | null;
-        utilizationPct: string | null;
-        overBudget: boolean;
+        plannedBudget: string | null;
       }>;
-      rollupByCurrency: Array<{ currency: string; totalPlanned: string | null; overBudgetCount: number }>;
+      rollupByCurrency: Array<{ currency: string; totalPlanned: string | null; projectsWithBudget: number }>;
     };
 
     const irrRow = body.projects.find((p) => p.projectId === irr.id)!;
-    expect(irrRow.variance).toBe('200.00');
-    expect(irrRow.utilizationPct).toBe('80.00');
-    expect(irrRow.overBudget).toBe(false);
+    expect(irrRow.hasBudget).toBe(true);
+    expect(irrRow.plannedBudget).toBe('1000.00');
 
     const usdRow = body.projects.find((p) => p.projectId === usd.id)!;
-    expect(usdRow.overBudget).toBe(true);
-    expect(usdRow.utilizationPct).toBe('120.00');
+    expect(usdRow.hasBudget).toBe(true);
+    expect(usdRow.plannedBudget).toBe('500.00');
 
     const emptyRow = body.projects.find((p) => p.projectName === 'No budget')!;
     expect(emptyRow.hasBudget).toBe(false);
-    expect(emptyRow.utilizationPct).toBeNull();
+    expect(emptyRow.plannedBudget).toBeNull();
 
     expect(body.rollupByCurrency).toHaveLength(2);
     const irrRollup = body.rollupByCurrency.find((r) => r.currency === 'IRR')!;
     const usdRollup = body.rollupByCurrency.find((r) => r.currency === 'USD')!;
     expect(irrRollup.totalPlanned).toBe('1000.00');
     expect(usdRollup.totalPlanned).toBe('500.00');
-    expect(usdRollup.overBudgetCount).toBe(1);
+    expect(usdRollup.projectsWithBudget).toBe(1);
   });
 
-  it('returns null utilization when plannedBudget is zero', async () => {
+  it('treats zero plannedBudget as a budget row', async () => {
     const { token, teamId } = await setupTeam('ZeroTeam', 'zero-team');
     await createProject(token, teamId, {
       name: 'Zero planned',
       plannedBudget: '0',
-      actualSpent: '10.00',
     });
 
     const res = await inject({
@@ -128,9 +122,9 @@ describe('GET /api/teams/:teamId/reports/budget', () => {
       url: `/api/teams/${teamId}/reports/budget`,
       headers: { authorization: `Bearer ${token}` },
     });
-    const body = res.json() as { projects: Array<{ utilizationPct: string | null; overBudget: boolean }> };
-    expect(body.projects[0].utilizationPct).toBeNull();
-    expect(body.projects[0].overBudget).toBe(true);
+    const body = res.json() as { projects: Array<{ hasBudget: boolean; plannedBudget: string | null }> };
+    expect(body.projects[0].hasBudget).toBe(true);
+    expect(body.projects[0].plannedBudget).toBe('0.00');
   });
 
   it('scopes results to the requested team only', async () => {
@@ -151,12 +145,10 @@ describe('GET /api/teams/:teamId/reports/budget', () => {
     await createProject(teamA.token, teamA.teamId, {
       name: 'A only',
       plannedBudget: '100.00',
-      actualSpent: '50.00',
     });
     await createProject(regB.token, teamB.id as string, {
       name: 'B only',
       plannedBudget: '999.00',
-      actualSpent: '1.00',
     });
 
     const res = await inject({
@@ -175,7 +167,6 @@ describe('GET /api/teams/:teamId/reports/budget.csv', () => {
     await createProject(token, teamId, {
       name: 'Export me',
       plannedBudget: '100.00',
-      actualSpent: '75.00',
       budgetCurrency: 'EUR',
     });
 
@@ -190,11 +181,10 @@ describe('GET /api/teams/:teamId/reports/budget.csv', () => {
       /^attachment; filename="budget-\d{4}-\d{2}-\d{2}\.csv"$/,
     );
     const body = res.body;
-    expect(body).toMatch(
-      /project_id,project_name,currency,has_budget,planned_budget,actual_spent,variance,variance_pct,utilization_pct,over_budget/,
-    );
+    expect(body).toMatch(/project_id,project_name,currency,has_budget,planned_budget/);
+    expect(body).not.toMatch(/actual_spent/);
     expect(body).toMatch(/Export me/);
     expect(body).toMatch(/EUR/);
-    expect(body).toMatch(/75\.00/);
+    expect(body).toMatch(/100\.00/);
   });
 });

@@ -57,18 +57,16 @@ export function projectIdsInAnyBucket(buckets: { projectIds: string[] }[]): Set<
   return s;
 }
 
-/** Future metrics hook — budget totals per bucket without refactoring UI. */
+/** Future metrics hook — planned budget totals per bucket without refactoring UI. */
 export function bucketBudgetSummary(
   projectIds: string[],
   projectsById: Map<string, ProjectCrossTeam>,
-): { planned: number; spent: number; count: number } {
+): { planned: number; count: number } {
   let planned = 0;
-  let spent = 0;
   for (const id of projectIds) {
     const p = projectsById.get(id);
     if (!p) continue;
     if (p.plannedBudget) planned += Number(p.plannedBudget);
-    if (p.actualSpent) spent += Number(p.actualSpent);
   }
-  return { planned, spent, count: projectIds.length };
+  return { planned, count: projectIds.length };
 }

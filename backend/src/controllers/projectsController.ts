@@ -27,7 +27,6 @@ function serialize(p: {
   status: string;
   // v1.41: budget fields are already string-shaped by the service's toView.
   plannedBudget: string | null;
-  actualSpent: string | null;
   budgetCurrency: string;
   startDate: string | null;
   endDate: string | null;
@@ -44,7 +43,6 @@ function serialize(p: {
     description: p.description,
     status: p.status,
     plannedBudget: p.plannedBudget,
-    actualSpent: p.actualSpent,
     budgetCurrency: p.budgetCurrency,
     startDate: p.startDate,
     endDate: p.endDate,

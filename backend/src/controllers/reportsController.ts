@@ -191,11 +191,6 @@ export class ReportsController {
       { header: 'currency', value: (r) => r.currency },
       { header: 'has_budget', value: (r) => r.hasBudget },
       { header: 'planned_budget', value: (r) => r.plannedBudget },
-      { header: 'actual_spent', value: (r) => r.actualSpent },
-      { header: 'variance', value: (r) => r.variance },
-      { header: 'variance_pct', value: (r) => r.variancePct },
-      { header: 'utilization_pct', value: (r) => r.utilizationPct },
-      { header: 'over_budget', value: (r) => r.overBudget },
     ]);
     return sendCsv(reply, 'budget', csv);
   };

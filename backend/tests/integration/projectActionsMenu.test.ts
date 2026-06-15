@@ -98,12 +98,11 @@ describe('Project actions menu — API regression', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}`,
       headers: { authorization: `Bearer ${owner.token}` },
-      payload: { plannedBudget: '1000.00', actualSpent: '250.50', budgetCurrency: 'EUR' },
+      payload: { plannedBudget: '1000.00', budgetCurrency: 'EUR' },
     });
     expect(patch.statusCode).toBe(200);
     const body = patch.json();
     expect(body.plannedBudget).toBe('1000.00');
-    expect(body.actualSpent).toBe('250.50');
     expect(body.budgetCurrency).toBe('EUR');
   });
 

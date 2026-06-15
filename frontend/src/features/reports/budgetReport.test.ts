@@ -9,10 +9,6 @@ const frontendRoot = join(__dirname, '../..');
 const KEYS = [
   'reports.budget.title',
   'reports.budget.planned',
-  'reports.budget.actual',
-  'reports.budget.variance',
-  'reports.budget.utilization',
-  'reports.budget.overBudget',
   'reports.budget.rollup',
   'reports.budget.noBudget',
 ];

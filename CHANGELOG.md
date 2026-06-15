@@ -7,6 +7,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.73.0] — 2026-06-15
+
+**Projects — remove manual actual spent field.** Dropped `Project.actualSpent` (destructive migration —
+existing project-level actual values are discarded). Project create/edit and the budget report now use
+**planned budget + currency only** at project level. Task `plannedBudget` / `actualSpent` unchanged.
+Budget report API/UI/CSV no longer expose actual, variance, utilization, or over-budget columns.
+
+---
+
 ## [1.72.0] — 2026-06-15
 
 **Projects — start/end dates + full edit parity.** Optional `startDate` / `endDate` on projects

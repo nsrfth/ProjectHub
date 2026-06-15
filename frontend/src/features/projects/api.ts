@@ -19,7 +19,6 @@ export interface Project {
   // precision past Number.MAX_SAFE_INTEGER). Always two decimal places when
   // set; null when unset.
   plannedBudget: string | null;
-  actualSpent: string | null;
   budgetCurrency: BudgetCurrency;
   startDate: string | null;
   endDate: string | null;
@@ -52,7 +51,6 @@ export async function createProject(
     accountableId?: string | null;
     // v1.41: optional budgets at create time. number | string | null.
     plannedBudget?: number | string | null;
-    actualSpent?: number | string | null;
     budgetCurrency?: BudgetCurrency;
     startDate?: string | null;
     endDate?: string | null;
@@ -71,7 +69,6 @@ export async function updateProject(
     accountableId?: string | null;
     // v1.41: budget PATCH. undefined leaves the field; null clears it.
     plannedBudget?: number | string | null;
-    actualSpent?: number | string | null;
     budgetCurrency?: BudgetCurrency;
     startDate?: string | null;
     endDate?: string | null;

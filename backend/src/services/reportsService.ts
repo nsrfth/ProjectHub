@@ -104,11 +104,6 @@ export interface BudgetProjectRow {
   currency: Currency;
   hasBudget: boolean;
   plannedBudget: string | null;
-  actualSpent: string | null;
-  variance: string | null;
-  variancePct: string | null;
-  utilizationPct: string | null;
-  overBudget: boolean;
 }
 
 export interface BudgetReport {
@@ -376,9 +371,9 @@ export class ReportsService {
     }));
   }
 
-  // v1.71: budget/cost report — per-project planned vs actual in project currency.
-  // Uses project.plannedBudget / actualSpent only (no task-level rollup in v1).
-  // Projects with neither field set are included with hasBudget=false ("no budget").
+  // v1.73: budget/cost report — per-project planned budget in project currency.
+  // Project-level actualSpent was removed; task budgets are unchanged but not rolled up here.
+  // Projects without plannedBudget are included with hasBudget=false ("no budget").
   async budgetReport(teamId: string): Promise<BudgetReport> {
     const rows = await prisma.project.findMany({
       where: { teamId },
@@ -386,14 +381,13 @@ export class ReportsService {
         id: true,
         name: true,
         plannedBudget: true,
-        actualSpent: true,
         budgetCurrency: true,
       },
       orderBy: { name: 'asc' },
     });
 
     const projects: BudgetProjectRow[] = rows.map((p) => {
-      const metrics = computeProjectBudgetMetrics(p.plannedBudget, p.actualSpent);
+      const metrics = computeProjectBudgetMetrics(p.plannedBudget);
       return {
         projectId: p.id,
         projectName: p.name,

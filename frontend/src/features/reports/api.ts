@@ -177,11 +177,6 @@ export interface BudgetProjectRow {
   currency: 'IRR' | 'EUR' | 'USD';
   hasBudget: boolean;
   plannedBudget: string | null;
-  actualSpent: string | null;
-  variance: string | null;
-  variancePct: string | null;
-  utilizationPct: string | null;
-  overBudget: boolean;
 }
 
 export interface BudgetCurrencyRollup {
@@ -189,9 +184,6 @@ export interface BudgetCurrencyRollup {
   projectCount: number;
   projectsWithBudget: number;
   totalPlanned: string | null;
-  totalActual: string | null;
-  totalVariance: string | null;
-  overBudgetCount: number;
 }
 
 export interface BudgetReport {

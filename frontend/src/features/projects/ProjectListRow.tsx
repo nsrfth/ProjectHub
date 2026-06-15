@@ -62,12 +62,8 @@ export default function ProjectListRow({
     }
   }
 
-  const hasBudget = !!(project.plannedBudget || project.actualSpent);
+  const hasBudget = !!project.plannedBudget;
   const fmt = (s: string | null): string => formatBudget(s, project.budgetCurrency, locale);
-  const utilization =
-    project.plannedBudget && project.actualSpent && Number(project.plannedBudget) > 0
-      ? (Number(project.actualSpent) / Number(project.plannedBudget)) * 100
-      : null;
 
   return (
     <li className="py-3">
@@ -131,9 +127,7 @@ export default function ProjectListRow({
         <div className="mt-2 ml-7 text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2 flex-wrap">
           <span className="font-medium">{t('projects.budget.label')}:</span>
           <span dir="ltr" className="inline-block">
-            {t('projects.budget.planned')} <code>{fmt(project.plannedBudget)}</code> ·{' '}
-            {t('projects.budget.spent')} <code>{fmt(project.actualSpent)}</code>
-            {utilization !== null && <span className="ms-2">({utilization.toFixed(1)}%)</span>}
+            {t('projects.budget.planned')} <code>{fmt(project.plannedBudget)}</code>
           </span>
         </div>
       )}

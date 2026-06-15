@@ -187,11 +187,6 @@ export const budgetProjectRow = z.object({
   currency: z.enum(['IRR', 'EUR', 'USD']),
   hasBudget: z.boolean(),
   plannedBudget: z.string().nullable(),
-  actualSpent: z.string().nullable(),
-  variance: z.string().nullable(),
-  variancePct: z.string().nullable(),
-  utilizationPct: z.string().nullable(),
-  overBudget: z.boolean(),
 });
 
 export const budgetCurrencyRollup = z.object({
@@ -199,9 +194,6 @@ export const budgetCurrencyRollup = z.object({
   projectCount: z.number().int().nonnegative(),
   projectsWithBudget: z.number().int().nonnegative(),
   totalPlanned: z.string().nullable(),
-  totalActual: z.string().nullable(),
-  totalVariance: z.string().nullable(),
-  overBudgetCount: z.number().int().nonnegative(),
 });
 
 export const budgetReportResponse = z.object({

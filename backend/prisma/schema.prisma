@@ -552,7 +552,6 @@ model Project {
   // Non-negative is enforced by DB CHECK + Zod; nullable so existing
   // projects stay valid without backfill.
   plannedBudget  Decimal?  @db.Decimal(18, 2)
-  actualSpent    Decimal?  @db.Decimal(18, 2)
   // v1.59: currency label for budget amounts (no conversion). Task budgets
   // inherit this currency — tasks do not store their own currency column.
   budgetCurrency Currency    @default(IRR)

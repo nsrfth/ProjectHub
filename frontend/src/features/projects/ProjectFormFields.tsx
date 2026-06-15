@@ -11,7 +11,6 @@ export interface ProjectFormValues {
   status: ProjectStatus;
   accountableId: string | null;
   plannedBudget: string;
-  actualSpent: string;
   budgetCurrency: BudgetCurrency;
   startDate: string | null;
   endDate: string | null;
@@ -33,7 +32,6 @@ export function projectFormValuesFromProject(p: {
   status: ProjectStatus;
   accountableId: string | null;
   plannedBudget: string | null;
-  actualSpent: string | null;
   budgetCurrency: BudgetCurrency;
   startDate: string | null;
   endDate: string | null;
@@ -44,7 +42,6 @@ export function projectFormValuesFromProject(p: {
     status: p.status,
     accountableId: p.accountableId,
     plannedBudget: p.plannedBudget ?? '',
-    actualSpent: p.actualSpent ?? '',
     budgetCurrency: p.budgetCurrency,
     startDate: p.startDate,
     endDate: p.endDate,
@@ -172,19 +169,6 @@ export default function ProjectFormFields({
             step="0.01"
             value={values.plannedBudget}
             onChange={(e) => onChange({ plannedBudget: e.target.value })}
-            disabled={locked}
-            className="rounded border px-2 py-1.5 dark:bg-slate-700 disabled:opacity-60"
-            dir="ltr"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span>{t('projects.budget.spent')}</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={values.actualSpent}
-            onChange={(e) => onChange({ actualSpent: e.target.value })}
             disabled={locked}
             className="rounded border px-2 py-1.5 dark:bg-slate-700 disabled:opacity-60"
             dir="ltr"

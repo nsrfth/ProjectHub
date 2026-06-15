@@ -29,7 +29,6 @@ export interface ProjectView {
   description: string | null;
   status: ProjectStatus;
   plannedBudget: string | null;
-  actualSpent: string | null;
   budgetCurrency: Currency;
   startDate: string | null;
   endDate: string | null;
@@ -60,7 +59,6 @@ function toView(
     description: p.description,
     status: p.status,
     plannedBudget: p.plannedBudget === null ? null : p.plannedBudget.toFixed(2),
-    actualSpent: p.actualSpent === null ? null : p.actualSpent.toFixed(2),
     budgetCurrency: p.budgetCurrency,
     startDate: calendarDateToIso(p.startDate),
     endDate: calendarDateToIso(p.endDate),
@@ -108,7 +106,6 @@ function updateTouchesNonNameFields(input: {
   status?: ProjectStatus;
   accountableId?: string | null;
   plannedBudget?: number | string | null;
-  actualSpent?: number | string | null;
   budgetCurrency?: Currency;
   startDate?: string | null;
   endDate?: string | null;
@@ -118,7 +115,6 @@ function updateTouchesNonNameFields(input: {
     || input.status !== undefined
     || input.accountableId !== undefined
     || input.plannedBudget !== undefined
-    || input.actualSpent !== undefined
     || input.budgetCurrency !== undefined
     || input.startDate !== undefined
     || input.endDate !== undefined
@@ -135,7 +131,6 @@ export class ProjectsService {
       status?: ProjectStatus;
       accountableId?: string | null;
       plannedBudget?: number | string | null;
-      actualSpent?: number | string | null;
       budgetCurrency?: Currency;
       startDate?: string | null;
       endDate?: string | null;
@@ -145,7 +140,6 @@ export class ProjectsService {
       await assertAccountableInTeam(teamId, input.accountableId);
     }
     const planned = normaliseBudget(input.plannedBudget);
-    const spent = normaliseBudget(input.actualSpent);
     const startDate = normalizeOptionalCalendarDate(input.startDate);
     const endDate = normalizeOptionalCalendarDate(input.endDate);
     assertDateRange(startDate ?? null, endDate ?? null);
@@ -168,7 +162,6 @@ export class ProjectsService {
         ...(input.status !== undefined && { status: input.status }),
         budgetCurrency,
         ...(planned !== undefined && { plannedBudget: planned }),
-        ...(spent !== undefined && { actualSpent: spent }),
         ...(startDate !== undefined && { startDate }),
         ...(endDate !== undefined && { endDate }),
       },
@@ -219,7 +212,6 @@ export class ProjectsService {
       status?: ProjectStatus;
       accountableId?: string | null;
       plannedBudget?: number | string | null;
-      actualSpent?: number | string | null;
       budgetCurrency?: Currency;
       startDate?: string | null;
       endDate?: string | null;
@@ -252,7 +244,6 @@ export class ProjectsService {
       await assertAccountableInTeam(teamId, input.accountableId);
     }
     const plannedPatch = normaliseBudget(input.plannedBudget);
-    const spentPatch = normaliseBudget(input.actualSpent);
     const startPatch = normalizeOptionalCalendarDate(input.startDate);
     const endPatch = normalizeOptionalCalendarDate(input.endDate);
     const nextStart = startPatch !== undefined ? startPatch : p.startDate;
@@ -268,7 +259,6 @@ export class ProjectsService {
           ...(input.status !== undefined && { status: input.status }),
           ...(input.accountableId !== undefined && { accountableId: input.accountableId }),
           ...(plannedPatch !== undefined && { plannedBudget: plannedPatch }),
-          ...(spentPatch !== undefined && { actualSpent: spentPatch }),
           ...(input.budgetCurrency !== undefined && { budgetCurrency: input.budgetCurrency }),
           ...(startPatch !== undefined && { startDate: startPatch }),
           ...(endPatch !== undefined && { endDate: endPatch }),
