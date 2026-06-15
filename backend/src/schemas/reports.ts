@@ -181,6 +181,34 @@ export const teamActivityResponse = z.object({
   items: z.array(teamActivityRow),
 });
 
+export const budgetProjectRow = z.object({
+  projectId: z.string(),
+  projectName: z.string(),
+  currency: z.enum(['IRR', 'EUR', 'USD']),
+  hasBudget: z.boolean(),
+  plannedBudget: z.string().nullable(),
+  actualSpent: z.string().nullable(),
+  variance: z.string().nullable(),
+  variancePct: z.string().nullable(),
+  utilizationPct: z.string().nullable(),
+  overBudget: z.boolean(),
+});
+
+export const budgetCurrencyRollup = z.object({
+  currency: z.enum(['IRR', 'EUR', 'USD']),
+  projectCount: z.number().int().nonnegative(),
+  projectsWithBudget: z.number().int().nonnegative(),
+  totalPlanned: z.string().nullable(),
+  totalActual: z.string().nullable(),
+  totalVariance: z.string().nullable(),
+  overBudgetCount: z.number().int().nonnegative(),
+});
+
+export const budgetReportResponse = z.object({
+  projects: z.array(budgetProjectRow),
+  rollupByCurrency: z.array(budgetCurrencyRollup),
+});
+
 export type DoneTasksQuery = z.infer<typeof doneTasksQuery>;
 export type TimelinessQuery = z.infer<typeof timelinessQuery>;
 export type UpcomingTasksQuery = z.infer<typeof upcomingTasksQuery>;

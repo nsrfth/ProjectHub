@@ -9,6 +9,18 @@
   "nav.calendar": "Calendar",
   "nav.planner": "Planner",
 
+  "reports.budget.title": "Budget / cost",
+  "reports.budget.planned": "Planned",
+  "reports.budget.actual": "Actual",
+  "reports.budget.variance": "Variance",
+  "reports.budget.utilization": "Utilization",
+  "reports.budget.overBudget": "Over budget",
+  "reports.budget.rollup": "Team rollup by currency",
+  "reports.budget.noBudget": "No budget",
+  "reports.budget.currency": "Currency",
+  "reports.budget.projects": "Projects",
+  "reports.budget.overBudgetCount": "Over budget",
+
   "groups.title": "User groups",
   "groups.description": "Grant project access to sets of team members without changing project ownership.",
   "groups.create": "Create group",

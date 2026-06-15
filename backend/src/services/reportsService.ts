@@ -1,6 +1,11 @@
-import type { TaskPriority, TaskStatus } from '@prisma/client';
+import type { TaskPriority, TaskStatus, Currency } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { isSystemUser, maskActorName } from '../lib/systemUser.js';
+import {
+  buildCurrencyRollups,
+  computeProjectBudgetMetrics,
+  type BudgetCurrencyRollup,
+} from '../lib/budgetReportMath.js';
 import {
   aggregateWorkloadDetail,
   aggregateWorkloadList,
@@ -92,6 +97,26 @@ export interface TeamActivityRow {
   meta: Record<string, unknown>;
   createdAt: Date;
 }
+
+export interface BudgetProjectRow {
+  projectId: string;
+  projectName: string;
+  currency: Currency;
+  hasBudget: boolean;
+  plannedBudget: string | null;
+  actualSpent: string | null;
+  variance: string | null;
+  variancePct: string | null;
+  utilizationPct: string | null;
+  overBudget: boolean;
+}
+
+export interface BudgetReport {
+  projects: BudgetProjectRow[];
+  rollupByCurrency: BudgetCurrencyRollup[];
+}
+
+export type { BudgetCurrencyRollup };
 
 const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW'];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -349,5 +374,37 @@ export class ReportsService {
       meta: (a.meta as Record<string, unknown>) ?? {},
       createdAt: a.createdAt,
     }));
+  }
+
+  // v1.71: budget/cost report — per-project planned vs actual in project currency.
+  // Uses project.plannedBudget / actualSpent only (no task-level rollup in v1).
+  // Projects with neither field set are included with hasBudget=false ("no budget").
+  async budgetReport(teamId: string): Promise<BudgetReport> {
+    const rows = await prisma.project.findMany({
+      where: { teamId },
+      select: {
+        id: true,
+        name: true,
+        plannedBudget: true,
+        actualSpent: true,
+        budgetCurrency: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const projects: BudgetProjectRow[] = rows.map((p) => {
+      const metrics = computeProjectBudgetMetrics(p.plannedBudget, p.actualSpent);
+      return {
+        projectId: p.id,
+        projectName: p.name,
+        currency: p.budgetCurrency,
+        ...metrics,
+      };
+    });
+
+    return {
+      projects,
+      rollupByCurrency: buildCurrencyRollups(projects),
+    };
   }
 }

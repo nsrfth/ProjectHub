@@ -7,6 +7,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.71.0] — 2026-06-09
+
+**Reports — budget / cost.** New team-scoped budget report: per-project planned vs actual
+spend, variance, utilization %, over-budget flags, and a team rollup grouped **by currency**
+(never summed across IRR/USD/EUR). Decimal-safe math; CSV export at `/reports/budget.csv`.
+Read-only analytics using existing project budget fields (no task-level rollup in v1).
+
+---
+
 ## [1.70.1] — 2026-06-09
 
 **PWA — admin HTTPS warning.** Global admins see an amber notice on the About page when

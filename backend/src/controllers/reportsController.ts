@@ -177,4 +177,26 @@ export class ReportsController {
     ]);
     return sendCsv(reply, `timeliness-${req.query.days}d`, csv);
   };
+
+  budgetReport = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
+    const report = await this.svc.budgetReport(req.params.teamId);
+    return reply.send(report);
+  };
+
+  budgetReportCsv = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
+    const { projects } = await this.svc.budgetReport(req.params.teamId);
+    const csv = toCsv(projects, [
+      { header: 'project_id', value: (r) => r.projectId },
+      { header: 'project_name', value: (r) => r.projectName },
+      { header: 'currency', value: (r) => r.currency },
+      { header: 'has_budget', value: (r) => r.hasBudget },
+      { header: 'planned_budget', value: (r) => r.plannedBudget },
+      { header: 'actual_spent', value: (r) => r.actualSpent },
+      { header: 'variance', value: (r) => r.variance },
+      { header: 'variance_pct', value: (r) => r.variancePct },
+      { header: 'utilization_pct', value: (r) => r.utilizationPct },
+      { header: 'over_budget', value: (r) => r.overBudget },
+    ]);
+    return sendCsv(reply, 'budget', csv);
+  };
 }

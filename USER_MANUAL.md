@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.70.1** (2026-06-09)
+Version **v1.71.0** (2026-06-09)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -314,13 +314,14 @@ Click **Reports** in the dashboard header. All sections are team-scoped (current
   - **Avg variance** — mean (`completedAt − plannedDate`) in days. Positive = late on average, negative = early.
   - **Behind plan** — count of *open* tasks whose `plannedDate` is in the past. Unaffected by the window.
 - **Workload** — open tasks per assignee, broken down by status. Catches the "Bob has 22 open in-progress tasks" pattern.
+- **Budget / cost (v1.71)** — per-project planned vs actual spend in each project's currency, variance, utilization %, over-budget flag, plus a **team rollup grouped by currency** (IRR, EUR, and USD are never added together). Projects with no budget fields show as "No budget". CSV export available. Read-only — uses project-level `plannedBudget` / `actualSpent` only (task-level rollup deferred).
 - **Overdue** — open tasks past their `dueDate`, oldest first.
 
 Completion timestamps in reports use your timezone + time format; planned/due dates stay calendar-neutral.
 
 ### Exporting to CSV (v1.14)
 
-Each report section (Tasks completed / Timeliness / Workload / Overdue) has an **Export CSV** button. Clicking it downloads a UTF-8 CSV with the section's data, named e.g. `tasks-done-7d-2026-05-24.csv`. The file opens cleanly in Excel, Numbers, and Google Sheets. The Summary widget is not exported on its own — its three numbers already live inside Workload / Tasks completed / Overdue.
+Each report section (Tasks completed / Timeliness / Workload / **Budget** / Overdue) has an **Export CSV** button. Clicking it downloads a UTF-8 CSV with the section's data, named e.g. `tasks-done-7d-2026-05-24.csv`. The file opens cleanly in Excel, Numbers, and Google Sheets. The Summary widget is not exported on its own — its three numbers already live inside Workload / Tasks completed / Overdue.
 
 ---
 

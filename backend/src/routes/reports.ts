@@ -19,6 +19,7 @@ import {
   workloadResponse,
   workloadDetailQuery,
   workloadDetailResponse,
+  budgetReportResponse,
 } from '../schemas/reports.js';
 
 // Team-scoped read-only reports. Mounted at /api/teams/:teamId/reports.
@@ -130,6 +131,18 @@ export async function reportsRoutes(app: FastifyInstance): Promise<void> {
     handler: ctrl.timeliness,
   });
 
+  r.get('/budget', {
+    schema: {
+      tags: ['reports'],
+      summary:
+        'Per-project planned vs actual spend with variance, utilization, and per-currency team rollup',
+      params: z.object({ teamId: z.string() }),
+      response: { 200: budgetReportResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.budgetReport,
+  });
+
   // ── CSV exports ───────────────────────────────────────────────────────
   // Same data as the JSON endpoints above, served as text/csv with a
   // Content-Disposition that triggers a browser download. No response schema
@@ -174,5 +187,15 @@ export async function reportsRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.timelinessCsv,
+  });
+
+  r.get('/budget.csv', {
+    schema: {
+      tags: ['reports'],
+      summary: 'CSV: per-project budget rows with currency column',
+      params: z.object({ teamId: z.string() }),
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.budgetReportCsv,
   });
 }

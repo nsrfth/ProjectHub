@@ -9,6 +9,18 @@
   "nav.calendar": "تقویم",
   "nav.planner": "برنامه‌ریز",
 
+  "reports.budget.title": "بودجه / هزینه",
+  "reports.budget.planned": "برنامه‌ریزی‌شده",
+  "reports.budget.actual": "واقعی",
+  "reports.budget.variance": "انحراف",
+  "reports.budget.utilization": "مصرف",
+  "reports.budget.overBudget": "بیش از بودجه",
+  "reports.budget.rollup": "جمع تیم به تفکیک ارز",
+  "reports.budget.noBudget": "بدون بودجه",
+  "reports.budget.currency": "ارز",
+  "reports.budget.projects": "پروژه‌ها",
+  "reports.budget.overBudgetCount": "بیش از بودجه",
+
   "groups.title": "گروه‌های کاربری",
   "groups.description": "دسترسی به پروژه‌ها را به اعضای تیم بدهید بدون تغییر مالک پروژه.",
   "groups.create": "ایجاد گروه",

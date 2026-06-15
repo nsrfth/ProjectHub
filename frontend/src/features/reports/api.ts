@@ -171,13 +171,45 @@ export async function fetchTimeliness(
   ).data;
 }
 
+export interface BudgetProjectRow {
+  projectId: string;
+  projectName: string;
+  currency: 'IRR' | 'EUR' | 'USD';
+  hasBudget: boolean;
+  plannedBudget: string | null;
+  actualSpent: string | null;
+  variance: string | null;
+  variancePct: string | null;
+  utilizationPct: string | null;
+  overBudget: boolean;
+}
+
+export interface BudgetCurrencyRollup {
+  currency: 'IRR' | 'EUR' | 'USD';
+  projectCount: number;
+  projectsWithBudget: number;
+  totalPlanned: string | null;
+  totalActual: string | null;
+  totalVariance: string | null;
+  overBudgetCount: number;
+}
+
+export interface BudgetReport {
+  projects: BudgetProjectRow[];
+  rollupByCurrency: BudgetCurrencyRollup[];
+}
+
+export async function fetchBudgetReport(teamId: string): Promise<BudgetReport> {
+  return (await api.get<BudgetReport>(`/teams/${teamId}/reports/budget`)).data;
+}
+
 // CSV download. We can't just use a plain anchor href because the API needs a
 // Bearer header — fetch via axios with responseType=blob, then trigger a
 // download via a temporary object URL. Filename comes from the
 // Content-Disposition header when present (falls back to the supplied default).
 export async function downloadReportCsv(
   teamId: string,
-  report: 'done' | 'workload' | 'overdue' | 'timeliness',
+  report: 'done' | 'workload' | 'overdue' | 'timeliness' | 'budget',
   fallbackName: string,
   params?: Record<string, string | number>,
 ): Promise<void> {

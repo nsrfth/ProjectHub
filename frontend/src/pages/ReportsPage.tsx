@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTeams } from '@/features/teams/TeamsContext';
 import {
   downloadReportCsv,
+  fetchBudgetReport,
   fetchDoneReport,
   fetchOverdue,
   fetchSummary,
@@ -12,6 +13,8 @@ import {
   type DoneTaskRow,
 } from '@/features/reports/api';
 import { formatShamsiDate, formatShamsiTimestampDate } from '@/lib/shamsi';
+import { budgetLocaleFromLanguage, formatBudget, type BudgetCurrency } from '@/lib/formatBudget';
+import { getLanguage, useT } from '@/lib/i18n';
 
 const WINDOWS: { days: number; label: string }[] = [
   { days: 7, label: 'Last 7 days' },
@@ -26,6 +29,8 @@ const WINDOWS: { days: number; label: string }[] = [
 export default function ReportsPage(): JSX.Element {
   const { currentTeam } = useTeams();
   const nav = useNavigate();
+  const t = useT();
+  const budgetLocale = budgetLocaleFromLanguage(getLanguage());
   const [days, setDays] = useState<number>(7);
 
   const { data, isLoading } = useQuery({
@@ -57,6 +62,15 @@ export default function ReportsPage(): JSX.Element {
     queryFn: () => fetchTimeliness(currentTeam!.id, days),
     enabled: !!currentTeam,
   });
+
+  const { data: budget } = useQuery({
+    queryKey: ['reports', 'budget', currentTeam?.id],
+    queryFn: () => fetchBudgetReport(currentTeam!.id),
+    enabled: !!currentTeam,
+  });
+
+  const fmtMoney = (amount: string | null, currency: BudgetCurrency) =>
+    formatBudget(amount, currency, budgetLocale);
 
   // Group by assignee name for the leaderboard pivot.
   const byAssignee = useMemo(() => {
@@ -344,6 +358,144 @@ export default function ReportsPage(): JSX.Element {
               ))}
             </tbody>
           </table>
+        )}
+      </section>
+
+      {/* Budget — planned vs actual spend per project + per-currency rollup. */}
+      <section className="bg-white rounded shadow p-4 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-medium">{t('reports.budget.title')}</h2>
+          <button
+            type="button"
+            onClick={() => downloadReportCsv(currentTeam.id, 'budget', 'budget')}
+            className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+            title="Download as CSV"
+          >
+            Export CSV
+          </button>
+        </div>
+        {!budget && <p className="text-sm text-slate-500">Loading…</p>}
+        {budget && budget.projects.length === 0 && (
+          <p className="text-sm text-slate-500 italic">No projects in this team yet.</p>
+        )}
+        {budget && budget.projects.length > 0 && (
+          <>
+            <div className="overflow-x-auto mb-6">
+              <table className="w-full text-sm min-w-[640px]">
+                <thead className="text-left text-xs text-slate-500 uppercase">
+                  <tr>
+                    <th className="py-1 pr-4">{t('reports.budget.projects')}</th>
+                    <th className="py-1 pr-4">{t('reports.budget.currency')}</th>
+                    <th className="py-1 pr-4 text-right">{t('reports.budget.planned')}</th>
+                    <th className="py-1 pr-4 text-right">{t('reports.budget.actual')}</th>
+                    <th className="py-1 pr-4 text-right">{t('reports.budget.variance')}</th>
+                    <th className="py-1 pr-4 text-right">{t('reports.budget.utilization')}</th>
+                    <th className="py-1 text-right">{t('reports.budget.overBudget')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {budget.projects.map((row) => (
+                    <tr
+                      key={row.projectId}
+                      className={`border-t ${row.overBudget ? 'bg-red-50/80' : ''}`}
+                    >
+                      <td className="py-2 pr-4 font-medium">{row.projectName}</td>
+                      <td className="py-2 pr-4">{row.currency}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums" dir="ltr">
+                        {row.hasBudget ? fmtMoney(row.plannedBudget, row.currency) : '—'}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums" dir="ltr">
+                        {row.hasBudget ? fmtMoney(row.actualSpent, row.currency) : '—'}
+                      </td>
+                      <td
+                        className={`py-2 pr-4 text-right tabular-nums ${
+                          row.variance !== null && Number(row.variance) < 0
+                            ? 'text-red-700'
+                            : 'text-slate-700'
+                        }`}
+                        dir="ltr"
+                      >
+                        {row.hasBudget && row.variance !== null
+                          ? fmtMoney(row.variance, row.currency)
+                          : '—'}
+                      </td>
+                      <td className="py-2 pr-4 text-right" dir="ltr">
+                        {!row.hasBudget ? (
+                          <span className="text-slate-400 italic">{t('reports.budget.noBudget')}</span>
+                        ) : row.utilizationPct !== null ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <div className="w-16 h-1.5 bg-slate-200 rounded overflow-hidden">
+                              <div
+                                className={`h-full rounded ${
+                                  row.overBudget ? 'bg-red-600' : 'bg-emerald-600'
+                                }`}
+                                style={{
+                                  width: `${Math.min(Number(row.utilizationPct), 100)}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="tabular-nums text-xs">
+                              {row.utilizationPct}%
+                            </span>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-2 text-right">
+                        {row.overBudget ? (
+                          <span className="inline-flex rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-xs">
+                            {t('reports.budget.overBudget')}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {budget.rollupByCurrency.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium mb-2 text-slate-600">
+                  {t('reports.budget.rollup')}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {budget.rollupByCurrency.map((roll) => (
+                    <div key={roll.currency} className="border rounded p-3 text-sm">
+                      <p className="font-medium mb-2">{roll.currency}</p>
+                      <dl className="space-y-1 text-xs">
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-slate-500">{t('reports.budget.planned')}</dt>
+                          <dd className="tabular-nums" dir="ltr">
+                            {fmtMoney(roll.totalPlanned, roll.currency)}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-slate-500">{t('reports.budget.actual')}</dt>
+                          <dd className="tabular-nums" dir="ltr">
+                            {fmtMoney(roll.totalActual, roll.currency)}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-slate-500">{t('reports.budget.variance')}</dt>
+                          <dd className="tabular-nums" dir="ltr">
+                            {fmtMoney(roll.totalVariance, roll.currency)}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-slate-500">{t('reports.budget.overBudgetCount')}</dt>
+                          <dd className="tabular-nums">{roll.overBudgetCount}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </section>
 
