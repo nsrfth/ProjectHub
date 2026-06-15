@@ -175,6 +175,7 @@ The **Kanban board** (`/projects/<id>/tasks`) is the main work view for a single
 - Drag a card between columns to change status — **only when grouped by Status**.
 - Drag within a column to reorder (status grouping only).
 - Toggle **List** or **by Technician** for alternate layouts on the same data.
+- In **List** view, tasks with subtasks show a chevron and subtask count (collapsed by default); expand to see indented subtask rows.
 - Click a card to open the **Task detail** page.
 
 To create a task: use the inline form at the top of the board, fill in at least a title, optionally pick a priority, hit **Add task**. New tasks land at the top of **To do**.

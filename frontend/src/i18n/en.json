@@ -185,6 +185,10 @@
   "tasks.col.actions": "",
   "tasks.list.empty": "No tasks in this project yet.",
   "tasks.list.unassigned": "—",
+  "tasks.subtasks.count": "{count} subtasks",
+  "tasks.subtasks.toggle": "Show or hide subtasks",
+  "tasks.subtasks.done": "Done",
+  "tasks.subtasks.open": "Open",
 
   "security.password.title": "Change password",
   "security.password.intro": "After saving, you'll be signed out on every device. Sign back in with your new password.",

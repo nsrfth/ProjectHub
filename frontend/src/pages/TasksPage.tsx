@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, Fragment, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useProjectTeam } from '@/features/projects/useProjectTeam';
 import * as tasksApi from '@/features/tasks/api';
+import { toggleExpandedTaskIds } from '@/features/tasks/taskListCollapse';
 import * as labelsApi from '@/features/labels/api';
 import { formatShamsiDate, formatShamsiTimestampDate } from '@/lib/shamsi';
 import { LabelChip } from '@/features/labels/LabelChip';
@@ -489,11 +490,11 @@ function TaskList({
   onDelete: (task: tasksApi.Task) => void;
 }): JSX.Element {
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(null);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(() => new Set());
 
   const sorted = useMemo(() => {
     if (!sort) return tasks;
     const dir = sort.dir === 'asc' ? 1 : -1;
-    // Pull comparable values out per row; nulls always sort to the end.
     function valueOf(row: tasksApi.Task): string | number | null {
       switch (sort!.key) {
         case 'title':
@@ -528,8 +529,12 @@ function TaskList({
     setSort((prev) => {
       if (!prev || prev.key !== key) return { key, dir: 'asc' };
       if (prev.dir === 'asc') return { key, dir: 'desc' };
-      return null; // third click clears
+      return null;
     });
+  }
+
+  function toggleSubtasks(taskId: string): void {
+    setExpandedTaskIds((prev) => toggleExpandedTaskIds(prev, taskId));
   }
 
   if (tasks.length === 0) {
@@ -593,92 +598,181 @@ function TaskList({
           </tr>
         </thead>
         <tbody>
-          {sorted.map((row) => (
-            <tr
-              key={row.id}
-              className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/40"
-            >
-              <td className="px-3 py-2 max-w-[20rem]">
-                <button
-                  type="button"
-                  onClick={() => onOpen(row.id)}
-                  className="text-left hover:underline truncate block w-full font-medium"
-                >
-                  {row.title}
-                </button>
-                {row.incompleteBlockerCount > 0 && (
-                  <span
-                    className="inline-flex items-center gap-1 text-[10px] text-amber-700 mt-0.5"
-                    title={`Blocked by ${row.incompleteBlockerCount} incomplete task${row.incompleteBlockerCount === 1 ? '' : 's'}`}
+          {sorted.map((row) => {
+            const hasSubtasks = row.subtasks.length > 0;
+            const expanded = expandedTaskIds.has(row.id);
+            return (
+              <Fragment key={row.id}>
+                <tr className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                  <td className="px-3 py-2 max-w-[20rem]">
+                    <div className="flex items-start gap-1.5 min-w-0">
+                      {hasSubtasks ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSubtasks(row.id)}
+                          className="inline-flex items-center gap-1 shrink-0 mt-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-600 px-0.5"
+                          aria-expanded={expanded}
+                          aria-label={t('tasks.subtasks.toggle')}
+                          title={t('tasks.subtasks.count').replace(
+                            '{count}',
+                            String(row.subtasks.length),
+                          )}
+                        >
+                          <SubtaskChevron expanded={expanded} />
+                          <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
+                            {row.subtasks.length}
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="w-5 shrink-0" aria-hidden />
+                      )}
+                      <div className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => onOpen(row.id)}
+                          className="text-left hover:underline truncate block w-full font-medium"
+                        >
+                          {row.title}
+                        </button>
+                        {row.incompleteBlockerCount > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] text-amber-700 mt-0.5"
+                            title={`Blocked by ${row.incompleteBlockerCount} incomplete task${row.incompleteBlockerCount === 1 ? '' : 's'}`}
+                          >
+                            <span aria-hidden>🔒</span>
+                            {row.incompleteBlockerCount}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={row.status}
+                      onChange={(e) =>
+                        onStatusChange(row, e.target.value as tasksApi.TaskStatus)
+                      }
+                      className={`rounded px-2 py-0.5 text-xs border-0 ${STATUS_BADGE[row.status]}`}
+                      aria-label="Status"
+                    >
+                      {STATUS_ORDER.map((s) => (
+                        <option key={s} value={s}>
+                          {STATUS_LABEL[s]}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className={`px-3 py-2 ${PRIORITY_CLASS[row.priority]}`}>
+                    {PRIORITY_LABEL[row.priority]}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                    {row.technicianName ?? (
+                      <span className="text-slate-400">{t('tasks.list.unassigned')}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300" dir="rtl">
+                    {row.dueDate ? formatShamsiDate(row.dueDate) : ''}
+                  </td>
+                  <td
+                    className="px-3 py-2 text-xs text-sky-700 dark:text-sky-300 hidden xl:table-cell"
+                    dir="rtl"
                   >
-                    <span aria-hidden>🔒</span>
-                    {row.incompleteBlockerCount}
-                  </span>
-                )}
-              </td>
-              <td className="px-3 py-2">
-                <select
-                  value={row.status}
-                  onChange={(e) =>
-                    onStatusChange(row, e.target.value as tasksApi.TaskStatus)
-                  }
-                  className={`rounded px-2 py-0.5 text-xs border-0 ${STATUS_BADGE[row.status]}`}
-                  aria-label="Status"
-                >
-                  {STATUS_ORDER.map((s) => (
-                    <option key={s} value={s}>
-                      {STATUS_LABEL[s]}
-                    </option>
+                    {row.plannedDate ? formatShamsiDate(row.plannedDate) : ''}
+                  </td>
+                  <td
+                    className="px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300 hidden xl:table-cell"
+                    dir="rtl"
+                  >
+                    {row.completedAt ? formatShamsiTimestampDate(row.completedAt) : ''}
+                  </td>
+                  <td className="px-3 py-2 hidden md:table-cell">
+                    {row.labels.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {row.labels.map((l) => (
+                          <LabelChip key={l.id} label={l} />
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-end">
+                    <button
+                      type="button"
+                      onClick={() => onDelete(row)}
+                      className="text-xs text-red-600 hover:underline"
+                      aria-label="Delete task"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+                {expanded &&
+                  row.subtasks.map((sub) => (
+                    <tr
+                      key={sub.id}
+                      className="border-t border-slate-50 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/60"
+                    >
+                      <td className="px-3 py-1.5 max-w-[20rem] ps-8">
+                        <button
+                          type="button"
+                          onClick={() => onOpen(row.id)}
+                          className={`text-left hover:underline truncate block w-full text-xs ${
+                            sub.done ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          {sub.title}
+                        </button>
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span
+                          className={`inline-block rounded px-2 py-0.5 text-[10px] ${
+                            sub.done
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {sub.done ? t('tasks.subtasks.done') : t('tasks.subtasks.open')}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-slate-400 text-xs">—</td>
+                      <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300">
+                        {sub.assigneeName ?? sub.technicianName ?? (
+                          <span className="text-slate-400">{t('tasks.list.unassigned')}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300" dir="rtl">
+                        {sub.endDate ? formatShamsiDate(sub.endDate) : ''}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 text-xs text-sky-700 dark:text-sky-300 hidden xl:table-cell"
+                        dir="rtl"
+                      >
+                        {sub.startDate ? formatShamsiDate(sub.startDate) : ''}
+                      </td>
+                      <td className="px-3 py-1.5 hidden xl:table-cell" />
+                      <td className="px-3 py-1.5 hidden md:table-cell" />
+                      <td className="px-3 py-1.5" />
+                    </tr>
                   ))}
-                </select>
-              </td>
-              <td className={`px-3 py-2 ${PRIORITY_CLASS[row.priority]}`}>
-                {PRIORITY_LABEL[row.priority]}
-              </td>
-              <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                {row.technicianName ?? (
-                  <span className="text-slate-400">{t('tasks.list.unassigned')}</span>
-                )}
-              </td>
-              <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300" dir="rtl">
-                {row.dueDate ? formatShamsiDate(row.dueDate) : ''}
-              </td>
-              <td
-                className="px-3 py-2 text-xs text-sky-700 dark:text-sky-300 hidden xl:table-cell"
-                dir="rtl"
-              >
-                {row.plannedDate ? formatShamsiDate(row.plannedDate) : ''}
-              </td>
-              <td
-                className="px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300 hidden xl:table-cell"
-                dir="rtl"
-              >
-                {row.completedAt ? formatShamsiTimestampDate(row.completedAt) : ''}
-              </td>
-              <td className="px-3 py-2 hidden md:table-cell">
-                {row.labels.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {row.labels.map((l) => (
-                      <LabelChip key={l.id} label={l} />
-                    ))}
-                  </div>
-                )}
-              </td>
-              <td className="px-3 py-2 text-end">
-                <button
-                  type="button"
-                  onClick={() => onDelete(row)}
-                  className="text-xs text-red-600 hover:underline"
-                  aria-label="Delete task"
-                >
-                  ✕
-                </button>
-              </td>
-            </tr>
-          ))}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function SubtaskChevron({ expanded }: { expanded: boolean }): JSX.Element {
+  return (
+    <span
+      aria-hidden
+      className={[
+        'inline-block text-slate-500 transition-transform duration-150',
+        expanded ? 'rotate-90' : 'rtl:rotate-180',
+      ].join(' ')}
+    >
+      ▸
+    </span>
   );
 }
 

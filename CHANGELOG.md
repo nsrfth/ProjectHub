@@ -7,6 +7,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.75.0] — 2026-06-21
+
+**Tasks — collapsible subtasks in list view.** Project task list mode shows a per-row chevron +
+subtask count (collapsed by default). Expanding reveals indented subtask rows using data already
+returned by the task list API. In-memory expand state only (no persistence). Kanban / technician
+views unchanged.
+
+---
+
 ## [1.74.0] — 2026-06-21
 
 **Projects — team labels.** Assign the existing team `Label` catalog to projects at create and edit

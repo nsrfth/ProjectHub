@@ -185,6 +185,10 @@
   "tasks.col.actions": "",
   "tasks.list.empty": "هنوز تسکی در این پروژه وجود ندارد.",
   "tasks.list.unassigned": "—",
+  "tasks.subtasks.count": "{count} زیرتسک",
+  "tasks.subtasks.toggle": "نمایش یا پنهان‌کردن زیرتسک‌ها",
+  "tasks.subtasks.done": "انجام‌شده",
+  "tasks.subtasks.open": "باز",
 
   "security.password.title": "تغییر رمز عبور",
   "security.password.intro": "پس از ذخیره، از تمام دستگاه‌ها خارج می‌شوید. با رمز جدید دوباره وارد شوید.",
