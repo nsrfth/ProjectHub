@@ -496,6 +496,8 @@
   "about.userManual": "User manual",
   "about.changelog": "CHANGELOG",
   "about.helpHint": "Need help? Open the user manual via the 📖 button (top-right), or contact your TaskHub administrator.",
+  "about.https.warningTitle": "PWA install unavailable (HTTP)",
+  "about.https.warningBody": "This instance is served over an insecure connection (HTTP). Browsers require HTTPS before users can install TaskHub as an app. Enable HTTPS on your reverse proxy (for example Caddy with a valid certificate) to make the PWA installable.",
 
   "budget.currency": "Currency",
   "budget.currency.irr": "IRR (Iranian Rial)",

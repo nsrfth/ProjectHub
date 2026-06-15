@@ -7,6 +7,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.70.1] — 2026-06-09
+
+**PWA — admin HTTPS warning.** Global admins see an amber notice on the About page when
+the instance is served over plain HTTP (`window.isSecureContext === false`), explaining
+that the PWA cannot be installed until HTTPS is enabled. Non-admins never see it;
+localhost and HTTPS origins show no warning. i18n EN + FA.
+
+---
+
 ## [1.70.0] — 2026-06-09
 
 **PWA — installable app-shell.** TaskHub is now an installable Progressive Web App: web

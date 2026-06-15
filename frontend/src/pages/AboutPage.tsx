@@ -4,6 +4,8 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { fetchSystemInfo, fetchUpdateCheck, triggerUpgrade } from '@/features/system/api';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useT } from '@/lib/i18n';
+import { shouldShowHttpsPwaWarning } from '@/pages/aboutHttpsWarning';
 
 // "About" view — quick reference to the running instance: version, build
 // info, environment, headline counts, license, and links to deeper docs.
@@ -12,6 +14,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 
 export default function AboutPage(): JSX.Element {
   const { user } = useAuth();
+  const t = useT();
   const { data, isLoading, error } = useQuery({
     queryKey: ['system', 'info'],
     queryFn: fetchSystemInfo,
@@ -23,6 +26,10 @@ export default function AboutPage(): JSX.Element {
   // when the operator hasn't set UPDATE_CHECK_ENABLED, so we still hide the
   // badge in that case.
   const isAdmin = user?.globalRole === 'ADMIN';
+  const showHttpsPwaWarning = shouldShowHttpsPwaWarning(
+    isAdmin,
+    typeof window !== 'undefined' ? window.isSecureContext : true,
+  );
   const { data: update } = useQuery({
     queryKey: ['system', 'update-check'],
     queryFn: fetchUpdateCheck,
@@ -40,6 +47,16 @@ export default function AboutPage(): JSX.Element {
       <h1 className="text-2xl font-semibold mb-6">About TaskHub</h1>
 
       <section className="bg-white shadow rounded p-6 space-y-4">
+        {showHttpsPwaWarning && (
+          <div
+            role="note"
+            className="rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 p-4 text-sm space-y-1"
+          >
+            <p className="font-medium">{t('about.https.warningTitle')}</p>
+            <p>{t('about.https.warningBody')}</p>
+          </div>
+        )}
+
         {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
         {error && (
           <p className="text-sm text-red-600">

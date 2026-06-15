@@ -181,7 +181,10 @@ listener binds. This is the single trustworthy source of config — no scattered
   (denylist `/api/`). **`/api/*` is always `NetworkOnly`** (GET/POST/PUT/PATCH/DELETE)
   — task/comment/auth payloads are never stored in the SW cache. No offline data
   sync. Install requires HTTPS (localhost OK for dev); HTTP-only deployments keep
-  working as a plain SPA without install.
+  working as a plain SPA without install. **Admin HTTPS notice (v1.70.1):** on the
+  About page, global admins see an amber warning when `window.isSecureContext` is false
+  (plain HTTP — not localhost, not HTTPS), explaining that PWA install requires HTTPS.
+  Gated client-side only (`isAdmin && !isSecureContext`); no backend change. i18n EN+FA.
 
 ## Planner (v1.44)
 

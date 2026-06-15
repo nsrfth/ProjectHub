@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.70.0** (2026-06-09)
+Version **v1.70.1** (2026-06-09)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -716,6 +716,8 @@ TaskHub ships as a **Progressive Web App (PWA)**. On a secure origin you can ins
 **What the PWA caches.** Only the static app shell (HTML, JS, CSS, fonts, icons) is cached for faster launch. **Task and comment data is never cached** — every `/api/*` request goes to the server so you always see live data. There is no offline sync in v1.
 
 After a server upgrade, the app updates automatically on the next visit (no manual cache clear).
+
+**Admin notice on HTTP.** If your instance runs on plain HTTP, global admins see an amber warning on **About** explaining that the PWA cannot be installed until HTTPS is enabled. Regular members do not see this — it is operator guidance only. The notice uses the same secure-context check browsers use for install (`window.isSecureContext`), so it does not appear on HTTPS or localhost.
 
 ---
 
