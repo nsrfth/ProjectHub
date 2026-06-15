@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { currencyEnum } from './currency.js';
+import { calendarDateField, refineCalendarDateRange } from '../lib/calendarDate.js';
 
 export const projectStatusEnum = z.enum(['ACTIVE', 'ARCHIVED', 'ON_HOLD']);
 
@@ -32,18 +33,24 @@ const budgetSchema = z
     }
   });
 
-export const createProjectBody = z.object({
-  name: z.string().min(1).max(120).trim(),
-  description: z.string().max(2000).trim().optional(),
-  // v1.17: RACI "Accountable" person — optional team member id. Service
-  // validates that the user is a team member before saving.
-  accountableId: z.string().nullable().optional(),
-  // v1.41: optional budget fields.
-  plannedBudget: budgetSchema,
-  actualSpent: budgetSchema,
-  // v1.59: budget currency (defaults to team defaultCurrency on create).
-  budgetCurrency: currencyEnum.optional(),
-});
+export const createProjectBody = z
+  .object({
+    name: z.string().min(1).max(120).trim(),
+    description: z.string().max(2000).trim().optional(),
+    status: projectStatusEnum.optional(),
+    // v1.17: RACI "Accountable" person — optional team member id. Service
+    // validates that the user is a team member before saving.
+    accountableId: z.string().nullable().optional(),
+    // v1.41: optional budget fields.
+    plannedBudget: budgetSchema,
+    actualSpent: budgetSchema,
+    // v1.59: budget currency (defaults to team defaultCurrency on create).
+    budgetCurrency: currencyEnum.optional(),
+    // v1.72: optional schedule window (UTC-midnight calendar dates).
+    startDate: calendarDateField,
+    endDate: calendarDateField,
+  })
+  .superRefine(refineCalendarDateRange);
 
 export const updateProjectBody = z
   .object({
@@ -55,7 +62,10 @@ export const updateProjectBody = z
     plannedBudget: budgetSchema,
     actualSpent: budgetSchema,
     budgetCurrency: currencyEnum.optional(),
+    startDate: calendarDateField,
+    endDate: calendarDateField,
   })
+  .superRefine(refineCalendarDateRange)
   .refine(
     (v) =>
       v.name !== undefined ||
@@ -64,7 +74,9 @@ export const updateProjectBody = z
       v.accountableId !== undefined ||
       v.plannedBudget !== undefined ||
       v.actualSpent !== undefined ||
-      v.budgetCurrency !== undefined,
+      v.budgetCurrency !== undefined ||
+      v.startDate !== undefined ||
+      v.endDate !== undefined,
     'Provide at least one field to update',
   );
 
@@ -86,6 +98,8 @@ export const projectResponse = z.object({
   plannedBudget: z.string().nullable(),
   actualSpent: z.string().nullable(),
   budgetCurrency: currencyEnum,
+  startDate: z.string().datetime().nullable(),
+  endDate: z.string().datetime().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

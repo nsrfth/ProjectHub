@@ -22,13 +22,11 @@ import {
   type ProjectsViewMode,
 } from '@/features/projectBuckets/storage';
 import CreateProjectForm from '@/features/projects/CreateProjectForm';
-import ProjectBudgetModal from '@/features/projects/ProjectBudgetModal';
-import ProjectEditModal from '@/features/projects/ProjectEditModal';
+import ProjectEditModal, { type ProjectFormValues } from '@/features/projects/ProjectEditModal';
 import ProjectListRow from '@/features/projects/ProjectListRow';
 import ProjectActionsMenu from '@/features/projects/ProjectActionsMenu';
 import { toggleActionsMenuProjectId } from '@/features/projects/projectActionsLogic';
 import Modal from '@/features/ui/Modal';
-import type { BudgetCurrency } from '@/lib/formatBudget';
 import { useT } from '@/lib/i18n';
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -62,7 +60,6 @@ export default function ProjectsPage(): JSX.Element {
   const [assignProjectId, setAssignProjectId] = useState<string | null>(null);
   const [actionsMenuProjectId, setActionsMenuProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
-  const [budgetProjectId, setBudgetProjectId] = useState<string | null>(null);
   const [projectSaveError, setProjectSaveError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsedBuckets());
   const bucketMenuRef = useRef<HTMLDivElement>(null);
@@ -195,10 +192,25 @@ export default function ProjectsPage(): JSX.Element {
     mutationFn: (args: {
       teamId: string;
       projectId: string;
-      name?: string;
-      description?: string | null;
-      status?: projectsApi.ProjectStatus;
-    }) => projectsApi.updateProject(args.teamId, args.projectId, args),
+      values: ProjectFormValues;
+      nameOnly?: boolean;
+    }) => {
+      const { values, nameOnly } = args;
+      const payload = nameOnly
+        ? { name: values.name }
+        : {
+            name: values.name,
+            description: values.description || null,
+            status: values.status,
+            accountableId: values.accountableId,
+            plannedBudget: values.plannedBudget.trim() ? values.plannedBudget.trim() : null,
+            actualSpent: values.actualSpent.trim() ? values.actualSpent.trim() : null,
+            budgetCurrency: values.budgetCurrency,
+            startDate: values.startDate,
+            endDate: values.endDate,
+          };
+      return projectsApi.updateProject(args.teamId, args.projectId, payload);
+    },
     onSuccess: async (_d, vars) => {
       setProjectSaveError(null);
       setEditProjectId(null);
@@ -206,27 +218,6 @@ export default function ProjectsPage(): JSX.Element {
       await qc.invalidateQueries({ queryKey: ['projects', vars.teamId] });
     },
     onError: (err) => setProjectSaveError(errorMessage(err, t('projects.edit.error'))),
-  });
-
-  const updateBudgetMut = useMutation({
-    mutationFn: (args: {
-      teamId: string;
-      projectId: string;
-      plannedBudget: string | null;
-      actualSpent: string | null;
-      budgetCurrency?: BudgetCurrency;
-    }) =>
-      projectsApi.updateProject(args.teamId, args.projectId, {
-        plannedBudget: args.plannedBudget,
-        actualSpent: args.actualSpent,
-        ...(args.budgetCurrency !== undefined && { budgetCurrency: args.budgetCurrency }),
-      }),
-    onSuccess: async (_d, vars) => {
-      setBudgetProjectId(null);
-      await qc.invalidateQueries({ queryKey: ['projects', 'all'] });
-      await qc.invalidateQueries({ queryKey: ['projects', vars.teamId] });
-    },
-    onError: (err) => window.alert(errorMessage(err, t('projects.budget.error'))),
   });
 
   const deleteMut = useMutation({
@@ -264,6 +255,14 @@ export default function ProjectsPage(): JSX.Element {
 
   function canManageProject(project: projectsApi.ProjectCrossTeam): boolean {
     return project.ownerId === user?.id || isAdmin || managerTeamIds.has(project.teamId);
+  }
+
+  function isRenameOnlyProject(project: projectsApi.ProjectCrossTeam): boolean {
+    return (
+      !isAdmin &&
+      project.ownerId !== user?.id &&
+      managerTeamIds.has(project.teamId)
+    );
   }
 
   function renderBucketAssignMenu(project: projectsApi.ProjectCrossTeam): React.ReactNode {
@@ -314,7 +313,8 @@ export default function ProjectsPage(): JSX.Element {
         }}
         onEditBudget={() => {
           setActionsMenuProjectId(null);
-          setBudgetProjectId(project.id);
+          setProjectSaveError(null);
+          setEditProjectId(project.id);
         }}
         onDelete={() => {
           setActionsMenuProjectId(null);
@@ -328,9 +328,6 @@ export default function ProjectsPage(): JSX.Element {
 
   const editProject = editProjectId
     ? filteredProjects.find((p) => p.id === editProjectId) ?? projects.find((p) => p.id === editProjectId)
-    : null;
-  const budgetProject = budgetProjectId
-    ? filteredProjects.find((p) => p.id === budgetProjectId) ?? projects.find((p) => p.id === budgetProjectId)
     : null;
 
   return (
@@ -499,7 +496,10 @@ export default function ProjectsPage(): JSX.Element {
                   setProjectSaveError(null);
                   setEditProjectId(p.id);
                 }}
-                onEditBudget={() => setBudgetProjectId(p.id)}
+                onEditBudget={() => {
+                  setProjectSaveError(null);
+                  setEditProjectId(p.id);
+                }}
                 onDelete={() => deleteMut.mutate({ teamId: p.teamId, projectId: p.id })}
                 bucketMenu={renderBucketAssignMenu(p)}
               />
@@ -510,11 +510,8 @@ export default function ProjectsPage(): JSX.Element {
 
       {editProject && (
         <ProjectEditModal
-          initial={{
-            name: editProject.name,
-            description: editProject.description ?? '',
-            status: editProject.status,
-          }}
+          project={editProject}
+          nameOnly={isRenameOnlyProject(editProject)}
           pending={updateProjectMut.isPending}
           error={projectSaveError}
           onClose={() => {
@@ -525,26 +522,8 @@ export default function ProjectsPage(): JSX.Element {
             updateProjectMut.mutate({
               teamId: editProject.teamId,
               projectId: editProject.id,
-              name: values.name,
-              description: values.description || null,
-              status: values.status,
-            })
-          }
-        />
-      )}
-
-      {budgetProject && (
-        <ProjectBudgetModal
-          project={budgetProject}
-          pending={updateBudgetMut.isPending}
-          onClose={() => setBudgetProjectId(null)}
-          onSave={(planned, actual, currency) =>
-            updateBudgetMut.mutate({
-              teamId: budgetProject.teamId,
-              projectId: budgetProject.id,
-              plannedBudget: planned,
-              actualSpent: actual,
-              budgetCurrency: currency,
+              values,
+              nameOnly: isRenameOnlyProject(editProject),
             })
           }
         />

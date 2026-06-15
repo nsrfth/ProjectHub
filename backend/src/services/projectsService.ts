@@ -1,5 +1,9 @@
 import { Prisma, type Currency, type GlobalRole, type ProjectStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
+import {
+  calendarDateToIso,
+  normalizeOptionalCalendarDate,
+} from '../lib/calendarDate.js';
 import { Errors } from '../lib/errors.js';
 import {
   assertCanWriteProject as assertProjectWrite,
@@ -27,6 +31,8 @@ export interface ProjectView {
   plannedBudget: string | null;
   actualSpent: string | null;
   budgetCurrency: Currency;
+  startDate: string | null;
+  endDate: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,9 +62,17 @@ function toView(
     plannedBudget: p.plannedBudget === null ? null : p.plannedBudget.toFixed(2),
     actualSpent: p.actualSpent === null ? null : p.actualSpent.toFixed(2),
     budgetCurrency: p.budgetCurrency,
+    startDate: calendarDateToIso(p.startDate),
+    endDate: calendarDateToIso(p.endDate),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
+}
+
+function assertDateRange(start: Date | null, end: Date | null): void {
+  if (start && end && end.getTime() < start.getTime()) {
+    throw Errors.badRequest('endDate must be on or after startDate');
+  }
 }
 
 async function assertAccountableInTeam(
@@ -96,6 +110,8 @@ function updateTouchesNonNameFields(input: {
   plannedBudget?: number | string | null;
   actualSpent?: number | string | null;
   budgetCurrency?: Currency;
+  startDate?: string | null;
+  endDate?: string | null;
 }): boolean {
   return (
     input.description !== undefined
@@ -104,6 +120,8 @@ function updateTouchesNonNameFields(input: {
     || input.plannedBudget !== undefined
     || input.actualSpent !== undefined
     || input.budgetCurrency !== undefined
+    || input.startDate !== undefined
+    || input.endDate !== undefined
   );
 }
 
@@ -114,10 +132,13 @@ export class ProjectsService {
     input: {
       name: string;
       description?: string;
+      status?: ProjectStatus;
       accountableId?: string | null;
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
       budgetCurrency?: Currency;
+      startDate?: string | null;
+      endDate?: string | null;
     },
   ): Promise<ProjectView> {
     if (input.accountableId !== undefined) {
@@ -125,6 +146,10 @@ export class ProjectsService {
     }
     const planned = normaliseBudget(input.plannedBudget);
     const spent = normaliseBudget(input.actualSpent);
+    const startDate = normalizeOptionalCalendarDate(input.startDate);
+    const endDate = normalizeOptionalCalendarDate(input.endDate);
+    assertDateRange(startDate ?? null, endDate ?? null);
+
     let budgetCurrency = input.budgetCurrency;
     if (budgetCurrency === undefined) {
       const team = await prisma.team.findUnique({
@@ -140,9 +165,12 @@ export class ProjectsService {
         accountableId: input.accountableId ?? null,
         name: input.name,
         description: input.description ?? null,
+        ...(input.status !== undefined && { status: input.status }),
         budgetCurrency,
         ...(planned !== undefined && { plannedBudget: planned }),
         ...(spent !== undefined && { actualSpent: spent }),
+        ...(startDate !== undefined && { startDate }),
+        ...(endDate !== undefined && { endDate }),
       },
       include: { accountable: { select: { name: true } } },
     });
@@ -193,11 +221,13 @@ export class ProjectsService {
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
       budgetCurrency?: Currency;
+      startDate?: string | null;
+      endDate?: string | null;
     },
   ): Promise<ProjectView> {
     const p = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { teamId: true, ownerId: true },
+      select: { teamId: true, ownerId: true, startDate: true, endDate: true },
     });
     if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
 
@@ -223,6 +253,12 @@ export class ProjectsService {
     }
     const plannedPatch = normaliseBudget(input.plannedBudget);
     const spentPatch = normaliseBudget(input.actualSpent);
+    const startPatch = normalizeOptionalCalendarDate(input.startDate);
+    const endPatch = normalizeOptionalCalendarDate(input.endDate);
+    const nextStart = startPatch !== undefined ? startPatch : p.startDate;
+    const nextEnd = endPatch !== undefined ? endPatch : p.endDate;
+    assertDateRange(nextStart, nextEnd);
+
     try {
       const updated = await prisma.project.update({
         where: { id: projectId },
@@ -234,6 +270,8 @@ export class ProjectsService {
           ...(plannedPatch !== undefined && { plannedBudget: plannedPatch }),
           ...(spentPatch !== undefined && { actualSpent: spentPatch }),
           ...(input.budgetCurrency !== undefined && { budgetCurrency: input.budgetCurrency }),
+          ...(startPatch !== undefined && { startDate: startPatch }),
+          ...(endPatch !== undefined && { endDate: endPatch }),
         },
         include: { accountable: { select: { name: true } } },
       });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Modal from '@/features/ui/Modal';
 import CurrencySelector from '@/features/budget/CurrencySelector';
 import type { BudgetCurrency } from '@/lib/formatBudget';
-import { budgetLocaleFromLanguage, formatBudget } from '@/lib/formatBudget';
+import { budgetLocaleFromLanguage, formatBudget, normalizeBudgetCurrency } from '@/lib/formatBudget';
 import { getLanguage, useT } from '@/lib/i18n';
 import type { ProjectCrossTeam } from '@/features/projects/api';
 
@@ -23,12 +23,14 @@ export default function ProjectBudgetModal({
   const locale = budgetLocaleFromLanguage(getLanguage());
   const [planned, setPlanned] = useState(project.plannedBudget ?? '');
   const [actual, setActual] = useState(project.actualSpent ?? '');
-  const [currency, setCurrency] = useState<BudgetCurrency>(project.budgetCurrency);
+  const [currency, setCurrency] = useState<BudgetCurrency>(() =>
+    normalizeBudgetCurrency(project.budgetCurrency),
+  );
 
   useEffect(() => {
     setPlanned(project.plannedBudget ?? '');
     setActual(project.actualSpent ?? '');
-    setCurrency(project.budgetCurrency);
+    setCurrency(normalizeBudgetCurrency(project.budgetCurrency));
   }, [project.plannedBudget, project.actualSpent, project.budgetCurrency]);
 
   const validNumber = (v: string): boolean =>
@@ -42,7 +44,8 @@ export default function ProjectBudgetModal({
     onSave(planned.trim() || null, actual.trim() || null, currency);
   }
 
-  const fmt = (s: string | null): string => formatBudget(s, project.budgetCurrency, locale);
+  const fmt = (s: string | null): string =>
+    formatBudget(s, normalizeBudgetCurrency(project.budgetCurrency), locale);
 
   return (
     <Modal title={t('projects.action.editBudget')} onClose={onClose}>

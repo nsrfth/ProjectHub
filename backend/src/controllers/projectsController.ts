@@ -28,11 +28,26 @@ function serialize(p: {
   // v1.41: budget fields are already string-shaped by the service's toView.
   plannedBudget: string | null;
   actualSpent: string | null;
+  budgetCurrency: string;
+  startDate: string | null;
+  endDate: string | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
   return {
-    ...p,
+    id: p.id,
+    teamId: p.teamId,
+    ownerId: p.ownerId,
+    accountableId: p.accountableId,
+    accountableName: p.accountableName,
+    name: p.name,
+    description: p.description,
+    status: p.status,
+    plannedBudget: p.plannedBudget,
+    actualSpent: p.actualSpent,
+    budgetCurrency: p.budgetCurrency,
+    startDate: p.startDate,
+    endDate: p.endDate,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };

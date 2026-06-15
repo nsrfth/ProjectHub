@@ -21,6 +21,8 @@ export interface Project {
   plannedBudget: string | null;
   actualSpent: string | null;
   budgetCurrency: BudgetCurrency;
+  startDate: string | null;
+  endDate: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,11 +48,14 @@ export async function createProject(
   input: {
     name: string;
     description?: string;
+    status?: ProjectStatus;
     accountableId?: string | null;
     // v1.41: optional budgets at create time. number | string | null.
     plannedBudget?: number | string | null;
     actualSpent?: number | string | null;
     budgetCurrency?: BudgetCurrency;
+    startDate?: string | null;
+    endDate?: string | null;
   },
 ): Promise<Project> {
   return (await api.post<Project>(`/teams/${teamId}/projects`, input)).data;
@@ -68,6 +73,8 @@ export async function updateProject(
     plannedBudget?: number | string | null;
     actualSpent?: number | string | null;
     budgetCurrency?: BudgetCurrency;
+    startDate?: string | null;
+    endDate?: string | null;
   },
 ): Promise<Project> {
   return (await api.patch<Project>(`/teams/${teamId}/projects/${projectId}`, input)).data;

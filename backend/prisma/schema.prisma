@@ -556,6 +556,9 @@ model Project {
   // v1.59: currency label for budget amounts (no conversion). Task budgets
   // inherit this currency — tasks do not store their own currency column.
   budgetCurrency Currency    @default(IRR)
+  // v1.72: optional project schedule window (UTC-midnight calendar dates).
+  startDate      DateTime?
+  endDate        DateTime?
   createdAt      DateTime  @default(now())
   updatedAt     DateTime      @updatedAt
   team          Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -575,6 +578,7 @@ model Project {
   searchVector Unsupported("tsvector")?
 
   @@index([teamId, status])
+  @@index([teamId, startDate])
   @@index([ownerId])
   @@index([accountableId])
 }

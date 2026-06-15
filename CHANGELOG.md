@@ -7,6 +7,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.72.0] — 2026-06-15
+
+**Projects — start/end dates + full edit parity.** Optional `startDate` / `endDate` on projects
+(UTC-midnight calendar dates, Jalali picker on the frontend). Create and edit forms now expose
+the same fields: name, description, status, dates, accountable, and budget (currency, planned,
+spent). Edit budget menu opens the unified edit modal. Manager rename-only gate unchanged.
+
+---
+
 ## [1.71.1] — 2026-06-09
 
 **Security — fast-jwt CVE patch.** Backend npm `overrides` pin `fast-jwt@6.2.4` under

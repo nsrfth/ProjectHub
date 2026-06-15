@@ -4,6 +4,7 @@ import { buildApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import { prisma } from '../../src/data/prisma.js';
 import { bootstrapUser } from '../helpers/bootstrapUser.js';
+import { jalaliToUtcMidnight } from '../../src/lib/shamsiCalendar.js';
 
 let app: FastifyInstance;
 
@@ -719,5 +720,174 @@ describe('v1.40 cross-team /api/projects list', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual([]);
+  });
+});
+
+// v1.72: optional project start/end calendar dates (UTC midnight).
+describe('v1.72 project start/end dates', () => {
+  it('creates with Jalali-derived UTC-midnight dates and echoes them on read', async () => {
+    const token = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const start = jalaliToUtcMidnight(1404, 12, 1);
+    const end = jalaliToUtcMidnight(1404, 12, 15);
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: 'Dated',
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.startDate).toBe(start.toISOString());
+    expect(body.endDate).toBe(end.toISOString());
+
+    const get = await inject({
+      method: 'GET',
+      url: `/api/teams/${team.id}/projects/${body.id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(get.statusCode).toBe(200);
+    expect(get.json().startDate).toBe(start.toISOString());
+    expect(get.json().endDate).toBe(end.toISOString());
+  });
+
+  it('rejects endDate before startDate with 400', async () => {
+    const token = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: 'Bad range',
+        startDate: '2026-06-15T00:00:00.000Z',
+        endDate: '2026-06-01T00:00:00.000Z',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('PATCH updates full field set including dates and budget (edit parity)', async () => {
+    const token = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const proj = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${team.id}/projects`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: 'Before' },
+      })
+    ).json();
+
+    const start = '2026-03-01T00:00:00.000Z';
+    const end = '2026-06-30T00:00:00.000Z';
+    const patch = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: 'After',
+        description: 'Updated desc',
+        status: 'ON_HOLD',
+        plannedBudget: '1200',
+        actualSpent: '300',
+        budgetCurrency: 'EUR',
+        startDate: start,
+        endDate: end,
+      },
+    });
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json()).toMatchObject({
+      name: 'After',
+      description: 'Updated desc',
+      status: 'ON_HOLD',
+      plannedBudget: '1200.00',
+      actualSpent: '300.00',
+      budgetCurrency: 'EUR',
+      startDate: start,
+      endDate: end,
+    });
+  });
+
+  it('stores UTC-midnight anchor regardless of time suffix in wire value', async () => {
+    const token = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const res = await inject({
+      method: 'POST',
+      url: `/api/teams/${team.id}/projects`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: 'Anchor',
+        startDate: '2026-03-01T15:30:00.000Z',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().startDate).toBe('2026-03-01T00:00:00.000Z');
+  });
+
+  it('existing projects without dates return null and PATCH can clear dates', async () => {
+    const token = await registerUser('a@example.com');
+    const team = await createTeam(token, 'acme');
+    const proj = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${team.id}/projects`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: 'Legacy' },
+      })
+    ).json();
+    expect(proj.startDate).toBeNull();
+    expect(proj.endDate).toBeNull();
+
+    const set = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        startDate: '2026-01-01T00:00:00.000Z',
+        endDate: '2026-12-31T00:00:00.000Z',
+      },
+    });
+    expect(set.statusCode).toBe(200);
+
+    const cleared = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { startDate: null, endDate: null },
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().startDate).toBeNull();
+    expect(cleared.json().endDate).toBeNull();
+  });
+
+  it('manager rename-only gate still blocks non-name edits including dates', async () => {
+    const tokenAdmin = await registerUser('admin@example.com');
+    const tokenManager = await registerMember('mgr@example.com');
+    const tokenOwner = await registerMember('owner@example.com');
+    const team = await createTeam(tokenAdmin, 'acme');
+    await addMember(tokenAdmin, team.id, 'mgr@example.com', 'MANAGER');
+    await addMember(tokenAdmin, team.id, 'owner@example.com', 'MEMBER');
+
+    const proj = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${team.id}/projects`,
+        headers: { authorization: `Bearer ${tokenOwner}` },
+        payload: { name: 'MemberProj' },
+      })
+    ).json();
+
+    const res = await inject({
+      method: 'PATCH',
+      url: `/api/teams/${team.id}/projects/${proj.id}`,
+      headers: { authorization: `Bearer ${tokenManager}` },
+      payload: { startDate: '2026-06-01T00:00:00.000Z' },
+    });
+    expect(res.statusCode).toBe(403);
   });
 });

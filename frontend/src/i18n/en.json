@@ -541,6 +541,12 @@
   "projects.budget.error": "Could not save budget",
   "projects.ownedBy": "Owned by {owner}",
   "projects.ownedByYou": "you",
+  "projects.startDate": "Start date",
+  "projects.endDate": "End date",
+  "projects.accountable": "Accountable",
+  "projects.accountable.none": "None (optional)",
+  "projects.dateRange.invalid": "End date must be on or after start date",
+  "projects.edit.nameOnlyHint": "You can rename this project only. Other fields are read-only for managers on projects you do not own.",
 
   "settings.nav.automations": "Automations",
   "settings.nav.automationsDesc": "No-code rules: triggers, conditions, actions",
