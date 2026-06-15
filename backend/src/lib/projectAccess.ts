@@ -110,6 +110,82 @@ export async function resolveProjectAccess(
   return access;
 }
 
+export interface TaskResponsibleCandidate {
+  userId: string;
+  name: string;
+  email: string;
+}
+
+/** Team members ∪ accepted group members granted this project (excludes system users). */
+export async function listEligibleTaskResponsibleCandidates(
+  teamId: string,
+  projectId: string,
+): Promise<TaskResponsibleCandidate[]> {
+  const byUserId = new Map<string, TaskResponsibleCandidate>();
+
+  const memberships = await prisma.teamMembership.findMany({
+    where: { teamId, user: { isSystemUser: false } },
+    include: { user: { select: { id: true, name: true, email: true } } },
+    orderBy: { joinedAt: 'asc' },
+  });
+  for (const m of memberships) {
+    byUserId.set(m.userId, {
+      userId: m.user.id,
+      name: m.user.name,
+      email: m.user.email,
+    });
+  }
+
+  const groupMembers = await prisma.userGroupMember.findMany({
+    where: {
+      status: 'ACCEPTED',
+      user: { isSystemUser: false },
+      group: {
+        teamId,
+        grants: { some: { projectId } },
+      },
+    },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
+  for (const gm of groupMembers) {
+    if (!byUserId.has(gm.userId)) {
+      byUserId.set(gm.userId, {
+        userId: gm.user.id,
+        name: gm.user.name,
+        email: gm.user.email,
+      });
+    }
+  }
+
+  return [...byUserId.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+  );
+}
+
+export async function isUserEligibleTaskResponsible(
+  teamId: string,
+  projectId: string,
+  userId: string,
+): Promise<boolean> {
+  const membership = await prisma.teamMembership.findFirst({
+    where: { teamId, userId, user: { isSystemUser: false } },
+  });
+  if (membership) return true;
+
+  const groupMember = await prisma.userGroupMember.findFirst({
+    where: {
+      userId,
+      status: 'ACCEPTED',
+      user: { isSystemUser: false },
+      group: {
+        teamId,
+        grants: { some: { projectId } },
+      },
+    },
+  });
+  return !!groupMember;
+}
+
 export async function assertCanWriteProject(
   projectId: string,
   teamId: string,

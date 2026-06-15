@@ -80,6 +80,23 @@ export async function listTasks(
   ).data;
 }
 
+export interface ResponsibleCandidate {
+  userId: string;
+  name: string;
+  email: string;
+}
+
+export async function listResponsibleCandidates(
+  teamId: string,
+  projectId: string,
+): Promise<ResponsibleCandidate[]> {
+  return (
+    await api.get<{ items: ResponsibleCandidate[] }>(
+      `/teams/${teamId}/projects/${projectId}/tasks/responsible-candidates`,
+    )
+  ).data.items;
+}
+
 export async function createTask(
   teamId: string,
   projectId: string,
@@ -89,6 +106,8 @@ export async function createTask(
     status?: TaskStatus;
     priority?: TaskPriority;
     assigneeId?: string | null;
+    // v1.78: optional at create — omitted defaults to creator on the server.
+    responsibleId?: string | null;
     // v1.37: started-on date. Subject to the same v1.18 manager-only
     // restriction as the other date fields.
     startDate?: string | null;

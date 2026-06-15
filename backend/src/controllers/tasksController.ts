@@ -60,6 +60,20 @@ export class TasksController {
     return reply.send(items.map(serialize));
   };
 
+  listResponsibleCandidates = async (
+    req: FastifyRequest<{ Params: ProjectParams }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    const items = await this.svc.listResponsibleCandidates(
+      req.params.teamId,
+      req.params.projectId,
+      req.user.sub,
+      req.user.globalRole,
+    );
+    return reply.send({ items });
+  };
+
   get = async (req: FastifyRequest<{ Params: TaskParams }>, reply: FastifyReply) => {
     const t = await this.svc.get(req.params.teamId, req.params.projectId, req.params.taskId);
     return reply.send(serialize(t));

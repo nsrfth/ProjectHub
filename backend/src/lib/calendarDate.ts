@@ -43,3 +43,20 @@ export function refineCalendarDateRange<
     });
   }
 }
+
+/** Task create/update: dueDate must be on or after startDate when both are set. */
+export function refineTaskDueDateRange<
+  T extends { startDate?: string | null; dueDate?: string | null },
+>(v: T, ctx: z.RefinementCtx): void {
+  if (v.startDate == null || v.dueDate == null) return;
+  if (v.startDate === undefined || v.dueDate === undefined) return;
+  const start = normalizeUtcMidnight(v.startDate);
+  const due = normalizeUtcMidnight(v.dueDate);
+  if (due.getTime() < start.getTime()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'dueDate must be on or after startDate',
+      path: ['dueDate'],
+    });
+  }
+}

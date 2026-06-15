@@ -21,6 +21,7 @@ import {
 import { loadBoardGroupBy, saveBoardGroupBy } from '@/features/planner/storage';
 import { listTeamMembersForAssignees } from '@/features/teams/api';
 import { visibleTeamMembers } from '@/lib/systemUser';
+import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
 const STATUS_ORDER: tasksApi.TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const STATUS_LABEL: Record<tasksApi.TaskStatus, string> = {
   TODO: 'To do',
@@ -72,6 +73,13 @@ export default function TasksPage(): JSX.Element {
     queryKey: ['teams', teamId, 'assignees'],
     queryFn: () => listTeamMembersForAssignees(teamId!),
     enabled: !!teamId,
+  });
+
+  const { data: responsibleCandidates = [] } = useQuery({
+    queryKey: ['tasks', teamId, projectId, 'responsible-candidates'],
+    queryFn: () => tasksApi.listResponsibleCandidates(teamId!, projectId!),
+    enabled: !!teamId && !!projectId,
+    staleTime: 30_000,
   });
 
   const assigneeNames = useMemo(() => {
@@ -131,14 +139,25 @@ export default function TasksPage(): JSX.Element {
 
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState<tasksApi.TaskPriority>('MEDIUM');
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [dueDate, setDueDate] = useState<string | null>(null);
+  const [responsibleId, setResponsibleId] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
 
   const createMut = useMutation({
-    mutationFn: (input: { title: string; priority: tasksApi.TaskPriority }) =>
-      tasksApi.createTask(teamId!, projectId!, input),
+    mutationFn: (input: {
+      title: string;
+      priority: tasksApi.TaskPriority;
+      startDate?: string;
+      dueDate?: string;
+      responsibleId?: string;
+    }) => tasksApi.createTask(teamId!, projectId!, input),
     onSuccess: async () => {
       setTitle('');
       setPriority('MEDIUM');
+      setStartDate(null);
+      setDueDate(null);
+      setResponsibleId('');
       setCreateError(null);
       await qc.invalidateQueries({ queryKey: ['tasks', teamId, projectId] });
     },
@@ -261,7 +280,17 @@ export default function TasksPage(): JSX.Element {
 
   function onCreate(e: FormEvent): void {
     e.preventDefault();
-    createMut.mutate({ title, priority });
+    if (startDate && dueDate && new Date(dueDate).getTime() < new Date(startDate).getTime()) {
+      setCreateError(t('tasks.new.dateRangeInvalid'));
+      return;
+    }
+    createMut.mutate({
+      title,
+      priority,
+      ...(startDate ? { startDate } : {}),
+      ...(dueDate ? { dueDate } : {}),
+      ...(responsibleId ? { responsibleId } : {}),
+    });
   }
 
   return (
@@ -283,34 +312,70 @@ export default function TasksPage(): JSX.Element {
       </div>
 
       <section className="bg-white rounded shadow p-4 mb-6">
-        <form onSubmit={onCreate} className="flex flex-wrap items-center gap-2">
-          <input
-            type="text"
-            required
-            placeholder="New task title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="flex-1 min-w-[200px] rounded border-slate-300 px-2 py-1 border text-sm"
-          />
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value as tasksApi.TaskPriority)}
-            className="rounded border-slate-300 px-2 py-1 border text-sm"
-          >
-            <option value="LOW">Low</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="HIGH">High</option>
-            <option value="URGENT">Urgent</option>
-          </select>
-          <button
-            type="submit"
-            disabled={createMut.isPending}
-            className="bg-slate-900 text-white rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
-          >
-            {createMut.isPending ? 'Adding…' : 'Add task'}
-          </button>
+        <form onSubmit={onCreate} className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              required
+              placeholder="New task title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="flex-1 min-w-[200px] rounded border-slate-300 px-2 py-1 border text-sm dark:bg-slate-800 dark:border-slate-600"
+            />
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as tasksApi.TaskPriority)}
+              className="rounded border-slate-300 px-2 py-1 border text-sm dark:bg-slate-800 dark:border-slate-600"
+            >
+              <option value="LOW">Low</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HIGH">High</option>
+              <option value="URGENT">Urgent</option>
+            </select>
+            <button
+              type="submit"
+              disabled={createMut.isPending}
+              className="bg-slate-900 text-white rounded px-3 py-1 text-sm font-medium disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+            >
+              {createMut.isPending ? 'Adding…' : 'Add task'}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-end gap-3 text-sm">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {t('tasks.new.startDate')}
+              </span>
+              <ShamsiDatePicker value={startDate} onChange={setStartDate} />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {t('tasks.new.dueDate')}
+              </span>
+              <ShamsiDatePicker value={dueDate} onChange={setDueDate} />
+            </label>
+            {responsibleCandidates.length > 0 && (
+              <label className="flex flex-col gap-1 min-w-[10rem]">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  {t('tasks.new.responsible')}
+                </span>
+                <select
+                  value={responsibleId}
+                  onChange={(e) => setResponsibleId(e.target.value)}
+                  className="rounded border-slate-300 px-2 py-1 border text-sm dark:bg-slate-800 dark:border-slate-600"
+                >
+                  <option value="">{t('tasks.new.responsibleDefault')}</option>
+                  {responsibleCandidates.map((c) => (
+                    <option key={c.userId} value={c.userId}>
+                      {c.name || c.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
 
           {/* v1.20: view-mode toggle. v1.33: added List. */}
+          <div className="flex flex-wrap items-center gap-2">
           {viewMode === 'status' && (
             <select
               value={boardGroupBy}
@@ -344,6 +409,7 @@ export default function TasksPage(): JSX.Element {
                 {v.label}
               </button>
             ))}
+          </div>
           </div>
         </form>
         {createError && <p className="text-xs text-red-600 mt-2">{createError}</p>}

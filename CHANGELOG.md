@@ -7,6 +7,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.78.0] — 2026-06-15
+
+**Tasks — start/due dates + responsible at creation.** Project task form accepts optional
+start date, due date (ShamsiDatePicker, UTC-midnight), and responsible person. New
+`GET …/tasks/responsible-candidates` returns team members ∪ accepted group-granted members.
+`createTaskBody` gains optional `responsibleId` + due≥start validation; title-only quick-add
+unchanged.
+
+---
+
 ## [1.77.0] — 2026-06-09
 
 **Tasks — rename Technician → Responsible (DB, API, UI).** Breaking field rename:

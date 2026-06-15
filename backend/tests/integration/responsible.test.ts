@@ -170,7 +170,7 @@ describe('Task.responsibleId', () => {
       payload: { responsibleId: outsiderId },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error.message).toMatch(/team/i);
+    expect(res.json().error.message).toMatch(/eligible/i);
   });
 });
 

@@ -175,6 +175,7 @@ The **Kanban board** (`/projects/<id>/tasks`) is the main work view for a single
 - Drag a card between columns to change status — **only when grouped by Status**.
 - Drag within a column to reorder (status grouping only).
 - Toggle **List** or **by Responsible** for alternate layouts on the same data.
+- When creating a task, you can optionally set **Start**, **Due**, and **Responsible** (defaults to you). Dates use the Shamsi/Gregorian calendar picker; only the title is required.
 - In **List** view, tasks with subtasks show a chevron and subtask count (collapsed by default); expand to see indented subtask rows.
 - Click a card to open the **Task detail** page.
 

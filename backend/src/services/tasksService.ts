@@ -1,7 +1,13 @@
 import { Prisma, type Currency, type GlobalRole, type TaskPriority, type TaskStatus, type TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
-import { assertCanWriteProject } from '../lib/projectAccess.js';
+import {
+  assertCanWriteProject,
+  isUserEligibleTaskResponsible,
+  listEligibleTaskResponsibleCandidates,
+  type TaskResponsibleCandidate,
+} from '../lib/projectAccess.js';
+import { assertEndOnOrAfterStart, normalizeOptionalCalendarDate } from '../lib/calendarDate.js';
 import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
 import { WebhookService } from './webhookService.js';
@@ -255,6 +261,8 @@ export class TasksService {
       status?: TaskStatus;
       priority?: TaskPriority;
       assigneeId?: string | null;
+      // v1.78: optional at create — omitted defaults to creator.
+      responsibleId?: string | null;
       // v1.37: started-on date. Same shape as the other date fields.
       // Auto-set isn't worth the surprise — left as user-supplied only.
       startDate?: string | null;
@@ -288,6 +296,36 @@ export class TasksService {
       if (!membership) throw Errors.badRequest('Assignee is not a member of this team');
     }
 
+    const startDate =
+      input.startDate === undefined || input.startDate === null
+        ? null
+        : (normalizeOptionalCalendarDate(input.startDate) ?? null);
+
+    const dueResolved = input.dueDate
+      ? await resolveDueDateForScheduling(input.dueDate)
+      : { dueDate: null as Date | null, rolled: null };
+
+    if (startDate && dueResolved.dueDate) {
+      try {
+        assertEndOnOrAfterStart(startDate, dueResolved.dueDate);
+      } catch {
+        throw Errors.badRequest('dueDate must be on or after startDate');
+      }
+    }
+
+    let responsibleId: string | null;
+    if (input.responsibleId === undefined) {
+      responsibleId = creatorId;
+    } else {
+      responsibleId = input.responsibleId;
+      if (responsibleId !== null) {
+        const eligible = await isUserEligibleTaskResponsible(teamId, projectId, responsibleId);
+        if (!eligible) {
+          throw Errors.badRequest('Responsible is not eligible for this project');
+        }
+      }
+    }
+
     const status = input.status ?? 'TODO';
 
     // Append to the end of the target status column. Sparse positions (gap of
@@ -312,9 +350,7 @@ export class TasksService {
           ? new Date()
           : null;
 
-    const dueResolved = input.dueDate
-      ? await resolveDueDateForScheduling(input.dueDate)
-      : { dueDate: null as Date | null, rolled: null };
+    const dueResolvedForCreate = dueResolved;
 
     return prisma.$transaction(async (tx) => {
       const task = await tx.task.create({
@@ -323,15 +359,13 @@ export class TasksService {
           projectId,
           creatorId,
           assigneeId: input.assigneeId ?? null,
-          // v1.19: creator becomes the default responsible. Managers/admins
-          // can reassign post-create via update(); members are gated out.
-          responsibleId: creatorId,
+          responsibleId,
           title: input.title,
           description: input.description ?? null,
           status,
           priority: input.priority ?? 'MEDIUM',
-          startDate: input.startDate ? new Date(input.startDate) : null,
-          dueDate: dueResolved.dueDate,
+          startDate,
+          dueDate: dueResolvedForCreate.dueDate,
           plannedDate: input.plannedDate ? new Date(input.plannedDate) : null,
           completedAt,
           position,
@@ -352,12 +386,12 @@ export class TasksService {
         action: 'task.created',
         meta: { title: task.title, status: task.status, priority: task.priority },
       });
-      if (dueResolved.rolled) {
+      if (dueResolvedForCreate.rolled) {
         await logDueDateRoll(tx, {
           taskId: task.id,
           actorId: creatorId,
           teamId,
-          rolled: dueResolved.rolled,
+          rolled: dueResolvedForCreate.rolled,
         });
       }
       // Initial assignment is a real assignment event from the assignee's POV.
@@ -391,6 +425,17 @@ export class TasksService {
       });
       return hydrated;
     });
+  }
+
+  async listResponsibleCandidates(
+    teamId: string,
+    projectId: string,
+    callerId: string,
+    callerGlobalRole: GlobalRole,
+  ): Promise<TaskResponsibleCandidate[]> {
+    await assertCanWriteProject(projectId, teamId, callerId, callerGlobalRole);
+    await this.ensureProjectInTeam(teamId, projectId);
+    return listEligibleTaskResponsibleCandidates(teamId, projectId);
   }
 
   async list(
@@ -488,10 +533,14 @@ export class TasksService {
         );
       }
       if (input.responsibleId !== null) {
-        const membership = await prisma.teamMembership.findUnique({
-          where: { userId_teamId: { userId: input.responsibleId, teamId } },
-        });
-        if (!membership) throw Errors.badRequest('Responsible is not a member of this team');
+        const eligible = await isUserEligibleTaskResponsible(
+          teamId,
+          projectId,
+          input.responsibleId,
+        );
+        if (!eligible) {
+          throw Errors.badRequest('Responsible is not eligible for this project');
+        }
       }
     }
 

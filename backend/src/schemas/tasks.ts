@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { refineTaskDueDateRange } from '../lib/calendarDate.js';
 import { taskCustomFieldValueResponse } from './customFields.js';
 import { currencyEnum } from './currency.js';
 
@@ -37,6 +38,8 @@ export const createTaskBody = z.object({
   priority: taskPriorityEnum.optional(),
   // Empty string from a form field is normalized to null (unassigned).
   assigneeId: z.string().nullable().optional(),
+  // v1.78: optional at create — defaults to creator when omitted.
+  responsibleId: z.string().nullable().optional(),
   // ISO 8601; backend converts to Date. Client sends `null` to clear.
   // Four date concepts the task model tracks (v1.37):
   //   - startDate   — when work began (informational; no scheduler reads it)
@@ -50,7 +53,7 @@ export const createTaskBody = z.object({
   // v1.42: optional task-level budget fields, mirrors Project budget rules.
   plannedBudget: budgetSchema,
   actualSpent: budgetSchema,
-});
+}).superRefine(refineTaskDueDateRange);
 
 export const updateTaskBody = z
   .object({
@@ -86,6 +89,18 @@ export const reorderTaskBody = z.object({
 });
 
 export type ReorderTaskBody = z.infer<typeof reorderTaskBody>;
+
+export const responsibleCandidateResponse = z.object({
+  userId: z.string(),
+  name: z.string(),
+  email: z.string(),
+});
+
+export const responsibleCandidatesResponse = z.object({
+  items: z.array(responsibleCandidateResponse),
+});
+
+export type ResponsibleCandidate = z.infer<typeof responsibleCandidateResponse>;
 
 export const taskLabelResponse = z.object({
   id: z.string(),

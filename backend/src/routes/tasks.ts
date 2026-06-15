@@ -10,6 +10,7 @@ import {
   createTaskBody,
   listTasksQuery,
   reorderTaskBody,
+  responsibleCandidatesResponse,
   taskResponse,
   updateTaskBody,
 } from '../schemas/tasks.js';
@@ -43,6 +44,19 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.create,
+  });
+
+  r.get('/responsible-candidates', {
+    preHandler: requireScope('tasks:read'),
+    schema: {
+      tags: ['tasks'],
+      summary:
+        'List users eligible to be set as responsible on tasks in this project (team members ∪ accepted group-granted members)',
+      params: z.object({ teamId: z.string(), projectId: z.string() }),
+      response: { 200: responsibleCandidatesResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.listResponsibleCandidates,
   });
 
   r.get('/', {
