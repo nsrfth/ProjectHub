@@ -31,6 +31,9 @@ export function LabelMultiSelect({
   const selected = allLabels.filter((l) => value.includes(l.id));
   const selectedSet = new Set(value);
   const available = allLabels.filter((l) => !selectedSet.has(l.id));
+  // v1.80: two groups — global "predefined" labels vs this team's own.
+  const availablePredefined = available.filter((l) => l.isPredefined);
+  const availableTeam = available.filter((l) => !l.isPredefined);
 
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
@@ -81,10 +84,26 @@ export function LabelMultiSelect({
         ))}
       </div>
 
-      {!disabled && available.length > 0 && (
+      {!disabled && availablePredefined.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" dir="ltr">
+          <span className="text-xs text-slate-500">{t('projects.labels.predefined')}:</span>
+          {availablePredefined.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              onClick={() => toggle(l.id)}
+              className="opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <LabelChip label={l} size="md" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!disabled && availableTeam.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5" dir="ltr">
           <span className="text-xs text-slate-500">{t('projects.labels.add')}:</span>
-          {available.map((l) => (
+          {availableTeam.map((l) => (
             <button
               key={l.id}
               type="button"

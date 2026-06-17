@@ -2,9 +2,11 @@ import { api } from '@/lib/api';
 
 export interface Label {
   id: string;
-  teamId: string;
+  // v1.80: null for a global "predefined" label (admin-managed, every team).
+  teamId: string | null;
   name: string;
   color: string;
+  isPredefined: boolean;
 }
 
 // The shape attached to a task via Task.labels[] — same fields, without teamId
@@ -38,6 +40,27 @@ export async function updateLabel(
 
 export async function deleteLabel(teamId: string, labelId: string): Promise<void> {
   await api.delete(`/teams/${teamId}/labels/${labelId}`);
+}
+
+// v1.80: global "predefined" labels. Admin-only (GlobalRole=ADMIN); these
+// appear in every team's catalog via listLabels (flagged isPredefined).
+export async function listGlobalLabels(): Promise<Label[]> {
+  return (await api.get<Label[]>(`/admin/labels`)).data;
+}
+
+export async function createGlobalLabel(input: { name: string; color: string }): Promise<Label> {
+  return (await api.post<Label>(`/admin/labels`, input)).data;
+}
+
+export async function updateGlobalLabel(
+  labelId: string,
+  input: { name?: string; color?: string },
+): Promise<Label> {
+  return (await api.patch<Label>(`/admin/labels/${labelId}`, input)).data;
+}
+
+export async function deleteGlobalLabel(labelId: string): Promise<void> {
+  await api.delete(`/admin/labels/${labelId}`);
 }
 
 export async function attachLabel(

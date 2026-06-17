@@ -18,9 +18,11 @@ export const updateLabelBody = z
 
 export const labelResponse = z.object({
   id: z.string(),
-  teamId: z.string(),
+  // v1.80: null for a global "predefined" label (admin-managed, all teams).
+  teamId: z.string().nullable(),
   name: z.string(),
   color: z.string(),
+  isPredefined: z.boolean(),
 });
 
 export type CreateLabelBody = z.infer<typeof createLabelBody>;

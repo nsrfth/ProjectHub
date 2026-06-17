@@ -12,7 +12,7 @@ import { commentsRoutes } from './routes/comments.js';
 import { activityRoutes } from './routes/activity.js';
 import { notificationsRoutes } from './routes/notifications.js';
 import { adminRoutes } from './routes/admin.js';
-import { labelsRoutes, taskLabelsRoutes } from './routes/labels.js';
+import { globalLabelsRoutes, labelsRoutes, taskLabelsRoutes } from './routes/labels.js';
 import { subtasksRoutes } from './routes/subtasks.js';
 import { attachmentsRoutes } from './routes/attachments.js';
 import { notificationsWsRoutes } from './routes/notificationsWs.js';
@@ -132,6 +132,9 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     // GlobalRole=ADMIN gate. Separate file so the route module stays small
     // and the BackupsService receives env (DATABASE_URL + BACKUP_DIR).
     await api.register(backupsRoutes, { prefix: '/admin/backups', env });
+    // v1.80: global "predefined" labels — admin-managed, shared by every team.
+    // Under /admin so it inherits the GlobalRole=ADMIN gate.
+    await api.register(globalLabelsRoutes, { prefix: '/admin/labels' });
     // Labels live at the team scope; attach/detach lives under the task path.
     await api.register(labelsRoutes, { prefix: '/teams/:teamId/labels' });
     await api.register(taskLabelsRoutes, {

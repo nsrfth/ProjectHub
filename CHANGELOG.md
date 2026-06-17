@@ -7,6 +7,31 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.80.0] — 2026-06-17
+
+**Labels — global "predefined" labels + per-team user-defined labels.**
+Every team's label catalog used to start empty, so a fresh team (or project)
+had no labels to pick. Labels now come in two kinds:
+
+- **Predefined labels** — a single **global, admin-managed** set (Settings →
+  Labels, visible to global ADMINs). They appear automatically in **every**
+  team's picker (on projects and tasks), are usable by anyone, and are
+  **read-only** to members. Managed via new admin endpoints
+  `GET/POST/PATCH/DELETE /api/admin/labels`.
+- **User-defined labels** — the existing **team-scoped** labels, created and
+  edited by team members as before.
+
+**Data model:** `Label.teamId` is now nullable — `NULL` marks a global
+predefined label; a non-null `teamId` is a team's own label. Two partial unique
+indexes (migration `20260623120000_global_predefined_labels`) keep team labels
+unique per `(teamId, name)` and globals unique by `name`. Existing labels are
+untouched (all team-scoped). The team catalog endpoint
+`GET /teams/:teamId/labels` now returns team labels **and** globals, each tagged
+`isPredefined`; attaching a global label to a task/project is allowed (the
+former "must belong to this team" check now also accepts globals). The label
+picker (`LabelMultiSelect`, `LabelPicker`) and Settings → Labels render the two
+groups separately. i18n EN + FA.
+
 ## [1.79.0] — 2026-06-17
 
 **Permissions — `project.write_all`: team-wide manager write access to projects.**

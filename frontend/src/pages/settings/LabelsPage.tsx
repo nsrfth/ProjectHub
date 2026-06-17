@@ -2,6 +2,7 @@ import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useTeams } from '@/features/teams/TeamsContext';
+import { useAuth } from '@/features/auth/AuthContext';
 import { useT } from '@/lib/i18n';
 import { LabelChip } from '@/features/labels/LabelChip';
 import * as labelsApi from '@/features/labels/api';
@@ -28,39 +29,65 @@ function errorMessage(err: unknown, fallback: string): string {
 
 export default function LabelsPage(): JSX.Element {
   const { currentTeam } = useTeams();
+  const { user } = useAuth();
+  const isAdmin = user?.globalRole === 'ADMIN';
   const t = useT();
   const qc = useQueryClient();
   const teamId = currentTeam?.id ?? null;
 
+  // The team catalog now includes global predefined labels (isPredefined).
+  // Split them: team labels are managed here by anyone; predefined labels
+  // are managed by a global ADMIN in the section above.
   const { data: labels = [], isLoading } = useQuery({
     queryKey: ['labels', teamId],
     queryFn: () => labelsApi.listLabels(teamId!),
     enabled: !!teamId,
   });
+  const teamLabels = labels.filter((l) => !l.isPredefined);
+  const predefinedLabels = labels.filter((l) => l.isPredefined);
 
+  // ── Team-label mutations ──
   const createMut = useMutation({
     mutationFn: (input: { name: string; color: string }) =>
       labelsApi.createLabel(teamId!, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['labels', teamId] }),
     onError: (err) => window.alert(errorMessage(err, 'Could not create label')),
   });
-
   const updateMut = useMutation({
     mutationFn: (input: { labelId: string; name?: string; color?: string }) =>
       labelsApi.updateLabel(teamId!, input.labelId, { name: input.name, color: input.color }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['labels', teamId] }),
     onError: (err) => window.alert(errorMessage(err, 'Could not update label')),
   });
-
   const deleteMut = useMutation({
     mutationFn: (labelId: string) => labelsApi.deleteLabel(teamId!, labelId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['labels', teamId] });
-      // Tasks across this team had labels[] populated; invalidate the
-      // common query keys so the chips disappear without a manual reload.
       qc.invalidateQueries({ queryKey: ['tasks'] });
     },
     onError: (err) => window.alert(errorMessage(err, 'Could not delete label')),
+  });
+
+  // ── Global predefined-label mutations (admin only). Invalidate every
+  //    team's catalog since globals appear everywhere. ──
+  const createGlobalMut = useMutation({
+    mutationFn: (input: { name: string; color: string }) => labelsApi.createGlobalLabel(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['labels'] }),
+    onError: (err) => window.alert(errorMessage(err, 'Could not create predefined label')),
+  });
+  const updateGlobalMut = useMutation({
+    mutationFn: (input: { labelId: string; name?: string; color?: string }) =>
+      labelsApi.updateGlobalLabel(input.labelId, { name: input.name, color: input.color }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['labels'] }),
+    onError: (err) => window.alert(errorMessage(err, 'Could not update predefined label')),
+  });
+  const deleteGlobalMut = useMutation({
+    mutationFn: (labelId: string) => labelsApi.deleteGlobalLabel(labelId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['labels'] });
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
+    onError: (err) => window.alert(errorMessage(err, 'Could not delete predefined label')),
   });
 
   if (!currentTeam) {
@@ -73,51 +100,90 @@ export default function LabelsPage(): JSX.Element {
   }
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h2 className="text-lg font-semibold mb-1">{t('labels.title')}</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          {t('labels.subtitle').replace('{team}', currentTeam.name)}
-        </p>
-      </header>
-
-      {isLoading && (
-        <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+    <section className="space-y-8">
+      {/* Predefined (global) labels — global ADMIN only. */}
+      {isAdmin && (
+        <div className="space-y-4">
+          <header>
+            <h2 className="text-lg font-semibold mb-1">{t('labels.predefined.title')}</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {t('labels.predefined.subtitle')}
+            </p>
+          </header>
+          {predefinedLabels.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400 italic">
+              {t('labels.predefined.empty')}
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-200 dark:divide-slate-700 border border-slate-200 dark:border-slate-700 rounded">
+              {predefinedLabels.map((l) => (
+                <LabelRow
+                  key={l.id}
+                  label={l}
+                  busy={updateGlobalMut.isPending || deleteGlobalMut.isPending}
+                  onRename={(name) => updateGlobalMut.mutate({ labelId: l.id, name })}
+                  onRecolor={(color) => updateGlobalMut.mutate({ labelId: l.id, color })}
+                  onDelete={() => {
+                    if (window.confirm(t('labels.deleteConfirm').replace('{name}', l.name))) {
+                      deleteGlobalMut.mutate(l.id);
+                    }
+                  }}
+                  t={t}
+                />
+              ))}
+            </ul>
+          )}
+          <CreateLabelForm
+            onCreate={(input) => createGlobalMut.mutate(input)}
+            submitting={createGlobalMut.isPending}
+            t={t}
+          />
+        </div>
       )}
 
-      {!isLoading && labels.length === 0 && (
-        <p className="text-sm text-slate-500 dark:text-slate-400 italic">
-          {t('labels.empty')}
-        </p>
-      )}
+      {/* Team (user-defined) labels. */}
+      <div className="space-y-4">
+        <header>
+          <h2 className="text-lg font-semibold mb-1">{t('labels.title')}</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {t('labels.subtitle').replace('{team}', currentTeam.name)}
+          </p>
+        </header>
 
-      {!isLoading && labels.length > 0 && (
-        <ul className="divide-y divide-slate-200 dark:divide-slate-700 border border-slate-200 dark:border-slate-700 rounded">
-          {labels.map((l) => (
-            <LabelRow
-              key={l.id}
-              label={l}
-              busy={updateMut.isPending || deleteMut.isPending}
-              onRename={(name) => updateMut.mutate({ labelId: l.id, name })}
-              onRecolor={(color) => updateMut.mutate({ labelId: l.id, color })}
-              onDelete={() => {
-                if (window.confirm(t('labels.deleteConfirm').replace('{name}', l.name))) {
-                  deleteMut.mutate(l.id);
-                }
-              }}
-              t={t}
-            />
-          ))}
-        </ul>
-      )}
+        {isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
 
-      {teamId && (
-        <CreateLabelForm
-          onCreate={(input) => createMut.mutate(input)}
-          submitting={createMut.isPending}
-          t={t}
-        />
-      )}
+        {!isLoading && teamLabels.length === 0 && (
+          <p className="text-sm text-slate-500 dark:text-slate-400 italic">{t('labels.empty')}</p>
+        )}
+
+        {!isLoading && teamLabels.length > 0 && (
+          <ul className="divide-y divide-slate-200 dark:divide-slate-700 border border-slate-200 dark:border-slate-700 rounded">
+            {teamLabels.map((l) => (
+              <LabelRow
+                key={l.id}
+                label={l}
+                busy={updateMut.isPending || deleteMut.isPending}
+                onRename={(name) => updateMut.mutate({ labelId: l.id, name })}
+                onRecolor={(color) => updateMut.mutate({ labelId: l.id, color })}
+                onDelete={() => {
+                  if (window.confirm(t('labels.deleteConfirm').replace('{name}', l.name))) {
+                    deleteMut.mutate(l.id);
+                  }
+                }}
+                t={t}
+              />
+            ))}
+          </ul>
+        )}
+
+        {teamId && (
+          <CreateLabelForm
+            onCreate={(input) => createMut.mutate(input)}
+            submitting={createMut.isPending}
+            t={t}
+          />
+        )}
+      </div>
     </section>
   );
 }

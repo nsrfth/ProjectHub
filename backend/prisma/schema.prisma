@@ -835,14 +835,18 @@ model TaskDependency {
 
 model Label {
   id     String      @id @default(cuid())
-  teamId String
+  // v1.80: nullable. teamId = NULL → a GLOBAL "predefined" label: admin-managed,
+  // visible and usable in EVERY team, read-only to members. Non-null → a team's
+  // own user-defined label (unchanged behaviour). Uniqueness is enforced by two
+  // PARTIAL unique indexes created in the migration — unique (teamId,name) for
+  // team labels and unique (name) for globals — which Prisma can't express, so
+  // @@unique is intentionally omitted here.
+  teamId String?
   name   String
   color  String
-  team   Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team   Team?       @relation(fields: [teamId], references: [id], onDelete: Cascade)
   tasks  TaskLabel[]
   projects ProjectLabel[]
-
-  @@unique([teamId, name])
 }
 
 model ProjectLabel {

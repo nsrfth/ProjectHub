@@ -113,7 +113,8 @@ async function assertLabelsBelongToTeam(teamId: string, labelIds: string[]): Pro
   if (labelIds.length === 0) return;
   const unique = [...new Set(labelIds)];
   const count = await prisma.label.count({
-    where: { id: { in: unique }, teamId },
+    // v1.80: accept the team's own labels OR global predefined labels (teamId NULL).
+    where: { id: { in: unique }, OR: [{ teamId }, { teamId: null }] },
   });
   if (count !== unique.length) {
     throw Errors.badRequest('One or more labels do not belong to this team');

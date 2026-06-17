@@ -402,6 +402,9 @@
   "labels.adding": "در حال افزودن…",
   "labels.filterBy": "فیلتر بر اساس برچسب:",
   "labels.clearFilter": "پاک کردن",
+  "labels.predefined.title": "برچسب‌های پیش‌فرض",
+  "labels.predefined.subtitle": "برچسب‌های سراسری و مدیریت‌شده توسط مدیر سامانه که در همه‌ی تیم‌ها در دسترس‌اند.",
+  "labels.predefined.empty": "هنوز برچسب پیش‌فرضی نیست — یکی در پایین بسازید.",
 
   "deps.title": "وابستگی‌ها",
   "deps.loading": "در حال بارگذاری…",
@@ -556,6 +559,7 @@
   "projects.labels": "برچسب‌ها",
   "projects.labels.none": "بدون برچسب",
   "projects.labels.add": "افزودن",
+  "projects.labels.predefined": "پیش‌فرض",
   "projects.labels.new": "+ برچسب جدید",
   "projects.ownedBy": "مالک: {owner}",
   "projects.ownedByYou": "شما",

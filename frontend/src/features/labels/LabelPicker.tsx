@@ -34,6 +34,9 @@ export function LabelPicker({
 
   const attachedIds = new Set(attached.map((l) => l.id));
   const unattached = allLabels.filter((l) => !attachedIds.has(l.id));
+  // v1.80: group attach options — global "predefined" labels vs this team's own.
+  const unattachedPredefined = unattached.filter((l) => l.isPredefined);
+  const unattachedTeam = unattached.filter((l) => !l.isPredefined);
 
   const attachMut = useMutation({
     mutationFn: (labelId: string) => labelsApi.attachLabel(teamId, projectId, taskId, labelId),
@@ -89,10 +92,26 @@ export function LabelPicker({
         ))}
       </div>
 
-      {unattached.length > 0 && (
+      {unattachedPredefined.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-slate-500">Predefined:</span>
+          {unattachedPredefined.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              onClick={() => attachMut.mutate(l.id)}
+              className="opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <LabelChip label={l} size="md" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {unattachedTeam.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-slate-500">Add:</span>
-          {unattached.map((l) => (
+          {unattachedTeam.map((l) => (
             <button
               key={l.id}
               type="button"

@@ -3,7 +3,12 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { LabelsService } from '../services/labelsService.js';
 import { LabelsController } from '../controllers/labelsController.js';
-import { requireAuth, requireTeamRole, requireTeamRoleOrGrantedProject } from '../middleware/auth.js';
+import {
+  requireAuth,
+  requireGlobalRole,
+  requireTeamRole,
+  requireTeamRoleOrGrantedProject,
+} from '../middleware/auth.js';
 import { requireProjectAccess, requireProjectWriteAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import { createLabelBody, labelResponse, updateLabelBody } from '../schemas/labels.js';
@@ -66,6 +71,62 @@ export async function labelsRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.remove,
+  });
+}
+
+// v1.80: global "predefined" labels — admin-managed, visible and usable in
+// every team. Mounted at /admin/labels so it shares the GlobalRole=ADMIN gate
+// (no team scope: these are instance-wide). Members consume them via the
+// team catalog (GET /teams/:teamId/labels, which now includes globals).
+export async function globalLabelsRoutes(app: FastifyInstance): Promise<void> {
+  const svc = new LabelsService();
+  const ctrl = new LabelsController(svc);
+  const r = app.withTypeProvider<ZodTypeProvider>();
+
+  r.addHook('preHandler', requireAuth);
+  r.addHook('preHandler', requireGlobalRole('ADMIN'));
+
+  r.get('/', {
+    schema: {
+      tags: ['labels'],
+      summary: 'List global predefined labels',
+      response: { 200: z.array(labelResponse) },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.listGlobal,
+  });
+
+  r.post('/', {
+    schema: {
+      tags: ['labels'],
+      summary: 'Create a global predefined label (unique name across all globals)',
+      body: createLabelBody,
+      response: { 201: labelResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.createGlobal,
+  });
+
+  r.patch('/:labelId', {
+    schema: {
+      tags: ['labels'],
+      summary: 'Update a global predefined label name/color',
+      params: z.object({ labelId: z.string() }),
+      body: updateLabelBody,
+      response: { 200: labelResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.updateGlobal,
+  });
+
+  r.delete('/:labelId', {
+    schema: {
+      tags: ['labels'],
+      summary: 'Delete a global predefined label (detaches it everywhere)',
+      params: z.object({ labelId: z.string() }),
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.removeGlobal,
   });
 }
 

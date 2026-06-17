@@ -237,7 +237,8 @@ async function assertLabelsInTeam(teamId: string, labelIds: string[]): Promise<s
   const unique = Array.from(new Set(labelIds));
   if (unique.length === 0) return unique;
   const rows = await prisma.label.findMany({
-    where: { id: { in: unique }, teamId },
+    // v1.80: accept the team's own labels OR global predefined labels (teamId NULL).
+    where: { id: { in: unique }, OR: [{ teamId }, { teamId: null }] },
     select: { id: true },
   });
   if (rows.length !== unique.length) {

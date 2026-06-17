@@ -402,6 +402,9 @@
   "labels.adding": "Adding…",
   "labels.filterBy": "Filter by label:",
   "labels.clearFilter": "Clear",
+  "labels.predefined.title": "Predefined labels",
+  "labels.predefined.subtitle": "Global, admin-managed labels available in every team.",
+  "labels.predefined.empty": "No predefined labels yet — create one below.",
 
   "deps.title": "Dependencies",
   "deps.loading": "Loading dependencies…",
@@ -556,6 +559,7 @@
   "projects.labels": "Labels",
   "projects.labels.none": "No labels",
   "projects.labels.add": "Add",
+  "projects.labels.predefined": "Predefined",
   "projects.labels.new": "+ New label",
   "projects.ownedBy": "Owned by {owner}",
   "projects.ownedByYou": "you",

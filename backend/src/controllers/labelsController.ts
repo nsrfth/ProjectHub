@@ -6,6 +6,7 @@ type TeamParams = { teamId: string };
 type LabelParams = { teamId: string; labelId: string };
 type TaskLabelParams = { teamId: string; projectId: string; taskId: string; labelId: string };
 type TaskParams = { teamId: string; projectId: string; taskId: string };
+type GlobalLabelParams = { labelId: string };
 
 export class LabelsController {
   constructor(private readonly svc: LabelsService) {}
@@ -47,6 +48,33 @@ export class LabelsController {
 
   detach = async (req: FastifyRequest<{ Params: TaskLabelParams }>, reply: FastifyReply) => {
     await this.svc.detach(req.params.teamId, req.params.taskId, req.params.labelId);
+    return reply.status(204).send();
+  };
+
+  // ── Global "predefined" labels (gated by GlobalRole=ADMIN in the route) ────
+  listGlobal = async (_req: FastifyRequest, reply: FastifyReply) => {
+    return reply.send(await this.svc.listGlobal());
+  };
+
+  createGlobal = async (
+    req: FastifyRequest<{ Body: CreateLabelBody }>,
+    reply: FastifyReply,
+  ) => {
+    return reply.status(201).send(await this.svc.createGlobal(req.body));
+  };
+
+  updateGlobal = async (
+    req: FastifyRequest<{ Params: GlobalLabelParams; Body: UpdateLabelBody }>,
+    reply: FastifyReply,
+  ) => {
+    return reply.send(await this.svc.updateGlobal(req.params.labelId, req.body));
+  };
+
+  removeGlobal = async (
+    req: FastifyRequest<{ Params: GlobalLabelParams }>,
+    reply: FastifyReply,
+  ) => {
+    await this.svc.removeGlobal(req.params.labelId);
     return reply.status(204).send();
   };
 }
