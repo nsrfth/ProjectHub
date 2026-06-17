@@ -1,7 +1,9 @@
-import { Prisma, type GlobalRole } from '@prisma/client';
+import { Prisma, type GlobalRole, type SubtaskStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { userHasPermission } from '../middleware/requirePermission.js';
+import { resolveProjectAccess } from '../lib/projectAccess.js';
+import { logActivity } from './activityLogger.js';
 
 // Subtasks are checklist items inside a task. The route layer already verifies
 // team membership; this service additionally enforces that the subtask belongs
@@ -18,6 +20,8 @@ export interface SubtaskView {
   taskId: string;
   title: string;
   done: boolean;
+  // v1.82: 5-state progress status; `done` above is derived (DONE ⇔ true).
+  status: SubtaskStatus;
   responsibleId: string | null;
   responsibleName: string | null;
   // v1.42: assignee — distinct from responsible. Anyone with project
@@ -44,6 +48,7 @@ function toView(row: Prisma.SubtaskGetPayload<{ include: typeof SUBTASK_INCLUDE 
     taskId: row.taskId,
     title: row.title,
     done: row.done,
+    status: row.status,
     responsibleId: row.responsibleId,
     responsibleName: row.responsible?.name ?? null,
     assigneeId: row.assigneeId,
@@ -101,6 +106,9 @@ export class SubtasksService {
     input: {
       title: string;
       done?: boolean;
+      // v1.82: optional initial status. Defaults to NOT_STARTED; `done` is
+      // derived from it (DONE ⇔ true) so the two never diverge.
+      status?: SubtaskStatus;
       startDate?: string | null;
       endDate?: string | null;
       // v1.42: optional assignee at create time.
@@ -123,11 +131,16 @@ export class SubtasksService {
       select: { position: true },
     });
     const position = (last?.position ?? 0) + POSITION_GAP;
+    // v1.82: derive a coherent (status, done) pair. status wins when given;
+    // otherwise map the legacy done flag (true → DONE, false → NOT_STARTED).
+    const initialStatus: SubtaskStatus =
+      input.status ?? (input.done ? 'DONE' : 'NOT_STARTED');
     const created = await prisma.subtask.create({
       data: {
         taskId,
         title: input.title,
-        done: input.done ?? false,
+        status: initialStatus,
+        done: initialStatus === 'DONE',
         // v1.19: creator becomes the default responsible (same rule as Task).
         responsibleId: creatorId,
         // v1.42: explicit assignee or null. Unlike responsible, we do NOT
@@ -153,6 +166,9 @@ export class SubtasksService {
     input: {
       title?: string;
       done?: boolean;
+      // v1.82: progress status. Authoritative — when set, `done` is derived
+      // from it; when only `done` is set, status is derived from `done`.
+      status?: SubtaskStatus;
       responsibleId?: string | null;
       // v1.42: assignee — undefined leaves, null clears, string sets.
       // Anyone with project access can change (unlike responsible, which
@@ -204,12 +220,24 @@ export class SubtasksService {
       }
     }
 
+    // v1.82: keep done <-> status coherent. status is the source of truth:
+    // if status is provided, done = (status === DONE); otherwise a done toggle
+    // maps to DONE / NOT_STARTED. (NOT_STARTED chosen for done=false.)
+    let nextStatus: SubtaskStatus | undefined = input.status;
+    let nextDone: boolean | undefined = input.done;
+    if (nextStatus !== undefined) {
+      nextDone = nextStatus === 'DONE';
+    } else if (nextDone !== undefined) {
+      nextStatus = nextDone ? 'DONE' : 'NOT_STARTED';
+    }
+
     try {
       const updated = await prisma.subtask.update({
         where: { id: subtaskId },
         data: {
           ...(input.title !== undefined && { title: input.title }),
-          ...(input.done !== undefined && { done: input.done }),
+          ...(nextStatus !== undefined && { status: nextStatus }),
+          ...(nextDone !== undefined && { done: nextDone }),
           ...(input.responsibleId !== undefined && { responsibleId: input.responsibleId }),
           ...(input.assigneeId !== undefined && { assigneeId: input.assigneeId }),
           ...(input.startDate !== undefined && { startDate: mergedStart }),
@@ -224,6 +252,60 @@ export class SubtasksService {
       }
       throw err;
     }
+  }
+
+  // v1.82: focused status-only change. Allowed for the subtask's RESPONSIBLE
+  // person OR its ASSIGNEE OR anyone with the general subtask-edit permission
+  // (= project WRITE access). A responsible/assignee who lacks WRITE can still
+  // change THE STATUS of their subtask, but nothing else (this method only
+  // touches status + the derived done). Project access (READ) is enforced by
+  // the route; team/project scoping via ensureTaskInChain.
+  async setStatus(
+    teamId: string,
+    projectId: string,
+    taskId: string,
+    subtaskId: string,
+    actorId: string,
+    actorGlobalRole: GlobalRole,
+    status: SubtaskStatus,
+  ): Promise<SubtaskView> {
+    await this.ensureTaskInChain(teamId, projectId, taskId);
+    const existing = await prisma.subtask.findUnique({ where: { id: subtaskId } });
+    if (!existing || existing.taskId !== taskId) throw Errors.notFound('Subtask not found');
+
+    let allowed = existing.responsibleId === actorId || existing.assigneeId === actorId;
+    if (!allowed) {
+      // General subtask-edit permission = project WRITE access (the gate on the
+      // full PATCH route). resolveProjectAccess returns WRITE for ADMIN, owner,
+      // project.write_all, or a FULL group grant.
+      const access = await resolveProjectAccess(
+        projectId,
+        teamId,
+        actorId,
+        actorGlobalRole,
+        'nested',
+      );
+      allowed = access === 'WRITE';
+    }
+    if (!allowed) {
+      throw Errors.forbidden(
+        'You can only change the status of a subtask you are responsible for or assigned to',
+      );
+    }
+
+    const updated = await prisma.subtask.update({
+      where: { id: subtaskId },
+      data: { status, done: status === 'DONE' },
+      include: SUBTASK_INCLUDE,
+    });
+    await logActivity(prisma, {
+      taskId,
+      teamId,
+      actorId,
+      action: 'subtask.status_changed',
+      meta: { subtaskId, status, title: existing.title },
+    });
+    return toView(updated);
   }
 
   async remove(teamId: string, projectId: string, taskId: string, subtaskId: string): Promise<void> {

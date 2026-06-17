@@ -125,6 +125,8 @@ export const taskSubtaskResponse = z.object({
   taskId: z.string(),
   title: z.string(),
   done: z.boolean(),
+  // v1.82: subtask progress status (5-state); `done` is derived (DONE ⇔ true).
+  status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'WAITING', 'DEFERRED', 'DONE']),
   // v1.19: subtask responsible joined for the UI.
   responsibleId: z.string().nullable(),
   responsibleName: z.string().nullable(),

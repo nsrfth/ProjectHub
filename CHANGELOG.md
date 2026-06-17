@@ -7,6 +7,35 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.82.0] — 2026-06-17
+
+**Subtasks — 5-state progress status.**
+Each subtask now has a **progress status** with five values, shown as a colored
+dot + dropdown on the task-detail subtask list:
+
+- **NOT_STARTED** (blue), **IN_PROGRESS** (gray), **WAITING** (yellow),
+  **DEFERRED** (orange/red), **DONE** (teal).
+
+**`done` is kept and stays in sync** — `status` is the single source of truth:
+setting status to **DONE** sets `done=true`; any other status sets `done=false`.
+The legacy `done` toggle still works (toggling `done=true` → DONE, `done=false`
+→ NOT_STARTED), so the checkbox API and the "X of Y done" progress counter
+(which now counts DONE-status subtasks) never diverge.
+
+**Who can change it:** the subtask's **responsible** person and its **assignee**
+can change the status — even without the general subtask-edit permission
+(project WRITE) — via a dedicated, status-only endpoint
+`PATCH …/subtasks/:id/status`. That right is **status-only**: it does not let
+them edit other fields (title, dates, reassignment) or bypass project access.
+Everyone else still needs project WRITE. Status changes are activity-logged
+(`subtask.status_changed`).
+
+**Schema:** new `SubtaskStatus` enum (separate from `TaskStatus`, which is
+`TODO/IN_PROGRESS/REVIEW/DONE`) + `Subtask.status` (default `NOT_STARTED`,
+`@@index([taskId, status])`). Migration `20260624120000_subtask_status`
+backfills existing rows: `done=true` → `DONE`, `done=false` → `NOT_STARTED`.
+i18n EN + FA; the dot+label renders correctly under RTL.
+
 ## [1.81.0] — 2026-06-17
 
 **Projects — one-page project status report.**

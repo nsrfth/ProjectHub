@@ -16,6 +16,8 @@ export interface TaskSubtask {
   taskId: string;
   title: string;
   done: boolean;
+  // v1.82: progress status (5-state); `done` is derived (DONE ⇔ true).
+  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'WAITING' | 'DEFERRED' | 'DONE';
   // v1.19: subtask responsible (defaults to creator on create, manager/admin
   // gated to change post-create).
   responsibleId: string | null;

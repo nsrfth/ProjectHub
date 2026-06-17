@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+// v1.82: subtask progress status (distinct from TaskStatus). 5 values.
+export const subtaskStatusEnum = z.enum([
+  'NOT_STARTED',
+  'IN_PROGRESS',
+  'WAITING',
+  'DEFERRED',
+  'DONE',
+]);
+
 // v1.41: cross-field "end >= start when both set" rule. Pulled into a
 // shared refine so create and update share the message + reason code.
 function endNotBeforeStart<
@@ -13,6 +22,8 @@ export const createSubtaskBody = z
   .object({
     title: z.string().min(1).max(200).trim(),
     done: z.boolean().optional(),
+    // v1.82: optional initial status; `done` is derived from it server-side.
+    status: subtaskStatusEnum.optional(),
     // v1.41: optional scheduling window. ISO datetime; null clears (no
     // effect on create but kept symmetric with update). Empty string
     // would have been ambiguous; we require nullable | omitted instead.
@@ -33,6 +44,8 @@ export const updateSubtaskBody = z
   .object({
     title: z.string().min(1).max(200).trim().optional(),
     done: z.boolean().optional(),
+    // v1.82: progress status. Authoritative over `done` when both are sent.
+    status: subtaskStatusEnum.optional(),
     // v1.19: responsible change is gated server-side (manager/admin only).
     // Undefined = leave as-is; null = clear.
     responsibleId: z.string().nullable().optional(),
@@ -47,6 +60,7 @@ export const updateSubtaskBody = z
     (v) =>
       v.title !== undefined ||
       v.done !== undefined ||
+      v.status !== undefined ||
       v.responsibleId !== undefined ||
       v.assigneeId !== undefined ||
       v.startDate !== undefined ||
@@ -62,11 +76,18 @@ export const updateSubtaskBody = z
     path: ['endDate'],
   });
 
+// v1.82: focused status-only update body for the dedicated status endpoint
+// (responsible / assignee can use it without the full subtask-edit permission).
+export const updateSubtaskStatusBody = z.object({
+  status: subtaskStatusEnum,
+});
+
 export const subtaskResponse = z.object({
   id: z.string(),
   taskId: z.string(),
   title: z.string(),
   done: z.boolean(),
+  status: subtaskStatusEnum,
   responsibleId: z.string().nullable(),
   responsibleName: z.string().nullable(),
   // v1.42: assignee joined for the UI.
@@ -92,4 +113,5 @@ export const reorderSubtasksResponse = z.object({
 
 export type CreateSubtaskBody = z.infer<typeof createSubtaskBody>;
 export type UpdateSubtaskBody = z.infer<typeof updateSubtaskBody>;
+export type UpdateSubtaskStatusBody = z.infer<typeof updateSubtaskStatusBody>;
 export type ReorderSubtasksBody = z.infer<typeof reorderSubtasksBody>;

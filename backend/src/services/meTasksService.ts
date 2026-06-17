@@ -1,4 +1,4 @@
-import type { Prisma, TaskPriority, TaskStatus } from '@prisma/client';
+import type { Prisma, SubtaskStatus, TaskPriority, TaskStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import type { MeTasksQuery } from '../schemas/meTasks.js';
@@ -58,6 +58,7 @@ export interface MeTaskRow {
     taskId: string;
     title: string;
     done: boolean;
+    status: SubtaskStatus;
     responsibleId: string | null;
     responsibleName: string | null;
     assigneeId: string | null;
@@ -104,6 +105,7 @@ function serializeRow(row: TaskRow, blockerCount = 0): MeTaskRow {
       taskId: s.taskId,
       title: s.title,
       done: s.done,
+      status: s.status,
       responsibleId: s.responsibleId,
       responsibleName: s.responsible?.name ?? null,
       assigneeId: s.assigneeId,

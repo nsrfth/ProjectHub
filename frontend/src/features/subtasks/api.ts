@@ -1,10 +1,15 @@
 import { api } from '@/lib/api';
 
+// v1.82: subtask progress status (distinct from task status).
+export type SubtaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'WAITING' | 'DEFERRED' | 'DONE';
+
 export interface Subtask {
   id: string;
   taskId: string;
   title: string;
   done: boolean;
+  // v1.82: progress status; `done` is derived (DONE ⇔ true).
+  status: SubtaskStatus;
   // v1.19: subtask responsible (defaults to creator on create; manager/admin
   // only to change).
   responsibleId: string | null;
@@ -52,6 +57,7 @@ export async function updateSubtask(
   input: {
     title?: string;
     done?: boolean;
+    status?: SubtaskStatus;
     responsibleId?: string | null;
     assigneeId?: string | null;
     startDate?: string | null;
@@ -62,6 +68,24 @@ export async function updateSubtask(
     await api.patch<Subtask>(
       `/teams/${teamId}/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}`,
       input,
+    )
+  ).data;
+}
+
+// v1.82: focused status-only change. Usable by the subtask's responsible
+// person / assignee even without full subtask-edit permission (the server
+// authorizes); keeps `done` in sync.
+export async function setSubtaskStatus(
+  teamId: string,
+  projectId: string,
+  taskId: string,
+  subtaskId: string,
+  status: SubtaskStatus,
+): Promise<Subtask> {
+  return (
+    await api.patch<Subtask>(
+      `/teams/${teamId}/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/status`,
+      { status },
     )
   ).data;
 }

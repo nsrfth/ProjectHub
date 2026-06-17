@@ -779,11 +779,26 @@ model Task {
   @@unique([spawnedFromTemplateId, spawnedForPeriod])
 }
 
+// v1.82: subtask progress status. Separate from TaskStatus (which is
+// {TODO,IN_PROGRESS,REVIEW,DONE}) — subtasks use a different 5-state set with
+// WAITING + DEFERRED and no REVIEW. `done` is KEPT and kept in sync with this
+// (status DONE ⇔ done true) so the checkbox + "X of Y done" rollup keep working.
+enum SubtaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  WAITING
+  DEFERRED
+  DONE
+}
+
 model Subtask {
   id           String    @id @default(cuid())
   taskId       String
   title        String
   done         Boolean   @default(false)
+  // v1.82: progress status (5-state). Source of truth for completion; `done`
+  // above is derived (DONE ⇔ true) by the service so legacy reads still work.
+  status       SubtaskStatus @default(NOT_STARTED)
   // v1.19: Subtask responsible — same semantics as Task.responsibleId. Defaults
   // to creator on subtask creation; only team MANAGERS / global ADMINs can
   // change it. Nullable + SetNull.
@@ -805,6 +820,7 @@ model Subtask {
   assignee     User?   @relation("SubtaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@index([taskId])
+  @@index([taskId, status])
   @@index([responsibleId])
   @@index([assigneeId])
 }

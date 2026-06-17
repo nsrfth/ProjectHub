@@ -204,6 +204,7 @@ function toView(
       taskId: s.taskId,
       title: s.title,
       done: s.done,
+      status: s.status,
       responsibleId: s.responsibleId,
       responsibleName: s.responsible?.name ?? null,
       // v1.42: subtask assignee joined for the UI.

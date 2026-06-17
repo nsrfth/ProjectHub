@@ -16,8 +16,27 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import * as subtasksApi from './api';
+import type { SubtaskStatus } from './api';
 import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
+import { useT } from '@/lib/i18n';
+
+// v1.82: subtask progress status — colored dots + labels (i18n).
+const STATUS_ORDER: SubtaskStatus[] = ['NOT_STARTED', 'IN_PROGRESS', 'WAITING', 'DEFERRED', 'DONE'];
+const STATUS_COLOR: Record<SubtaskStatus, string> = {
+  NOT_STARTED: '#3b82f6', // blue
+  IN_PROGRESS: '#6b7280', // gray
+  WAITING: '#eab308', // yellow
+  DEFERRED: '#f97316', // orange/red
+  DONE: '#14b8a6', // teal
+};
+const STATUS_I18N: Record<SubtaskStatus, string> = {
+  NOT_STARTED: 'subtask.status.notStarted',
+  IN_PROGRESS: 'subtask.status.inProgress',
+  WAITING: 'subtask.status.waiting',
+  DEFERRED: 'subtask.status.deferred',
+  DONE: 'subtask.status.done',
+};
 
 // v1.35: subtask list with full-permutation drag-and-drop reorder.
 // `subtasks` comes from the parent task query (server-supplied position
@@ -32,6 +51,10 @@ export interface SubtaskItem {
   taskId: string;
   title: string;
   done: boolean;
+  // v1.82: progress status; `done` is derived (DONE ⇔ true).
+  status: SubtaskStatus;
+  // v1.19: responsible — needed to decide who may change the status.
+  responsibleId?: string | null;
   // v1.41: optional scheduling window. ISO strings; null when unset.
   startDate?: string | null;
   endDate?: string | null;
@@ -50,6 +73,11 @@ interface SubtaskListProps {
   // once and passes them down; we render `{name}` options + an "unassigned"
   // sentinel. Server validates membership on submit.
   teamMembers?: Array<{ userId: string; name: string }>;
+  // v1.82: current user id + general edit flag (project WRITE), used only to
+  // decide whether the per-row status control is editable. The server is the
+  // real authority (responsible || assignee || WRITE).
+  currentUserId?: string | null;
+  canEdit?: boolean;
   // Caller decides what to refresh on every mutation (typically the task
   // detail query + the kanban list so the progress chip stays in sync).
   onChange: () => Promise<void> | void;
@@ -69,8 +97,11 @@ export function SubtaskList({
   taskId,
   subtasks,
   teamMembers = [],
+  currentUserId = null,
+  canEdit = false,
   onChange,
 }: SubtaskListProps): JSX.Element {
+  const t = useT();
   const [title, setTitle] = useState('');
 
   // Local order — mirrors `subtasks` until a drag fires. The effect below
@@ -89,10 +120,17 @@ export function SubtaskList({
     },
   });
 
-  const updateMut = useMutation({
-    mutationFn: (input: { id: string; done: boolean }) =>
-      subtasksApi.updateSubtask(teamId, projectId, taskId, input.id, { done: input.done }),
+  // v1.82: per-row status change → dedicated status endpoint (keeps done in
+  // sync server-side). Allowed for responsible / assignee / editor; the server
+  // 403s others, which we surface and roll back via onChange().
+  const setStatusMut = useMutation({
+    mutationFn: (input: { id: string; status: SubtaskStatus }) =>
+      subtasksApi.setSubtaskStatus(teamId, projectId, taskId, input.id, input.status),
     onSuccess: async () => {
+      await onChange();
+    },
+    onError: async (err) => {
+      window.alert(errorMessage(err, 'Could not change status'));
       await onChange();
     },
   });
@@ -181,7 +219,8 @@ export function SubtaskList({
     reorderMut.mutate(nextIds);
   }
 
-  const done = localOrder.filter((s) => s.done).length;
+  // v1.82: progress reflects DONE-status subtasks (== done, kept in sync).
+  const done = localOrder.filter((s) => s.status === 'DONE').length;
   const total = localOrder.length;
 
   return (
@@ -202,7 +241,14 @@ export function SubtaskList({
               <SortableRow
                 key={s.id}
                 subtask={s}
-                onToggle={(done) => updateMut.mutate({ id: s.id, done })}
+                onSetStatus={(status) => setStatusMut.mutate({ id: s.id, status })}
+                canEditStatus={
+                  canEdit ||
+                  (currentUserId != null &&
+                    (s.responsibleId === currentUserId || s.assigneeId === currentUserId))
+                }
+                statusPending={setStatusMut.isPending}
+                t={t}
                 onDelete={() => deleteMut.mutate(s.id)}
                 onSaveDates={(startDate, endDate) =>
                   updateDatesMut.mutate({ id: s.id, startDate, endDate })
@@ -241,7 +287,10 @@ export function SubtaskList({
 
 function SortableRow({
   subtask,
-  onToggle,
+  onSetStatus,
+  canEditStatus,
+  statusPending,
+  t,
   onDelete,
   onSaveDates,
   datesPending,
@@ -250,7 +299,10 @@ function SortableRow({
   assigneePending,
 }: {
   subtask: SubtaskItem;
-  onToggle: (done: boolean) => void;
+  onSetStatus: (status: SubtaskStatus) => void;
+  canEditStatus: boolean;
+  statusPending: boolean;
+  t: (k: string) => string;
   onDelete: () => void;
   // v1.41: per-row date editor. Parent owns the mutation; the row just
   // collects the two ISO strings (or null) and submits.
@@ -301,16 +353,40 @@ function SortableRow({
         >
           ⋮⋮
         </span>
-        <input
-          type="checkbox"
-          checked={subtask.done}
-          onChange={(e) => onToggle(e.target.checked)}
-          className="cursor-pointer"
-          aria-label={`Mark "${subtask.title}" ${subtask.done ? 'incomplete' : 'done'}`}
+        {/* v1.82: progress-status control — colored dot + dropdown when the
+            current user may change it (responsible / assignee / editor),
+            otherwise a read-only colored dot + label. */}
+        <span
+          className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
+          style={{ backgroundColor: STATUS_COLOR[subtask.status] }}
+          aria-hidden="true"
         />
+        {canEditStatus ? (
+          <select
+            value={subtask.status}
+            onChange={(e) => onSetStatus(e.target.value as SubtaskStatus)}
+            disabled={statusPending}
+            className="text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-1 py-0.5"
+            aria-label={`${t('subtask.status.label')}: ${subtask.title}`}
+            title={t('subtask.status.label')}
+          >
+            {STATUS_ORDER.map((st) => (
+              <option key={st} value={st}>
+                {t(STATUS_I18N[st])}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span
+            className="text-xs text-slate-500 dark:text-slate-400"
+            title={t('subtask.status.label')}
+          >
+            {t(STATUS_I18N[subtask.status])}
+          </span>
+        )}
         <span
           className={
-            subtask.done
+            subtask.status === 'DONE'
               ? 'line-through text-slate-400 dark:text-slate-500 flex-1'
               : 'flex-1 text-slate-800 dark:text-slate-100'
           }

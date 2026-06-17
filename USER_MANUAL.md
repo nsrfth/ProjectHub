@@ -213,11 +213,11 @@ To clear a date, click **Clear** under it.
 On the task detail page:
 
 - **Labels** — coloured tags scoped to the team (shared by tasks and projects). On a **task**, click **Add label**, pick from the dropdown (or create a new one with name + colour). Click an attached label's × to remove it. On a **project**, pick labels in the create/edit form; they appear as chips on the project list.
-- **Subtasks** — ordered checklist. Add a title, hit Enter. Toggle the checkbox to mark done. Drag the handle to reorder. A subtask's `done` state doesn't auto-affect the parent task's status — toggling subtasks is just a per-step record.
+- **Subtasks** — ordered checklist. Add a title, hit Enter. Each subtask has a **progress status** (v1.82) shown as a colored dot + dropdown: **Not started** (blue), **In progress** (gray), **Waiting** (yellow), **Deferred** (orange/red), **Done** (teal). Setting it to **Done** checks the subtask off (any other status un-checks it), and the **X of Y done** counter reflects Done-status subtasks. The subtask's **responsible** person and its **assignee** can change its status even without full subtask-edit rights — but that's **status-only** (they can't rename, reschedule, or reassign it); everyone else needs project write access. Drag the handle to reorder. A subtask's status doesn't auto-affect the parent task's status.
 - **Attachments** — drag-drop or click to upload files (≤ the upload limit your admin configured, default 10 MiB). Files download via authenticated links.
 - **Comments** — free-text. Press Enter to post (Shift+Enter for newline). Use `@email-localpart` to mention a team member (e.g. `@alice` for `alice@example.com`) — they'll get a `MENTION` notification.
 
-Comments and labels generate audit-log entries; subtask + attachment changes don't (deliberate to keep the activity feed readable).
+Comments and labels generate audit-log entries; attachment changes don't. Subtask **status** changes are logged (v1.82, `subtask.status_changed`); other subtask edits aren't (deliberate to keep the activity feed readable).
 
 ### Custom fields (v1.58)
 

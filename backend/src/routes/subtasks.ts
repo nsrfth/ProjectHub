@@ -12,6 +12,7 @@ import {
   reorderSubtasksResponse,
   subtaskResponse,
   updateSubtaskBody,
+  updateSubtaskStatusBody,
 } from '../schemas/subtasks.js';
 
 // Subtasks live under /api/teams/:teamId/projects/:projectId/tasks/:taskId/subtasks.
@@ -56,6 +57,30 @@ export async function subtasksRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.update,
+  });
+
+  // v1.82: focused status-only update. NOTE: deliberately NOT
+  // requireProjectWriteAccess — the subtask's RESPONSIBLE person or ASSIGNEE
+  // may change its status without holding full subtask-edit (project WRITE).
+  // Project READ access is still enforced by the requireProjectAccess hook
+  // above; the service authorizes the change (responsible || assignee || WRITE)
+  // and rejects others with 403.
+  r.patch('/:subtaskId/status', {
+    preHandler: requireScope('tasks:write'),
+    schema: {
+      tags: ['subtasks'],
+      summary: "Change a subtask's progress status (responsible / assignee / editor)",
+      params: z.object({
+        teamId: z.string(),
+        projectId: z.string(),
+        taskId: z.string(),
+        subtaskId: z.string(),
+      }),
+      body: updateSubtaskStatusBody,
+      response: { 200: subtaskResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.setStatus,
   });
 
   // v1.35: full-permutation reorder. Mirrors the bucket reorder route.

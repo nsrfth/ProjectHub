@@ -348,6 +348,9 @@ export default function TaskDetailPage(): JSX.Element {
                 // v1.42: pass team members so the per-row assignee dropdown
                 // can render without a second team-detail fetch.
                 teamMembers={teamMembers.map((m) => ({ userId: m.userId, name: m.name }))}
+                // v1.82: current user + edit flag gate the per-row status control.
+                currentUserId={user?.id ?? null}
+                canEdit={canEditTask}
                 onChange={async () => {
                   await Promise.all([
                     qc.invalidateQueries({ queryKey: ['task', teamId, projectId, taskId] }),

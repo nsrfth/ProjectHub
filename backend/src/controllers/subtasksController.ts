@@ -5,6 +5,7 @@ import type {
   CreateSubtaskBody,
   ReorderSubtasksBody,
   UpdateSubtaskBody,
+  UpdateSubtaskStatusBody,
 } from '../schemas/subtasks.js';
 import { Errors } from '../lib/errors.js';
 
@@ -54,6 +55,26 @@ export class SubtasksController {
       req.user.sub,
       req.user.globalRole,
       req.body,
+    );
+    return reply.send(s);
+  };
+
+  // v1.82: focused status-only change. The service authorizes (responsible /
+  // assignee / project-WRITE) and keeps `done` in sync.
+  setStatus = async (
+    req: FastifyRequest<{ Params: SubtaskParams; Body: UpdateSubtaskStatusBody }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    callerMembership(req);
+    const s = await this.svc.setStatus(
+      req.params.teamId,
+      req.params.projectId,
+      req.params.taskId,
+      req.params.subtaskId,
+      req.user.sub,
+      req.user.globalRole,
+      req.body.status,
     );
     return reply.send(s);
   };
