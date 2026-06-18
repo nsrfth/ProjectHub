@@ -138,13 +138,13 @@ export default function CreateProjectForm({
       )}
 
       <label className="block">
-        <span className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
+        <span className="block text-xs text-text-muted mb-1">
           {t('projects.owner')}
         </span>
         <select
           value={ownerId}
           onChange={(e) => setOwnerId(e.target.value)}
-          className="w-full rounded border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 px-2 py-1.5 border text-sm"
+          className="w-full rounded border-border dark:bg-slate-700 dark:text-slate-100 px-2 py-1.5 border text-sm"
         >
           {formMembers.map((m) => (
             <option key={m.userId} value={m.userId}>
