@@ -550,6 +550,8 @@ The token authenticates as you — it sees what you see. Scopes are advisory in 
 
 The **Settings** link in the left sidebar opens the Settings shell. Sidebar items are ordered alphabetically by their English label (same order in the Persian UI). The items you see depend on your role:
 
+> **System administrator (global ADMIN):** a global admin sees **every** item below and can open and edit **any team's** team-scoped settings — Roles, Labels, Custom fields, Automations, Intake forms, User groups, and Webhooks — **even for teams they are not a member of**. The instance-level items (TaskHub, Directories, Backups, Admin) are admin-only by nature.
+
 - **Preferences** — everyone (personal calendar + theme + language + **due reminder lead time**). Admins additionally see the Workweek, Holidays, Working-day scheduling, and **Due reminders** sections.
 - **Trash** — everyone (restore or purge soft-deleted projects and tasks).
 - **Roles** — team role templates and permission matrix. **`project.write_all`** (v1.79, Projects group, default ON for the Manager role) lets a member add and edit tasks in **every** project in the team without owning it or needing a user-group grant. It is separate from `project.edit` (which only controls view/rename visibility), so granting team-wide write is a deliberate choice. Without it, a non-owner can open a team project but adding a task returns "Project not found".
