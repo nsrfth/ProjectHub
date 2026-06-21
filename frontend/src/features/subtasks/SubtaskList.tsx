@@ -16,6 +16,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import * as subtasksApi from './api';
+import InlineTitleEdit from '@/components/InlineTitleEdit';
 import type { SubtaskStatus } from './api';
 import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
@@ -151,6 +152,20 @@ export function SubtaskList({
     },
   });
 
+  // v1.89: per-row title PATCH (pencil edit). Server enforces EDIT_TITLES /
+  // project write; a 403 is surfaced and rolled back via onChange().
+  const updateTitleMut = useMutation({
+    mutationFn: (input: { id: string; title: string }) =>
+      subtasksApi.updateSubtask(teamId, projectId, taskId, input.id, { title: input.title }),
+    onSuccess: async () => {
+      await onChange();
+    },
+    onError: async (err) => {
+      window.alert(errorMessage(err, 'Could not rename subtask'));
+      await onChange();
+    },
+  });
+
   // v1.41: per-row dates PATCH (independent mutation so toggling done
   // doesn't fight a date save). Sends both fields together so the
   // backend sees a merged, valid range in one shot.
@@ -258,6 +273,9 @@ export function SubtaskList({
                 teamMembers={teamMembers}
                 onAssign={(assigneeId) => updateAssigneeMut.mutate({ id: s.id, assigneeId })}
                 assigneePending={updateAssigneeMut.isPending}
+                canEditTitle={canEdit}
+                onRename={(title) => updateTitleMut.mutate({ id: s.id, title })}
+                renamePending={updateTitleMut.isPending}
               />
             ))}
             {total === 0 && <li className="text-xs text-slate-400 italic">{t('subtasks.empty')}</li>}
@@ -297,6 +315,9 @@ function SortableRow({
   teamMembers,
   onAssign,
   assigneePending,
+  canEditTitle,
+  onRename,
+  renamePending,
 }: {
   subtask: SubtaskItem;
   onSetStatus: (status: SubtaskStatus) => void;
@@ -312,6 +333,10 @@ function SortableRow({
   teamMembers: Array<{ userId: string; name: string }>;
   onAssign: (assigneeId: string | null) => void;
   assigneePending: boolean;
+  // v1.89: per-row title editing (pencil), gated by project edit access.
+  canEditTitle: boolean;
+  onRename: (title: string) => void;
+  renamePending: boolean;
 }): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: subtask.id,
@@ -384,14 +409,18 @@ function SortableRow({
             {t(STATUS_I18N[subtask.status])}
           </span>
         )}
-        <span
-          className={
-            subtask.status === 'DONE'
-              ? 'line-through text-text-muted flex-1'
-              : 'flex-1 text-text'
-          }
-        >
-          {subtask.title}
+        <span className="flex-1 min-w-0">
+          <InlineTitleEdit
+            value={subtask.title}
+            canEdit={canEditTitle}
+            saving={renamePending}
+            onSave={onRename}
+            displayClassName={
+              subtask.status === 'DONE' ? 'line-through text-text-muted' : 'text-text'
+            }
+            inputClassName="w-full rounded border border-border bg-surface px-1.5 py-0.5 text-sm"
+            editLabel={t('subtasks.editTitle')}
+          />
         </span>
         {formattedRange && !editing && (
           <span

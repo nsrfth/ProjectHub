@@ -8,6 +8,7 @@ import { listTeamMembersForAssignees } from '@/features/teams/api';
 import { visibleTeamMembers } from '@/lib/systemUser';
 import * as tasksApi from '@/features/tasks/api';
 import { getMyDelegateStatus } from '@/features/projects/api';
+import InlineTitleEdit from '@/components/InlineTitleEdit';
 import * as commentsApi from '@/features/comments/api';
 import { MentionInput } from '@/features/comments/MentionInput';
 import { MentionText } from '@/features/comments/MentionText';
@@ -330,7 +331,17 @@ export default function TaskDetailPage(): JSX.Element {
       {task && (
         <>
           <section className="bg-white rounded shadow p-6 mb-6">
-            <h1 className="text-2xl font-semibold mb-2">{task.title}</h1>
+            <h1 className="text-2xl font-semibold mb-2">
+              <InlineTitleEdit
+                value={task.title}
+                canEdit={canEditTask}
+                saving={updateTaskMut.isPending}
+                onSave={(title) => updateTaskMut.mutate({ title })}
+                inputClassName="w-full max-w-2xl rounded border border-border bg-surface px-2 py-1 text-2xl font-semibold"
+                editLabel={t('tasks.editTitle')}
+                iconSize={18}
+              />
+            </h1>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mb-3">
               <span className="uppercase tracking-wide">Status: {task.status}</span>
               <span className="uppercase tracking-wide">Priority: {task.priority}</span>

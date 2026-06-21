@@ -194,6 +194,8 @@
   "tasks.col.status": "Status",
   "tasks.col.priority": "Priority",
   "tasks.col.responsible": "Responsible",
+  "tasks.editTitle": "Edit title",
+  "subtasks.editTitle": "Edit subtask title",
   "tasks.col.due": "Due",
   "subtask.status.label": "Status",
   "subtask.status.notStarted": "Not started",

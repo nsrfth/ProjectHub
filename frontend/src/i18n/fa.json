@@ -194,6 +194,8 @@
   "tasks.col.status": "وضعیت",
   "tasks.col.priority": "اولویت",
   "tasks.col.responsible": "مسئول",
+  "tasks.editTitle": "ویرایش عنوان",
+  "subtasks.editTitle": "ویرایش عنوان زیروظیفه",
   "tasks.col.due": "مهلت",
   "subtask.status.label": "وضعیت",
   "subtask.status.notStarted": "شروع‌نشده",
