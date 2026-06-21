@@ -9,6 +9,8 @@
   "nav.calendar": "تقویم",
   "nav.planner": "برنامه‌ریز",
 
+  "reports.team": "تیم",
+  "reports.allTeams": "همه تیم‌ها",
   "reports.budget.title": "بودجه / هزینه",
   "reports.budget.planned": "برنامه‌ریزی‌شده",
   "reports.budget.rollup": "جمع تیم به تفکیک ارز",
@@ -147,6 +149,8 @@
   "dashboard.period.month": "این ماه",
   "dashboard.period.quarter": "سه‌ماهه",
   "dashboard.kpi.open": "تسک‌های باز",
+  "dashboard.drill.empty": "تسکی برای نمایش نیست.",
+  "common.close": "بستن",
   "dashboard.kpi.overdue": "گذشته از موعد",
   "dashboard.kpi.inProgress": "در حال انجام",
   "dashboard.kpi.completed": "انجام‌شده — این هفته",

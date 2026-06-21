@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import { useTeams } from '@/features/teams/TeamsContext';
 import {
   downloadReportCsv,
@@ -10,8 +10,22 @@ import {
   fetchSummary,
   fetchTimeliness,
   fetchWorkload,
+  type BudgetReport,
+  type DoneReport,
   type DoneTaskRow,
+  type OverdueTaskRow,
+  type SummaryReport,
+  type TimelinessReport,
+  type WorkloadRow,
 } from '@/features/reports/api';
+import {
+  mergeBudget,
+  mergeDoneReports,
+  mergeOverdue,
+  mergeSummaries,
+  mergeTimeliness,
+  mergeWorkload,
+} from '@/features/reports/aggregate';
 import { formatShamsiDate, formatShamsiTimestampDate } from '@/lib/shamsi';
 import { budgetLocaleFromLanguage, formatBudget, type BudgetCurrency } from '@/lib/formatBudget';
 import { getLanguage, useT } from '@/lib/i18n';
@@ -22,52 +36,119 @@ const WINDOWS: { days: number; label: string }[] = [
   { days: 90, label: 'Last 90 days' },
 ];
 
-// "Tasks completed" report. Pulls the team's recently-completed tasks from the API
+// v1.88: team selector. Either a specific team id, or 'all' to fan the
+// per-team report queries out across every team the user belongs to and merge
+// the results client-side (see features/reports/aggregate.ts) — mirrors the
+// Calendar page's cross-team pattern, no new backend endpoint.
+const ALL_TEAMS = 'all' as const;
+type TeamSelection = typeof ALL_TEAMS | string;
+const TEAM_STORAGE_KEY = 'reports.selectedTeam';
+
+// "Tasks completed" report. Pulls the recently-completed tasks from the API
 // and presents them two ways: a flat list (most recent first) and a per-
-// assignee tally. Both pivots come from one query — server returns a flat
-// row set, the UI groups in memory.
+// assignee tally. Both pivots come from one merged query set.
 export default function ReportsPage(): JSX.Element {
-  const { currentTeam } = useTeams();
+  const { teams, currentTeam } = useTeams();
   const nav = useNavigate();
   const t = useT();
   const budgetLocale = budgetLocaleFromLanguage(getLanguage());
   const [days, setDays] = useState<number>(7);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['reports', 'done', currentTeam?.id, days],
-    queryFn: () => fetchDoneReport(currentTeam!.id, days),
-    enabled: !!currentTeam,
+  // v1.88: persist the team selection (specific team or "All teams"), and
+  // fall back to the current team if the stored id is no longer accessible.
+  const [selectedTeam, setSelectedTeam] = useState<TeamSelection>(() => {
+    if (typeof window === 'undefined') return currentTeam?.id ?? ALL_TEAMS;
+    return window.localStorage.getItem(TEAM_STORAGE_KEY) ?? currentTeam?.id ?? ALL_TEAMS;
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') window.localStorage.setItem(TEAM_STORAGE_KEY, selectedTeam);
+  }, [selectedTeam]);
+  useEffect(() => {
+    if (selectedTeam === ALL_TEAMS || teams.length === 0) return;
+    if (!teams.some((tm) => tm.id === selectedTeam)) {
+      setSelectedTeam(currentTeam?.id ?? ALL_TEAMS);
+    }
+  }, [teams, selectedTeam, currentTeam?.id]);
+
+  const isAllTeams = selectedTeam === ALL_TEAMS;
+  const scopeTeams = useMemo(
+    () => (isAllTeams ? teams : teams.filter((tm) => tm.id === selectedTeam)),
+    [isAllTeams, teams, selectedTeam],
+  );
+  // The single team whose id powers the per-team CSV export (export stays
+  // single-team only — the endpoints are per-team). null when "All teams".
+  const singleTeam = isAllTeams ? null : scopeTeams[0] ?? null;
+
+  // One query per in-scope team for each report; merged below. React Query
+  // caches each per-team feed independently so switching scope reuses them.
+  const doneQs = useQueries({
+    queries: scopeTeams.map((tm) => ({
+      queryKey: ['reports', 'done', tm.id, days],
+      queryFn: () => fetchDoneReport(tm.id, days),
+      staleTime: 60_000,
+    })),
+  });
+  const summaryQs = useQueries({
+    queries: scopeTeams.map((tm) => ({
+      queryKey: ['reports', 'summary', tm.id],
+      queryFn: () => fetchSummary(tm.id),
+      staleTime: 60_000,
+    })),
+  });
+  const workloadQs = useQueries({
+    queries: scopeTeams.map((tm) => ({
+      queryKey: ['reports', 'workload', tm.id],
+      queryFn: () => fetchWorkload(tm.id),
+      staleTime: 60_000,
+    })),
+  });
+  const overdueQs = useQueries({
+    queries: scopeTeams.map((tm) => ({
+      queryKey: ['reports', 'overdue', tm.id],
+      queryFn: () => fetchOverdue(tm.id),
+      staleTime: 60_000,
+    })),
+  });
+  const timelinessQs = useQueries({
+    queries: scopeTeams.map((tm) => ({
+      queryKey: ['reports', 'timeliness', tm.id, days],
+      queryFn: () => fetchTimeliness(tm.id, days),
+      staleTime: 60_000,
+    })),
+  });
+  const budgetQs = useQueries({
+    queries: scopeTeams.map((tm) => ({
+      queryKey: ['reports', 'budget', tm.id],
+      queryFn: () => fetchBudgetReport(tm.id),
+      staleTime: 60_000,
+    })),
   });
 
-  const { data: summary } = useQuery({
-    queryKey: ['reports', 'summary', currentTeam?.id],
-    queryFn: () => fetchSummary(currentTeam!.id),
-    enabled: !!currentTeam,
-  });
-
-  const { data: workload } = useQuery({
-    queryKey: ['reports', 'workload', currentTeam?.id],
-    queryFn: () => fetchWorkload(currentTeam!.id),
-    enabled: !!currentTeam,
-  });
-
-  const { data: overdue } = useQuery({
-    queryKey: ['reports', 'overdue', currentTeam?.id],
-    queryFn: () => fetchOverdue(currentTeam!.id),
-    enabled: !!currentTeam,
-  });
-
-  const { data: timeliness } = useQuery({
-    queryKey: ['reports', 'timeliness', currentTeam?.id, days],
-    queryFn: () => fetchTimeliness(currentTeam!.id, days),
-    enabled: !!currentTeam,
-  });
-
-  const { data: budget } = useQuery({
-    queryKey: ['reports', 'budget', currentTeam?.id],
-    queryFn: () => fetchBudgetReport(currentTeam!.id),
-    enabled: !!currentTeam,
-  });
+  const isLoading = doneQs.some((q) => q.isLoading);
+  const data = useMemo(() => {
+    const g = doneQs.map((q) => q.data).filter(Boolean) as DoneReport[];
+    return g.length ? mergeDoneReports(g) : undefined;
+  }, [doneQs]);
+  const summary = useMemo(() => {
+    const g = summaryQs.map((q) => q.data).filter(Boolean) as SummaryReport[];
+    return g.length ? mergeSummaries(g) : undefined;
+  }, [summaryQs]);
+  const workload = useMemo(() => {
+    const g = workloadQs.map((q) => q.data).filter(Boolean) as { items: WorkloadRow[] }[];
+    return g.length ? mergeWorkload(g) : undefined;
+  }, [workloadQs]);
+  const overdue = useMemo(() => {
+    const g = overdueQs.map((q) => q.data).filter(Boolean) as { items: OverdueTaskRow[] }[];
+    return g.length ? mergeOverdue(g) : undefined;
+  }, [overdueQs]);
+  const timeliness = useMemo(() => {
+    const g = timelinessQs.map((q) => q.data).filter(Boolean) as TimelinessReport[];
+    return g.length ? mergeTimeliness(g) : undefined;
+  }, [timelinessQs]);
+  const budget = useMemo(() => {
+    const g = budgetQs.map((q) => q.data).filter(Boolean) as BudgetReport[];
+    return g.length ? mergeBudget(g) : undefined;
+  }, [budgetQs]);
 
   const fmtMoney = (amount: string | null, currency: BudgetCurrency) =>
     formatBudget(amount, currency, budgetLocale);
@@ -87,7 +168,7 @@ export default function ReportsPage(): JSX.Element {
     return [...m.values()].sort((a, b) => b.rows.length - a.rows.length);
   }, [data]);
 
-  if (!currentTeam) {
+  if (teams.length === 0) {
     return (
       <div className="min-h-screen p-8">
         <p className="text-sm text-slate-500">
@@ -103,11 +184,34 @@ export default function ReportsPage(): JSX.Element {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Reports</h1>
-        <p className="text-sm text-slate-500">
-          in <span className="font-medium">{currentTeam.name}</span>
-        </p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Reports</h1>
+          <p className="text-sm text-slate-500">
+            {isAllTeams ? (
+              t('reports.allTeams')
+            ) : (
+              <>
+                in <span className="font-medium">{singleTeam?.name}</span>
+              </>
+            )}
+          </p>
+        </div>
+        <label className="text-sm">
+          <span className="me-2 text-slate-500">{t('reports.team')}</span>
+          <select
+            value={selectedTeam}
+            onChange={(e) => setSelectedTeam(e.target.value)}
+            className="rounded border border-slate-300 bg-surface px-3 py-1.5 text-sm"
+          >
+            <option value={ALL_TEAMS}>{t('reports.allTeams')}</option>
+            {teams.map((tm) => (
+              <option key={tm.id} value={tm.id}>
+                {tm.name}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/* Status snapshot — four small counters above the detailed sections. */}
@@ -160,14 +264,18 @@ export default function ReportsPage(): JSX.Element {
               {data.items.length} task{data.items.length === 1 ? '' : 's'}
             </span>
           )}
-          <button
-            type="button"
-            onClick={() => downloadReportCsv(currentTeam.id, 'done', `tasks-done-${days}d`, { days })}
-            className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
-            title="Download as CSV"
-          >
-            Export CSV
-          </button>
+          {singleTeam && (
+            <button
+              type="button"
+              onClick={() =>
+                downloadReportCsv(singleTeam.id, 'done', `tasks-done-${days}d`, { days })
+              }
+              className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+              title="Download as CSV"
+            >
+              Export CSV
+            </button>
+          )}
         </div>
 
         {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
@@ -231,16 +339,18 @@ export default function ReportsPage(): JSX.Element {
           <span className="text-xs text-slate-500">
             (same window as "Tasks completed")
           </span>
-          <button
-            type="button"
-            onClick={() =>
-              downloadReportCsv(currentTeam.id, 'timeliness', `timeliness-${days}d`, { days })
-            }
-            className="ms-auto text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
-            title="Download as CSV"
-          >
-            Export CSV
-          </button>
+          {singleTeam && (
+            <button
+              type="button"
+              onClick={() =>
+                downloadReportCsv(singleTeam.id, 'timeliness', `timeliness-${days}d`, { days })
+              }
+              className="ms-auto text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+              title="Download as CSV"
+            >
+              Export CSV
+            </button>
+          )}
         </div>
         {!timeliness && <p className="text-sm text-slate-500">Loading…</p>}
         {timeliness && timeliness.evaluatedCount === 0 && (
@@ -315,14 +425,16 @@ export default function ReportsPage(): JSX.Element {
       <section className="bg-white rounded shadow p-4 mb-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-medium">Workload</h2>
-          <button
-            type="button"
-            onClick={() => downloadReportCsv(currentTeam.id, 'workload', 'workload')}
-            className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
-            title="Download as CSV"
-          >
-            Export CSV
-          </button>
+          {singleTeam && (
+            <button
+              type="button"
+              onClick={() => downloadReportCsv(singleTeam.id, 'workload', 'workload')}
+              className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+              title="Download as CSV"
+            >
+              Export CSV
+            </button>
+          )}
         </div>
         {!workload && <p className="text-sm text-slate-500">Loading…</p>}
         {workload && workload.items.length === 0 && (
@@ -366,14 +478,16 @@ export default function ReportsPage(): JSX.Element {
       <section className="bg-white rounded shadow p-4 mb-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-medium">{t('reports.budget.title')}</h2>
-          <button
-            type="button"
-            onClick={() => downloadReportCsv(currentTeam.id, 'budget', 'budget')}
-            className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
-            title="Download as CSV"
-          >
-            Export CSV
-          </button>
+          {singleTeam && (
+            <button
+              type="button"
+              onClick={() => downloadReportCsv(singleTeam.id, 'budget', 'budget')}
+              className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+              title="Download as CSV"
+            >
+              Export CSV
+            </button>
+          )}
         </div>
         {!budget && <p className="text-sm text-slate-500">Loading…</p>}
         {budget && budget.projects.length === 0 && (
@@ -448,14 +562,16 @@ export default function ReportsPage(): JSX.Element {
                 {overdue.items.length} task{overdue.items.length === 1 ? '' : 's'}
               </span>
             )}
-            <button
-              type="button"
-              onClick={() => downloadReportCsv(currentTeam.id, 'overdue', 'overdue')}
-              className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
-              title="Download as CSV"
-            >
-              Export CSV
-            </button>
+            {singleTeam && (
+              <button
+                type="button"
+                onClick={() => downloadReportCsv(singleTeam.id, 'overdue', 'overdue')}
+                className="text-xs rounded px-2 py-1 border border-slate-300 hover:bg-slate-100"
+                title="Download as CSV"
+              >
+                Export CSV
+              </button>
+            )}
           </div>
         </div>
         {!overdue && <p className="text-sm text-slate-500">Loading…</p>}

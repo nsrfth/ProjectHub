@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useTeams } from '@/features/teams/TeamsContext';
+import * as projectsApi from '@/features/projects/api';
+import * as tasksApi from '@/features/tasks/api';
+import type { Task } from '@/features/tasks/api';
+import { IconClose } from '@/features/nav/icons';
 import {
   fetchDoneReport,
   fetchSummary,
@@ -33,6 +37,55 @@ import { useT } from '@/lib/i18n';
 
 type Period = 'week' | 'month' | 'quarter';
 const PERIOD_DAYS: Record<Period, number> = { week: 7, month: 30, quarter: 90 };
+
+// v1.88: KPI drill-down. Each snapshot card maps to a task predicate; clicking
+// it opens a modal listing the matching tasks (fetched lazily across all
+// projects, then filtered client-side so the four lists stay mutually
+// consistent).
+type DrillKind = 'open' | 'overdue' | 'in_progress' | 'completed';
+interface DrillRow {
+  task: Task;
+  projectName: string;
+}
+const DRILL_LABEL_KEY: Record<DrillKind, string> = {
+  open: 'dashboard.kpi.open',
+  overdue: 'dashboard.kpi.overdue',
+  in_progress: 'dashboard.kpi.inProgress',
+  completed: 'dashboard.kpi.completed',
+};
+function filterDrill(rows: DrillRow[], kind: DrillKind): DrillRow[] {
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const todayMs = todayStart.getTime();
+  const sevenAgoMs = Date.now() - 7 * 86_400_000;
+  const out = rows.filter(({ task }) => {
+    switch (kind) {
+      case 'open':
+        return task.status !== 'DONE';
+      case 'in_progress':
+        return task.status === 'IN_PROGRESS';
+      case 'overdue':
+        return task.status !== 'DONE' && !!task.dueDate && new Date(task.dueDate).getTime() < todayMs;
+      case 'completed':
+        return (
+          task.status === 'DONE' &&
+          !!task.completedAt &&
+          new Date(task.completedAt).getTime() >= sevenAgoMs
+        );
+    }
+  });
+  return out.sort((a, b) => {
+    if (kind === 'completed') {
+      return (b.task.completedAt ?? '').localeCompare(a.task.completedAt ?? '');
+    }
+    const ad = a.task.dueDate ?? '';
+    const bd = b.task.dueDate ?? '';
+    if (!ad && !bd) return 0;
+    if (!ad) return 1;
+    if (!bd) return -1;
+    return ad.localeCompare(bd);
+  });
+}
 
 export default function DashboardPage(): JSX.Element {
   const { user } = useAuth();
@@ -117,6 +170,32 @@ export default function DashboardPage(): JSX.Element {
   const prev7Total = daily.slice(-14, -7).reduce((s, v) => s + v, 0);
   const completedDelta = last7Total - prev7Total;
 
+  // v1.88: drill-down state. Tasks are fetched only after a card is clicked
+  // (shares the planner grid's ['tasks', teamId, projectId] cache).
+  const [drill, setDrill] = useState<DrillKind | null>(null);
+  const { data: drillProjects = [] } = useQuery({
+    queryKey: ['projects', 'all'],
+    queryFn: projectsApi.listAllProjects,
+    enabled: drill !== null,
+  });
+  const drillTaskQs = useQueries({
+    queries: (drill !== null ? drillProjects : []).map((p) => ({
+      queryKey: ['tasks', p.teamId, p.id],
+      queryFn: () => tasksApi.listTasks(p.teamId, p.id),
+      staleTime: 30_000,
+    })),
+  });
+  const drillLoading = drill !== null && drillTaskQs.some((q) => q.isLoading);
+  const drillRows = useMemo<DrillRow[]>(() => {
+    if (drill === null) return [];
+    const rows = drillTaskQs.flatMap((q, i) => {
+      const p = drillProjects[i];
+      if (!p || !q.data) return [];
+      return q.data.map((task) => ({ task, projectName: p.name }));
+    });
+    return filterDrill(rows, drill);
+  }, [drill, drillTaskQs, drillProjects]);
+
   const greetingName = user?.name?.split(/\s+/)[0] ?? user?.email ?? '';
 
   return (
@@ -155,17 +234,20 @@ export default function DashboardPage(): JSX.Element {
             value={summary?.openCount}
             spark={daily}
             accent="primary"
+            onClick={() => setDrill('open')}
           />
           <KpiCard
             label={t('dashboard.kpi.overdue')}
             value={summary?.overdueCount}
             spark={daily}
             tone={(summary?.overdueCount ?? 0) > 0 ? 'danger' : 'neutral'}
+            onClick={() => setDrill('overdue')}
           />
           <KpiCard
             label={t('dashboard.kpi.inProgress')}
             value={summary?.byStatus.IN_PROGRESS}
             spark={daily}
+            onClick={() => setDrill('in_progress')}
           />
           <KpiCard
             label={t('dashboard.kpi.completed')}
@@ -173,6 +255,7 @@ export default function DashboardPage(): JSX.Element {
             spark={daily}
             delta={completedDelta}
             deltaLabel={t('dashboard.kpi.delta')}
+            onClick={() => setDrill('completed')}
           />
         </div>
       )}
@@ -230,6 +313,16 @@ export default function DashboardPage(): JSX.Element {
           </Panel>
         </div>
       )}
+
+      {drill !== null && (
+        <DrillModal
+          kind={drill}
+          rows={drillRows}
+          loading={drillLoading}
+          onClose={() => setDrill(null)}
+          t={t}
+        />
+      )}
     </div>
   );
 }
@@ -278,6 +371,7 @@ function KpiCard({
   deltaLabel,
   accent,
   tone,
+  onClick,
 }: {
   label: string;
   value: number | undefined;
@@ -286,17 +380,18 @@ function KpiCard({
   deltaLabel?: string;
   accent?: 'primary';
   tone?: 'danger' | 'neutral';
+  onClick?: () => void;
 }): JSX.Element {
   const isPrimary = accent === 'primary';
-  return (
-    <div
-      className={[
-        'rounded-xl p-5 border',
-        isPrimary
-          ? 'bg-primary text-primary-contrast border-primary'
-          : 'bg-surface border-border',
-      ].join(' ')}
-    >
+  const className = [
+    'rounded-xl p-5 border text-start w-full',
+    isPrimary
+      ? 'bg-primary text-primary-contrast border-primary'
+      : 'bg-surface border-border',
+    onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : '',
+  ].join(' ');
+  const inner = (
+    <>
       <div className="flex items-start justify-between gap-2">
         <p
           className={[
@@ -344,6 +439,101 @@ function KpiCard({
           {deltaLabel ? ` ${deltaLabel}` : ''}
         </p>
       )}
+    </>
+  );
+  return onClick ? (
+    <button type="button" onClick={onClick} className={className}>
+      {inner}
+    </button>
+  ) : (
+    <div className={className}>{inner}</div>
+  );
+}
+
+// v1.88: KPI drill-down modal — lists the tasks behind a snapshot card.
+function DrillModal({
+  kind,
+  rows,
+  loading,
+  onClose,
+  t,
+}: {
+  kind: DrillKind;
+  rows: DrillRow[];
+  loading: boolean;
+  onClose: () => void;
+  t: (k: string) => string;
+}): JSX.Element {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-8 overflow-y-auto">
+      <button
+        type="button"
+        aria-label={t('common.close')}
+        onClick={onClose}
+        className="fixed inset-0 bg-slate-900/50"
+      />
+      <div className="relative bg-surface text-text rounded-xl shadow-xl w-full max-w-xl mt-4">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+          <h3 className="font-semibold">
+            {t(DRILL_LABEL_KEY[kind])}
+            {!loading && <span className="ms-2 text-sm text-text-muted">({rows.length})</span>}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t('common.close')}
+            className="p-1 rounded text-text-muted hover:bg-bg-elevated"
+          >
+            <IconClose size={20} />
+          </button>
+        </div>
+        <div className="max-h-[70vh] overflow-y-auto p-2">
+          {loading && (
+            <p className="text-sm text-text-muted p-4 text-center">…</p>
+          )}
+          {!loading && rows.length === 0 && (
+            <p className="text-sm text-text-muted italic p-6 text-center">
+              {t('dashboard.drill.empty')}
+            </p>
+          )}
+          {!loading && rows.length > 0 && (
+            <ul className="divide-y divide-border">
+              {rows.map(({ task, projectName }) => (
+                <li key={task.id}>
+                  <Link
+                    to={`/projects/${task.projectId}/tasks/${task.id}`}
+                    onClick={onClose}
+                    className="block px-3 py-2 rounded hover:bg-bg-elevated"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium truncate min-w-0 flex-1">
+                        {task.title}
+                      </span>
+                      {kind === 'completed'
+                        ? task.completedAt && (
+                            <span className="text-xs text-text-muted shrink-0" dir="ltr">
+                              {task.completedAt.slice(0, 10)}
+                            </span>
+                          )
+                        : task.dueDate && (
+                            <span
+                              className={`text-xs shrink-0 ${
+                                kind === 'overdue' ? 'text-danger' : 'text-text-muted'
+                              }`}
+                              dir="ltr"
+                            >
+                              {task.dueDate.slice(0, 10)}
+                            </span>
+                          )}
+                    </div>
+                    <p className="text-xs text-text-muted truncate">{projectName}</p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

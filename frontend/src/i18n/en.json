@@ -9,6 +9,8 @@
   "nav.calendar": "Calendar",
   "nav.planner": "Planner",
 
+  "reports.team": "Team",
+  "reports.allTeams": "All teams",
   "reports.budget.title": "Budget / cost",
   "reports.budget.planned": "Planned",
   "reports.budget.rollup": "Team rollup by currency",
@@ -147,6 +149,8 @@
   "dashboard.period.month": "This month",
   "dashboard.period.quarter": "This quarter",
   "dashboard.kpi.open": "Open tasks",
+  "dashboard.drill.empty": "No tasks to show.",
+  "common.close": "Close",
   "dashboard.kpi.overdue": "Overdue",
   "dashboard.kpi.inProgress": "In progress",
   "dashboard.kpi.completed": "Completed — this week",
