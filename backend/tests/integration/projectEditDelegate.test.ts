@@ -56,9 +56,21 @@ function patchTask(token: string, teamId: string, projectId: string, taskId: str
     method: 'PATCH', url: `/api/teams/${teamId}/projects/${projectId}/tasks/${taskId}`, headers: H(token), payload: body,
   });
 }
+// v1.88: grant FULL to each listed user (keeps the legacy full-edit cases valid).
 function putDelegates(token: string, teamId: string, projectId: string, userIds: string[]) {
   return app.inject({
-    method: 'PUT', url: `/api/teams/${teamId}/projects/${projectId}/delegates`, headers: H(token), payload: { userIds },
+    method: 'PUT', url: `/api/teams/${teamId}/projects/${projectId}/delegates`, headers: H(token),
+    payload: { delegates: userIds.map((userId) => ({ userId, capabilities: ['FULL'] })) },
+  });
+}
+
+// v1.88: grant an explicit capability set to one delegate.
+function putDelegateCaps(
+  token: string, teamId: string, projectId: string, userId: string, capabilities: string[],
+) {
+  return app.inject({
+    method: 'PUT', url: `/api/teams/${teamId}/projects/${projectId}/delegates`, headers: H(token),
+    payload: { delegates: [{ userId, capabilities }] },
   });
 }
 
@@ -113,7 +125,7 @@ describe('Feature 3 — owner-delegated full edit of tasks/subtasks', () => {
     const s = await setup();
     const put = await putDelegates(s.ownerToken, s.teamId, s.projectId, [s.delegateId]);
     expect(put.statusCode).toBe(200);
-    expect(put.json().userIds).toContain(s.delegateId);
+    expect(put.json().delegates.map((d: { userId: string }) => d.userId)).toContain(s.delegateId);
 
     const meYes = await app.inject({
       method: 'GET', url: `/api/teams/${s.teamId}/projects/${s.projectId}/delegates/me`, headers: H(s.delegateToken),
@@ -124,6 +136,55 @@ describe('Feature 3 — owner-delegated full edit of tasks/subtasks', () => {
       method: 'GET', url: `/api/teams/${s.teamId}/projects/${s.projectId}/delegates/me`, headers: H(s.otherToken),
     });
     expect(meNo.json().isDelegate).toBe(false);
+  });
+
+  // v1.88: granular capabilities — each unlocks ONLY its field group.
+  it('a granular EDIT_TITLES delegate can rename a task but not change other fields', async () => {
+    const s = await setup();
+    const put = await putDelegateCaps(s.ownerToken, s.teamId, s.projectId, s.delegateId, ['EDIT_TITLES']);
+    expect(put.statusCode).toBe(200);
+
+    // /delegates/me reports the capability, but isDelegate=false (not FULL).
+    const me = await app.inject({
+      method: 'GET', url: `/api/teams/${s.teamId}/projects/${s.projectId}/delegates/me`, headers: H(s.delegateToken),
+    });
+    expect(me.json().isDelegate).toBe(false);
+    expect(me.json().capabilities).toContain('EDIT_TITLES');
+
+    // Rename → allowed.
+    const rename = await patchTask(s.delegateToken, s.teamId, s.projectId, s.taskId, { title: 'Renamed' });
+    expect(rename.statusCode).toBe(200);
+    expect(rename.json().title).toBe('Renamed');
+
+    // Everything else → 403 (no matching capability).
+    const status = await patchTask(s.delegateToken, s.teamId, s.projectId, s.taskId, { status: 'IN_PROGRESS' });
+    expect(status.statusCode).toBe(403);
+    const date = await patchTask(s.delegateToken, s.teamId, s.projectId, s.taskId, { dueDate: DUE_B });
+    expect(date.statusCode).toBe(403);
+    const del = await app.inject({
+      method: 'DELETE', url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}`, headers: H(s.delegateToken),
+    });
+    expect(del.statusCode).toBe(403);
+
+    // And NOT on a project where they hold no capability.
+    const elsewhere = await patchTask(s.delegateToken, s.teamId, s.project2Id, s.task2Id, { title: 'X' });
+    expect(elsewhere.statusCode).toBe(404);
+  });
+
+  it('EDIT_DETAILS + DELETE_TASKS unlock status + delete but not titles', async () => {
+    const s = await setup();
+    await putDelegateCaps(s.ownerToken, s.teamId, s.projectId, s.delegateId, ['EDIT_DETAILS', 'DELETE_TASKS']);
+
+    const status = await patchTask(s.delegateToken, s.teamId, s.projectId, s.taskId, { status: 'IN_PROGRESS' });
+    expect(status.statusCode).toBe(200);
+
+    const title = await patchTask(s.delegateToken, s.teamId, s.projectId, s.taskId, { title: 'Nope' });
+    expect(title.statusCode).toBe(403);
+
+    const del = await app.inject({
+      method: 'DELETE', url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}`, headers: H(s.delegateToken),
+    });
+    expect(del.statusCode).toBe(200);
   });
 
   it('a delegate can edit a manager-only date AND change responsible on the delegated project', async () => {

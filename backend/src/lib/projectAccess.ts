@@ -1,6 +1,7 @@
 import type { GlobalRole, Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { getDelegateCapabilities } from './delegateCaps.js';
 import { listMembershipPermissions } from '../middleware/requirePermission.js';
 
 export type ProjectAccessLevel = 'NONE' | 'READ' | 'WRITE';
@@ -131,9 +132,14 @@ export async function resolveProjectAccess(
   // and only for the delegate, in tasks/subtasksService). The project-settings
   // edit gate (projectsService.update) is unaffected — a delegate still can't
   // rename/reassign the project.
-  if (await isProjectEditDelegate(projectId, userId)) return 'WRITE';
+  // v1.88: a FULL delegate keeps project WRITE (old behavior); a partial
+  // (granular) delegate gets READ so they can view the project's tasks — their
+  // specific edit capabilities are then enforced field-by-field in
+  // tasks/subtasksService. A non-delegate gets NONE here.
+  const delegateCaps = await getDelegateCapabilities(projectId, userId);
+  if (delegateCaps.has('FULL')) return 'WRITE';
 
-  let access: ProjectAccessLevel = 'NONE';
+  let access: ProjectAccessLevel = delegateCaps.size > 0 ? 'READ' : 'NONE';
 
   if (scope === 'view' && (await callerHasProjectEdit(teamId, userId, globalRole))) {
     access = maxAccess(access, 'READ');
@@ -150,15 +156,15 @@ export async function resolveProjectAccess(
 // the manager-only date gate or the task.change_responsible gate, so this is its
 // own explicit, narrow elevation signal keyed by (projectId, userId). A delegate
 // on project A is never elevated on project B.
+// v1.88: now means "holds the FULL capability" — the old all-or-nothing
+// full-edit semantics. Used where a delegate must be fully privileged (the
+// approval finalizer; project WRITE). Partial/granular delegates return false;
+// their narrow capabilities are checked via getDelegateCapabilities instead.
 export async function isProjectEditDelegate(
   projectId: string,
   userId: string,
 ): Promise<boolean> {
-  const row = await prisma.projectEditDelegate.findUnique({
-    where: { projectId_userId: { projectId, userId } },
-    select: { userId: true },
-  });
-  return !!row;
+  return (await getDelegateCapabilities(projectId, userId)).has('FULL');
 }
 
 /** The userIds delegated full-edit on this project (owner-facing list + UI gate). */

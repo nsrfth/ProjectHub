@@ -42,10 +42,14 @@ export async function subtasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:subtaskId', {
-    preHandler: [requireProjectWriteAccess(), requireScope('tasks:write')],
+    // v1.88: not requireProjectWriteAccess — a granular delegate (project READ)
+    // may edit the fields their capabilities cover. subtasksService.update
+    // enforces write-vs-capability per field; the route-level requireProjectAccess
+    // hook still blocks non-members (READ minimum).
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['subtasks'],
-      summary: 'Update a subtask title and/or done flag',
+      summary: 'Update a subtask (write access or a matching delegate capability)',
       params: z.object({
         teamId: z.string(),
         projectId: z.string(),

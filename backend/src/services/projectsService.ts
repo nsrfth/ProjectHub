@@ -7,11 +7,11 @@ import {
 import { Errors } from '../lib/errors.js';
 import {
   assertCanWriteProject as assertProjectWrite,
-  isProjectEditDelegate,
   projectListAllWhereForCaller,
   projectListWhereForCaller,
   resolveProjectAccess,
 } from '../lib/projectAccess.js';
+import { getDelegateCapabilities } from '../lib/delegateCaps.js';
 import { listMembershipPermissions } from '../middleware/requirePermission.js';
 // Project visibility (additive):
 // - globalRole === 'ADMIN' → all projects
@@ -475,43 +475,53 @@ export class ProjectsService {
     projectId: string,
     callerId: string,
     callerGlobalRole: GlobalRole,
-  ): Promise<string[]> {
+  ): Promise<{ userId: string; capabilities: string[] }[]> {
     await this.assertOwnerOrAdmin(teamId, projectId, callerId, callerGlobalRole);
     const rows = await prisma.projectEditDelegate.findMany({
       where: { projectId },
-      select: { userId: true },
+      select: { userId: true, capabilities: true },
     });
-    return rows.map((r) => r.userId);
+    return rows.map((r) => ({ userId: r.userId, capabilities: r.capabilities }));
   }
 
-  // Self-scoped: "am I a full-edit delegate on this project?" Readable by any
-  // team member (the route's requireTeamRole gate) — returns only the caller's
-  // own bit, so it leaks nothing about the rest of the delegate set.
-  async isDelegate(teamId: string, projectId: string, userId: string): Promise<boolean> {
+  // Self-scoped: the caller's effective delegate capabilities on this project.
+  // Readable by any team member (the route's requireTeamRole gate) — returns
+  // only the caller's own set, so it leaks nothing about the rest.
+  async myDelegateCapabilities(
+    teamId: string,
+    projectId: string,
+    userId: string,
+  ): Promise<string[]> {
     const p = await prisma.project.findUnique({
       where: { id: projectId },
       select: { teamId: true },
     });
     if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
-    return isProjectEditDelegate(projectId, userId);
+    return [...(await getDelegateCapabilities(projectId, userId))];
   }
 
-  // Replace-set semantics (mirrors labelIds). Every delegate must be a team
-  // member — full-edit is a real elevation, never granted to an outsider.
+  // Replace-set semantics. Every delegate must be a team member — delegation is
+  // a real elevation, never granted to an outsider. Each entry's capabilities
+  // are validated to the known set by the route's Zod body.
   async setDelegates(
     teamId: string,
     projectId: string,
     callerId: string,
     callerGlobalRole: GlobalRole,
-    userIds: string[],
-  ): Promise<string[]> {
+    delegates: { userId: string; capabilities: string[] }[],
+  ): Promise<{ userId: string; capabilities: string[] }[]> {
     await this.assertOwnerOrAdmin(teamId, projectId, callerId, callerGlobalRole);
-    const unique = [...new Set(userIds)];
-    if (unique.length > 0) {
+    // Dedupe by userId (last wins); drop entries with no capabilities.
+    const byUser = new Map<string, string[]>();
+    for (const d of delegates) {
+      if (d.capabilities.length > 0) byUser.set(d.userId, [...new Set(d.capabilities)]);
+    }
+    const userIds = [...byUser.keys()];
+    if (userIds.length > 0) {
       const count = await prisma.teamMembership.count({
-        where: { teamId, userId: { in: unique } },
+        where: { teamId, userId: { in: userIds } },
       });
-      if (count !== unique.length) {
+      if (count !== userIds.length) {
         throw Errors.badRequest('Every delegate must be a member of this team');
       }
     }
@@ -519,17 +529,18 @@ export class ProjectsService {
       await tx.projectEditDelegate.deleteMany({
         where: {
           projectId,
-          ...(unique.length > 0 ? { userId: { notIn: unique } } : {}),
+          ...(userIds.length > 0 ? { userId: { notIn: userIds } } : {}),
         },
       });
-      if (unique.length > 0) {
-        await tx.projectEditDelegate.createMany({
-          data: unique.map((userId) => ({ projectId, userId, grantedById: callerId })),
-          skipDuplicates: true,
+      for (const [userId, capabilities] of byUser) {
+        await tx.projectEditDelegate.upsert({
+          where: { projectId_userId: { projectId, userId } },
+          create: { projectId, userId, grantedById: callerId, capabilities },
+          update: { capabilities, grantedById: callerId },
         });
       }
     });
-    return unique;
+    return [...byUser].map(([userId, capabilities]) => ({ userId, capabilities }));
   }
 }
 

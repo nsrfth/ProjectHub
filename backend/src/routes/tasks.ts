@@ -86,10 +86,14 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:taskId', {
-    preHandler: [requireProjectWriteAccess(), requireScope('tasks:write')],
+    // v1.88: not requireProjectWriteAccess — a granular delegate (project READ)
+    // may edit the fields their capabilities cover. tasksService.update enforces
+    // write-vs-capability per field; the route-level requireProjectAccess hook
+    // still blocks non-members (READ minimum).
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['tasks'],
-      summary: 'Update a task (any team member)',
+      summary: 'Update a task (write access or a matching delegate capability)',
       params: z.object({ teamId: z.string(), projectId: z.string(), taskId: z.string() }),
       body: updateTaskBody,
       response: { 200: taskResponse },
@@ -140,10 +144,12 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:taskId', {
-    preHandler: [requireProjectWriteAccess(), requireScope('tasks:write')],
+    // v1.88: not requireProjectWriteAccess — a DELETE_TASKS delegate may delete.
+    // tasksService.remove enforces write-or-capability.
+    preHandler: requireScope('tasks:write'),
     schema: {
       tags: ['tasks'],
-      summary: 'Delete a task (any team member)',
+      summary: 'Delete a task (write access or the DELETE_TASKS delegate capability)',
       params: z.object({ teamId: z.string(), projectId: z.string(), taskId: z.string() }),
       security: [{ bearerAuth: [] }],
     },

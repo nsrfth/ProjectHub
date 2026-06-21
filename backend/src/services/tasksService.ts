@@ -6,8 +6,10 @@ import {
   isProjectEditDelegate,
   isUserEligibleTaskResponsible,
   listEligibleTaskResponsibleCandidates,
+  resolveProjectAccess,
   type TaskResponsibleCandidate,
 } from '../lib/projectAccess.js';
+import { getDelegateCapabilities, type DelegateCapability } from '../lib/delegateCaps.js';
 import { assertEndOnOrAfterStart, normalizeOptionalCalendarDate } from '../lib/calendarDate.js';
 import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
@@ -606,7 +608,19 @@ export class TasksService {
       labelIds?: string[];
     },
   ): Promise<TaskView> {
-    await assertCanWriteProject(projectId, teamId, actorId, actorGlobalRole);
+    // v1.88: capability-aware authorization. ADMIN / WRITE callers (owner,
+    // write_all, FULL delegate, group-FULL) may edit titles + details; a partial
+    // (granular) delegate may edit only the field groups their capabilities
+    // cover. Date / responsible edits stay behind their own gates further down.
+    const isAdmin = actorGlobalRole === 'ADMIN';
+    const access = isAdmin
+      ? 'WRITE'
+      : await resolveProjectAccess(projectId, teamId, actorId, actorGlobalRole, 'nested');
+    if (access === 'NONE') throw Errors.notFound('Project not found');
+    const caps = isAdmin ? null : await getDelegateCapabilities(projectId, actorId);
+    const hasWrite = access === 'WRITE';
+    const can = (cap: DelegateCapability): boolean =>
+      hasWrite || (caps ? caps.has(cap) : false);
     const existing = await this.get(teamId, projectId, taskId);
 
     // v1.78.2: validate labelIds outside the transaction so cross-team
@@ -641,10 +655,11 @@ export class TasksService {
       }
     }
 
-    // v1.86: per-project full-edit delegation. A delegate on THIS project is
-    // elevated past the manager-only date gate and the task.change_responsible
-    // gate — for this project only. Computed once; skipped for ADMIN (already
-    // privileged) and when no gated field is in the patch.
+    // v1.88: per-project granular delegation. Authorize each touched field group
+    // against the caller's capabilities. WRITE callers pass titles + details
+    // here; date / responsible edits additionally go through their own gates
+    // below — and a delegate holding the matching capability lifts the
+    // manager-only gate, exactly as a FULL delegate did pre-v1.88.
     const touchesDates =
       input.startDate !== undefined ||
       input.dueDate !== undefined ||
@@ -652,10 +667,32 @@ export class TasksService {
       input.completedAt !== undefined;
     const touchesResponsible =
       input.responsibleId !== undefined && input.responsibleId !== existing.responsibleId;
-    const elevated =
-      actorGlobalRole !== 'ADMIN' && (touchesDates || touchesResponsible)
-        ? await isProjectEditDelegate(projectId, actorId)
-        : false;
+    const touchesDetails =
+      input.description !== undefined ||
+      input.status !== undefined ||
+      input.priority !== undefined ||
+      input.assigneeId !== undefined ||
+      input.labelIds !== undefined ||
+      input.requiresApproval !== undefined ||
+      input.approverId !== undefined ||
+      input.plannedBudget !== undefined ||
+      input.actualSpent !== undefined;
+    if (input.title !== undefined && !can('EDIT_TITLES')) {
+      throw Errors.forbidden('Missing capability to edit the task title');
+    }
+    if (touchesDetails && !can('EDIT_DETAILS')) {
+      throw Errors.forbidden('Missing capability to edit task details');
+    }
+    if (touchesDates && !can('EDIT_DATES')) {
+      throw Errors.forbidden('Missing capability to edit task dates');
+    }
+    if (touchesResponsible && !can('CHANGE_RESPONSIBLE')) {
+      throw Errors.forbidden('Missing capability to change the responsible');
+    }
+    // The manager-only date gate and the change_responsible gate are lifted for
+    // a delegate holding the matching capability (FULL holds both, via expansion).
+    const elevatedDates = caps?.has('EDIT_DATES') ?? false;
+    const elevatedResponsible = caps?.has('CHANGE_RESPONSIBLE') ?? false;
 
     // v1.19 → v1.23: responsible change gate. Now gated by the
     // `task.change_responsible` permission (default = Manager only). Custom
@@ -663,7 +700,7 @@ export class TasksService {
     // v1.86: a per-project full-edit delegate also passes.
     if (touchesResponsible) {
       if (
-        !elevated &&
+        !elevatedResponsible &&
         !(await userHasPermission(actorId, teamId, actorGlobalRole, 'task.change_responsible'))
       ) {
         throw Errors.forbidden(
@@ -697,7 +734,7 @@ export class TasksService {
           actorTeamRole,
           actorGlobalRole,
           restriction,
-          elevated,
+          elevatedDates,
         );
       }
       if (input.dueDate !== undefined) {
@@ -708,7 +745,7 @@ export class TasksService {
           actorTeamRole,
           actorGlobalRole,
           restriction,
-          elevated,
+          elevatedDates,
         );
       }
       if (input.plannedDate !== undefined) {
@@ -719,7 +756,7 @@ export class TasksService {
           actorTeamRole,
           actorGlobalRole,
           restriction,
-          elevated,
+          elevatedDates,
         );
       }
       if (input.completedAt !== undefined) {
@@ -730,7 +767,7 @@ export class TasksService {
           actorTeamRole,
           actorGlobalRole,
           restriction,
-          elevated,
+          elevatedDates,
         );
       }
     }
@@ -1303,7 +1340,18 @@ export class TasksService {
     actorId: string,
     actorGlobalRole: GlobalRole,
   ): Promise<void> {
-    await assertCanWriteProject(projectId, teamId, actorId, actorGlobalRole);
+    // v1.88: WRITE callers delete; a partial delegate needs DELETE_TASKS.
+    const isAdmin = actorGlobalRole === 'ADMIN';
+    const access = isAdmin
+      ? 'WRITE'
+      : await resolveProjectAccess(projectId, teamId, actorId, actorGlobalRole, 'nested');
+    if (access === 'NONE') throw Errors.notFound('Project not found');
+    if (
+      access !== 'WRITE' &&
+      !(await getDelegateCapabilities(projectId, actorId)).has('DELETE_TASKS')
+    ) {
+      throw Errors.forbidden('Read-only access to this project');
+    }
     const existing = await this.get(teamId, projectId, taskId); // 404 if not in this project/team
     await prisma.task.update({
       where: { id: taskId },

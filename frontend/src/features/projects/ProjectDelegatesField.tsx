@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TeamMember } from '@/features/teams/api';
 import { useT } from '@/lib/i18n';
-import { getProjectDelegates, setProjectDelegates } from '@/features/projects/api';
+import {
+  getProjectDelegates,
+  setProjectDelegates,
+  type DelegateCapability,
+  type ProjectDelegate,
+} from '@/features/projects/api';
 
 interface ProjectDelegatesFieldProps {
   teamId: string;
@@ -10,10 +15,19 @@ interface ProjectDelegatesFieldProps {
   members: TeamMember[];
 }
 
-// v1.86: owner-facing control to grant/revoke per-project "full-edit" delegates.
-// Self-contained (own fetch + save) so it stays out of the generic project form
-// values. Only rendered in full-edit (owner/admin) mode; the underlying endpoints
-// are owner/admin-gated server-side too.
+// Granular capabilities, in checklist order (FULL is the separate "all" box).
+const GRANULAR: DelegateCapability[] = [
+  'EDIT_TITLES',
+  'EDIT_DETAILS',
+  'EDIT_DATES',
+  'CHANGE_RESPONSIBLE',
+  'DELETE_TASKS',
+];
+
+// v1.88: owner-facing control to grant GRANULAR per-project capabilities to team
+// members. Each member gets a capability checklist; ticking FULL implies (and
+// disables) the rest. Self-contained fetch/save; only rendered in full-edit
+// (owner/admin) mode, and the endpoints are owner/admin-gated server-side too.
 export default function ProjectDelegatesField({
   teamId,
   projectId,
@@ -29,27 +43,61 @@ export default function ProjectDelegatesField({
     staleTime: 30_000,
   });
 
-  const [draft, setDraft] = useState<string[] | null>(null);
-  const selected = draft ?? saved;
+  // draft: userId -> capabilities. null until the owner edits something.
+  const [draft, setDraft] = useState<Record<string, DelegateCapability[]> | null>(null);
+  const savedMap: Record<string, DelegateCapability[]> = {};
+  for (const d of saved) savedMap[d.userId] = d.capabilities;
+  const current = draft ?? savedMap;
   const dirty =
-    draft !== null &&
-    (draft.length !== saved.length || draft.some((id) => !saved.includes(id)));
+    draft !== null && JSON.stringify(normalize(draft)) !== JSON.stringify(normalize(savedMap));
 
   const mut = useMutation({
-    mutationFn: (ids: string[]) => setProjectDelegates(teamId, projectId, ids),
-    onSuccess: (ids) => {
-      qc.setQueryData(delegatesKey, ids);
+    mutationFn: (map: Record<string, DelegateCapability[]>) => {
+      const delegates: ProjectDelegate[] = Object.entries(map)
+        .filter(([, caps]) => caps.length > 0)
+        .map(([userId, capabilities]) => ({ userId, capabilities }));
+      return setProjectDelegates(teamId, projectId, delegates);
+    },
+    onSuccess: (delegates) => {
+      qc.setQueryData(delegatesKey, delegates);
       setDraft(null);
     },
   });
 
-  function toggle(userId: string): void {
+  function capsFor(userId: string): DelegateCapability[] {
+    return current[userId] ?? [];
+  }
+
+  function setCaps(userId: string, caps: DelegateCapability[]): void {
     setDraft((prev) => {
-      const base = prev ?? saved;
-      return base.includes(userId)
-        ? base.filter((id) => id !== userId)
-        : [...base, userId];
+      const base = prev ?? savedMap;
+      const next = { ...base };
+      if (caps.length === 0) delete next[userId];
+      else next[userId] = caps;
+      return next;
     });
+  }
+
+  function toggleCap(userId: string, cap: DelegateCapability): void {
+    const caps = new Set(capsFor(userId));
+    if (cap === 'FULL') {
+      if (caps.has('FULL')) caps.delete('FULL');
+      else {
+        caps.clear();
+        caps.add('FULL');
+      }
+    } else {
+      caps.delete('FULL'); // editing a granular box drops the implied FULL
+      if (caps.has(cap)) caps.delete(cap);
+      else caps.add(cap);
+    }
+    setCaps(userId, [...caps]);
+  }
+
+  // A granular box renders checked (and disabled) when FULL implies it.
+  function checked(userId: string, cap: DelegateCapability): boolean {
+    const caps = capsFor(userId);
+    return caps.includes(cap) || (cap !== 'FULL' && caps.includes('FULL'));
   }
 
   return (
@@ -63,27 +111,44 @@ export default function ProjectDelegatesField({
       ) : members.length === 0 ? (
         <p className="text-xs text-text-muted">{t('projects.delegates.none')}</p>
       ) : (
-        <ul className="space-y-1 max-h-40 overflow-auto">
-          {members.map((m) => (
-            <li key={m.userId}>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(m.userId)}
-                  onChange={() => toggle(m.userId)}
-                />
-                <span>
-                  {m.name} ({m.role})
-                </span>
-              </label>
-            </li>
-          ))}
+        <ul className="space-y-2 max-h-72 overflow-auto">
+          {members.map((m) => {
+            const full = capsFor(m.userId).includes('FULL');
+            return (
+              <li key={m.userId} className="border border-border rounded p-2">
+                <div className="text-sm font-medium mb-1">
+                  {m.name} <span className="text-text-muted font-normal">({m.role})</span>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  <label className="flex items-center gap-1 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={checked(m.userId, 'FULL')}
+                      onChange={() => toggleCap(m.userId, 'FULL')}
+                    />
+                    <span>{t('projects.delegates.cap.FULL')}</span>
+                  </label>
+                  {GRANULAR.map((cap) => (
+                    <label key={cap} className="flex items-center gap-1 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={checked(m.userId, cap)}
+                        disabled={full}
+                        onChange={() => toggleCap(m.userId, cap)}
+                      />
+                      <span>{t(`projects.delegates.cap.${cap}`)}</span>
+                    </label>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => mut.mutate(selected)}
+          onClick={() => mut.mutate(current)}
           disabled={!dirty || mut.isPending}
           className="px-3 py-1.5 text-sm rounded border disabled:opacity-50"
         >
@@ -97,4 +162,13 @@ export default function ProjectDelegatesField({
       </div>
     </div>
   );
+}
+
+// Stable comparison key: drop empty entries, sort capabilities.
+function normalize(
+  map: Record<string, DelegateCapability[]>,
+): Record<string, DelegateCapability[]> {
+  const out: Record<string, DelegateCapability[]> = {};
+  for (const [k, v] of Object.entries(map)) if (v.length > 0) out[k] = [...v].sort();
+  return out;
 }

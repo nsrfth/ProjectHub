@@ -98,40 +98,59 @@ export async function deleteProject(teamId: string, projectId: string): Promise<
   await api.delete(`/teams/${teamId}/projects/${projectId}`);
 }
 
-// v1.86: per-project "full-edit" delegates — the users the owner/admin lets
-// fully edit tasks/subtasks on this project (incl. manager-only dates +
-// responsible). Owner/admin only; non-owners get 404 from these endpoints.
+// v1.88: per-project delegates with GRANULAR capabilities — the owner/admin
+// grants each member a subset of edit capabilities on this project. FULL implies
+// all the rest. Owner/admin only; non-owners get 404 from these endpoints.
+export type DelegateCapability =
+  | 'FULL'
+  | 'EDIT_TITLES'
+  | 'EDIT_DETAILS'
+  | 'EDIT_DATES'
+  | 'CHANGE_RESPONSIBLE'
+  | 'DELETE_TASKS';
+
+export interface ProjectDelegate {
+  userId: string;
+  capabilities: DelegateCapability[];
+}
+
 export async function getProjectDelegates(
   teamId: string,
   projectId: string,
-): Promise<string[]> {
+): Promise<ProjectDelegate[]> {
   return (
-    await api.get<{ userIds: string[] }>(`/teams/${teamId}/projects/${projectId}/delegates`)
-  ).data.userIds;
+    await api.get<{ delegates: ProjectDelegate[] }>(
+      `/teams/${teamId}/projects/${projectId}/delegates`,
+    )
+  ).data.delegates;
 }
 
 export async function setProjectDelegates(
   teamId: string,
   projectId: string,
-  userIds: string[],
-): Promise<string[]> {
+  delegates: ProjectDelegate[],
+): Promise<ProjectDelegate[]> {
   return (
-    await api.put<{ userIds: string[] }>(`/teams/${teamId}/projects/${projectId}/delegates`, {
-      userIds,
-    })
-  ).data.userIds;
+    await api.put<{ delegates: ProjectDelegate[] }>(
+      `/teams/${teamId}/projects/${projectId}/delegates`,
+      { delegates },
+    )
+  ).data.delegates;
 }
 
-// Self-scoped: whether the current user is a full-edit delegate on this project.
+export interface MyDelegateStatus {
+  isDelegate: boolean;
+  capabilities: DelegateCapability[];
+}
+
+// Self-scoped: the current user's delegate capabilities on this project.
 // Readable by any team member (unlike the owner-only list above) so the
-// task/subtask UI can unlock the manager-only controls for a delegate.
+// task/subtask UI can unlock the controls they're allowed to use.
 export async function getMyDelegateStatus(
   teamId: string,
   projectId: string,
-): Promise<boolean> {
+): Promise<MyDelegateStatus> {
   return (
-    await api.get<{ isDelegate: boolean }>(
-      `/teams/${teamId}/projects/${projectId}/delegates/me`,
-    )
-  ).data.isDelegate;
+    await api.get<MyDelegateStatus>(`/teams/${teamId}/projects/${projectId}/delegates/me`)
+  ).data;
 }

@@ -141,17 +141,23 @@ export default function TaskDetailPage(): JSX.Element {
   // v1.86: per-project full-edit delegation. A delegate (often a non-manager
   // member) is elevated to change Responsible + the manager-only date fields on
   // THIS project only. Self-scoped lookup — readable by any team member.
-  const { data: isDelegate = false } = useQuery({
+  const { data: myDelegate } = useQuery({
     queryKey: ['projects', teamId, projectId, 'delegates', 'me'],
     queryFn: () => getMyDelegateStatus(teamId!, projectId!),
     enabled: !!teamId && !!projectId && !!projectTeam,
     staleTime: 30_000,
   });
+  const isDelegate = myDelegate?.isDelegate ?? false;
+  const delegateCaps = myDelegate?.capabilities ?? [];
 
   // v1.19: team members feed the Responsible dropdown for managers/admins.
-  // v1.86: also for per-project delegates. Fetched lazily — only when the
-  // viewer can actually change Responsible.
-  const canChangeResponsible = isManager || user?.globalRole === 'ADMIN' || isDelegate;
+  // v1.86: also for full-edit delegates. v1.88: a granular CHANGE_RESPONSIBLE
+  // delegate also qualifies. Fetched lazily — only when the viewer can change it.
+  const canChangeResponsible =
+    isManager ||
+    user?.globalRole === 'ADMIN' ||
+    isDelegate ||
+    delegateCaps.includes('CHANGE_RESPONSIBLE');
   const canEditTask = !!projectTeam;
   const { data: teamMembersRaw = [] } = useQuery({
     queryKey: ['teams', teamId, 'assignees'],

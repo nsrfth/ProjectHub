@@ -145,13 +145,13 @@ export class ProjectsController {
   ) => {
     if (!req.user) throw Errors.unauthorized();
     callerMembership(req);
-    const userIds = await this.svc.listDelegates(
+    const delegates = await this.svc.listDelegates(
       req.params.teamId,
       req.params.projectId,
       req.user.sub,
       req.user.globalRole,
     );
-    return reply.send({ userIds });
+    return reply.send({ delegates });
   };
 
   setDelegates = async (
@@ -160,29 +160,29 @@ export class ProjectsController {
   ) => {
     if (!req.user) throw Errors.unauthorized();
     callerMembership(req);
-    const userIds = await this.svc.setDelegates(
+    const delegates = await this.svc.setDelegates(
       req.params.teamId,
       req.params.projectId,
       req.user.sub,
       req.user.globalRole,
-      req.body.userIds,
+      req.body.delegates,
     );
-    return reply.send({ userIds });
+    return reply.send({ delegates });
   };
 
-  // Self-scoped delegate status — any team member may read their own bit so the
-  // task/subtask UI can unlock the manager-only controls for a delegate.
+  // Self-scoped delegate capabilities — any team member may read their own set
+  // so the task/subtask UI can unlock the controls they're allowed to use.
   myDelegateStatus = async (
     req: FastifyRequest<{ Params: ProjectParams }>,
     reply: FastifyReply,
   ) => {
     if (!req.user) throw Errors.unauthorized();
     callerMembership(req);
-    const isDelegate = await this.svc.isDelegate(
+    const capabilities = await this.svc.myDelegateCapabilities(
       req.params.teamId,
       req.params.projectId,
       req.user.sub,
     );
-    return reply.send({ isDelegate });
+    return reply.send({ isDelegate: capabilities.includes('FULL'), capabilities });
   };
 }

@@ -89,19 +89,41 @@ export const updateProjectBody = z
 // the users who may edit ALL task/subtask fields on this project — including the
 // manager-only date fields and the task.change_responsible-gated field — for
 // THIS project only. Replace-set semantics, mirroring labelIds.
+// v1.88: granular per-delegate capabilities. FULL implies all the others.
+export const delegateCapabilityEnum = z.enum([
+  'FULL',
+  'EDIT_TITLES',
+  'EDIT_DETAILS',
+  'EDIT_DATES',
+  'CHANGE_RESPONSIBLE',
+  'DELETE_TASKS',
+]);
+
+export const projectDelegateEntry = z.object({
+  userId: z.string().min(1),
+  capabilities: z.array(delegateCapabilityEnum).min(1),
+});
+
 export const projectDelegatesBody = z.object({
-  userIds: z.array(z.string().min(1)).max(100),
+  delegates: z.array(projectDelegateEntry).max(100),
 });
 
 export const projectDelegatesResponse = z.object({
-  userIds: z.array(z.string()),
+  delegates: z.array(
+    z.object({
+      userId: z.string(),
+      capabilities: z.array(z.string()),
+    }),
+  ),
 });
 
-// v1.86: self-scoped "am I a full-edit delegate on this project?" — readable by
-// any team member (unlike the owner-only list), so the task/subtask UI can
-// unlock the manager-only controls for a delegate without leaking the full set.
+// v1.88: self-scoped capabilities — readable by any team member (unlike the
+// owner-only list), so the task/subtask UI can unlock the controls a delegate
+// is allowed to use without leaking the full set. isDelegate retained (= holds
+// FULL) for callers that only need the legacy boolean.
 export const projectMyDelegateResponse = z.object({
   isDelegate: z.boolean(),
+  capabilities: z.array(z.string()),
 });
 
 export const projectResponse = z.object({

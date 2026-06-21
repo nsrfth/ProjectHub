@@ -2,7 +2,8 @@ import { Prisma, type GlobalRole, type SubtaskStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { userHasPermission } from '../middleware/requirePermission.js';
-import { isProjectEditDelegate, resolveProjectAccess } from '../lib/projectAccess.js';
+import { resolveProjectAccess } from '../lib/projectAccess.js';
+import { getDelegateCapabilities, type DelegateCapability } from '../lib/delegateCaps.js';
 import { logActivity } from './activityLogger.js';
 
 // Subtasks are checklist items inside a task. The route layer already verifies
@@ -183,6 +184,39 @@ export class SubtasksService {
     const existing = await prisma.subtask.findUnique({ where: { id: subtaskId } });
     if (!existing || existing.taskId !== taskId) throw Errors.notFound('Subtask not found');
 
+    // v1.88: capability-aware authorization. The PATCH route allows READ so a
+    // granular delegate can reach here; enforce their per-field capabilities.
+    // WRITE callers (admin, owner, write_all, FULL/group-FULL) pass everything
+    // except the responsible gate below.
+    const isAdmin = actorGlobalRole === 'ADMIN';
+    const access = isAdmin
+      ? 'WRITE'
+      : await resolveProjectAccess(projectId, teamId, actorId, actorGlobalRole, 'nested');
+    if (access === 'NONE') throw Errors.notFound('Project not found');
+    const caps = isAdmin ? null : await getDelegateCapabilities(projectId, actorId);
+    const hasWrite = access === 'WRITE';
+    const can = (cap: DelegateCapability): boolean =>
+      hasWrite || (caps ? caps.has(cap) : false);
+    if (input.title !== undefined && !can('EDIT_TITLES')) {
+      throw Errors.forbidden('Missing capability to edit the subtask title');
+    }
+    if (
+      (input.done !== undefined || input.status !== undefined || input.assigneeId !== undefined) &&
+      !can('EDIT_DETAILS')
+    ) {
+      throw Errors.forbidden('Missing capability to edit subtask details');
+    }
+    if ((input.startDate !== undefined || input.endDate !== undefined) && !can('EDIT_DATES')) {
+      throw Errors.forbidden('Missing capability to edit subtask dates');
+    }
+    if (
+      input.responsibleId !== undefined &&
+      input.responsibleId !== existing.responsibleId &&
+      !can('CHANGE_RESPONSIBLE')
+    ) {
+      throw Errors.forbidden('Missing capability to change the responsible');
+    }
+
     // v1.41: validate the merged date range, not just the body. A PATCH
     // that only sets `endDate` against an existing `startDate` must still
     // 400 if it inverts the window.
@@ -208,8 +242,7 @@ export class SubtasksService {
     // v1.19 → v1.23: responsible change gate. Now permission-driven.
     // v1.86: a per-project full-edit delegate also passes (this project only).
     if (input.responsibleId !== undefined && input.responsibleId !== existing.responsibleId) {
-      const elevated =
-        actorGlobalRole !== 'ADMIN' && (await isProjectEditDelegate(projectId, actorId));
+      const elevated = caps?.has('CHANGE_RESPONSIBLE') ?? false;
       if (
         !elevated &&
         !(await userHasPermission(actorId, teamId, actorGlobalRole, 'task.change_responsible'))
