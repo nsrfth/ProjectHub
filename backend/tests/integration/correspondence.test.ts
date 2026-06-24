@@ -189,6 +189,48 @@ describe('correspondence numbering + CRUD', () => {
     ]);
   });
 
+  it('list filters by direction, status, and search', async () => {
+    const s = await setup();
+    await enableModule(s.token, s.projectId);
+
+    await inject({
+      method: 'POST',
+      url: base(s),
+      headers: H(s.token),
+      payload: { direction: 'INCOMING', subject: 'Alpha incoming', letterDate: DATE_1404, status: 'DRAFT' },
+    });
+    await inject({
+      method: 'POST',
+      url: base(s),
+      headers: H(s.token),
+      payload: { direction: 'OUTGOING', subject: 'Beta outgoing', letterDate: DATE_1404, status: 'SENT' },
+    });
+
+    const incoming = await inject({
+      method: 'GET',
+      url: `${base(s)}?direction=INCOMING`,
+      headers: H(s.token),
+    });
+    expect(incoming.json()).toHaveLength(1);
+    expect(incoming.json()[0].subject).toBe('Alpha incoming');
+
+    const sent = await inject({
+      method: 'GET',
+      url: `${base(s)}?status=SENT`,
+      headers: H(s.token),
+    });
+    expect(sent.json()).toHaveLength(1);
+    expect(sent.json()[0].subject).toBe('Beta outgoing');
+
+    const search = await inject({
+      method: 'GET',
+      url: `${base(s)}?search=beta`,
+      headers: H(s.token),
+    });
+    expect(search.json()).toHaveLength(1);
+    expect(search.json()[0].subject).toBe('Beta outgoing');
+  });
+
   it('keeps the reference number permanent when letterDate moves to another year', async () => {
     const s = await setup();
     await enableModule(s.token, s.projectId);

@@ -4,7 +4,7 @@ import { Errors } from '../lib/errors.js';
 import type { MeTasksQuery } from '../schemas/meTasks.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW'];
+const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL'];
 
 const TASK_INCLUDE = {
   project: {

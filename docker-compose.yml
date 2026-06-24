@@ -98,6 +98,8 @@ services:
       dockerfile: ./docker/frontend.Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        # Pass a new value when you need a fresh SPA bundle (e.g. CACHEBUST=2).
+        CACHEBUST: ${CACHEBUST:-1}
     # One-shot build; output is copied to the shared volume below.
     command: ["sh", "-c", "cp -r /app/dist/. /export/ && echo build complete"]
     volumes:

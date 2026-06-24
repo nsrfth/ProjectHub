@@ -9,6 +9,7 @@ import type {
 import type { AttachmentsService, AttachmentView } from '../services/attachmentsService.js';
 import type {
   CreateCorrespondenceBody,
+  ListCorrespondenceQuery,
   ReferBody,
   SetStatusBody,
   UpdateCorrespondenceBody,
@@ -87,8 +88,11 @@ export class CorrespondenceController {
     private readonly attachments: AttachmentsService,
   ) {}
 
-  list = async (req: FastifyRequest<{ Params: ProjectParams }>, reply: FastifyReply) => {
-    const items = await this.svc.list(req.params.teamId, req.params.projectId);
+  list = async (
+    req: FastifyRequest<{ Params: ProjectParams; Querystring: ListCorrespondenceQuery }>,
+    reply: FastifyReply,
+  ) => {
+    const items = await this.svc.list(req.params.teamId, req.params.projectId, req.query);
     return reply.send(items.map(serialize));
   };
 

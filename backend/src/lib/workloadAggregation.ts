@@ -1,6 +1,11 @@
 import type { Prisma, TaskPriority, TaskStatus } from '@prisma/client';
 
-export const OPEN_WORKLOAD_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW'];
+export const OPEN_WORKLOAD_STATUSES: TaskStatus[] = [
+  'TODO',
+  'IN_PROGRESS',
+  'REVIEW',
+  'PENDING_APPROVAL',
+];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export type WorkloadWindow = 'all' | 'overdue' | 'this_week' | 'next_week';
@@ -26,6 +31,7 @@ export interface WorkloadOpenByStatus {
   TODO: number;
   IN_PROGRESS: number;
   REVIEW: number;
+  PENDING_APPROVAL: number;
 }
 
 export interface WorkloadTaskSlice {
@@ -41,7 +47,7 @@ export function emptyDueBuckets(): WorkloadDueBucketCounts {
 }
 
 export function emptyOpenByStatus(): WorkloadOpenByStatus {
-  return { TODO: 0, IN_PROGRESS: 0, REVIEW: 0 };
+  return { TODO: 0, IN_PROGRESS: 0, REVIEW: 0, PENDING_APPROVAL: 0 };
 }
 
 export function getDueWindowBounds(now = new Date()) {
@@ -122,7 +128,12 @@ export function aggregateWorkloadList(tasks: WorkloadTaskSlice[]): WorkloadListR
       buckets.set(key, b);
     }
     b.total += 1;
-    if (t.status === 'TODO' || t.status === 'IN_PROGRESS' || t.status === 'REVIEW') {
+    if (
+      t.status === 'TODO' ||
+      t.status === 'IN_PROGRESS' ||
+      t.status === 'REVIEW' ||
+      t.status === 'PENDING_APPROVAL'
+    ) {
       b.byStatus[t.status] += 1;
     }
   }
@@ -149,7 +160,12 @@ export function aggregateWorkloadDetail(
       buckets.set(key, b);
     }
     b.total += 1;
-    if (t.status === 'TODO' || t.status === 'IN_PROGRESS' || t.status === 'REVIEW') {
+    if (
+      t.status === 'TODO' ||
+      t.status === 'IN_PROGRESS' ||
+      t.status === 'REVIEW' ||
+      t.status === 'PENDING_APPROVAL'
+    ) {
       b.openByStatus[t.status] += 1;
     }
     const dueBucket = classifyWorkloadDueBucket(t.dueDate);

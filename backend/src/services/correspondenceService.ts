@@ -10,6 +10,7 @@ import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
 import type {
   CreateCorrespondenceBody,
+  ListCorrespondenceQuery,
   ReferBody,
   UpdateCorrespondenceBody,
 } from '../schemas/correspondence.js';
@@ -174,10 +175,24 @@ export class CorrespondenceService {
     if (!c) throw Errors.badRequest('Contact not found in this team');
   }
 
-  async list(teamId: string, projectId: string): Promise<CorrespondenceView[]> {
+  async list(
+    teamId: string,
+    projectId: string,
+    filters: ListCorrespondenceQuery = {},
+  ): Promise<CorrespondenceView[]> {
     await this.ensureModuleEnabled(teamId, projectId);
+    const where: Prisma.CorrespondenceWhereInput = { teamId, projectId, deletedAt: null };
+    if (filters.direction) where.direction = filters.direction;
+    if (filters.status) where.status = filters.status;
+    if (filters.search) {
+      where.OR = [
+        { subject: { contains: filters.search, mode: 'insensitive' } },
+        { referenceNumber: { contains: filters.search, mode: 'insensitive' } },
+        { body: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
     const rows = await prisma.correspondence.findMany({
-      where: { teamId, projectId, deletedAt: null },
+      where,
       orderBy: [{ letterDate: 'desc' }, { sequence: 'desc' }],
       include: correspondenceInclude,
     });

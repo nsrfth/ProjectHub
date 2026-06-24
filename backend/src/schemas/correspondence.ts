@@ -37,6 +37,12 @@ export const setStatusBody = z.object({
   status: correspondenceStatusEnum,
 });
 
+export const listCorrespondenceQuery = z.object({
+  direction: correspondenceDirectionEnum.optional(),
+  status: correspondenceStatusEnum.optional(),
+  search: z.string().max(200).trim().optional(),
+});
+
 // Refer (ارجاع) a letter to one or more team members for ACTION or INFO.
 export const referBody = z.object({
   targets: z
@@ -95,4 +101,5 @@ export const correspondenceListResponse = z.array(correspondenceResponse);
 export type CreateCorrespondenceBody = z.infer<typeof createCorrespondenceBody>;
 export type UpdateCorrespondenceBody = z.infer<typeof updateCorrespondenceBody>;
 export type SetStatusBody = z.infer<typeof setStatusBody>;
+export type ListCorrespondenceQuery = z.infer<typeof listCorrespondenceQuery>;
 export type ReferBody = z.infer<typeof referBody>;

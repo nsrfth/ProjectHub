@@ -15,7 +15,13 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
 # Manifests first for layer caching.
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci
+# `npm ci` has been flaky in Docker Desktop (incomplete node_modules, sharp
+# missing). Install + verify sharp is present before the build step runs.
+RUN npm config set fetch-retries 5 \
+  && npm config set fetch-retry-mintimeout 20000 \
+  && npm config set fetch-retry-maxtimeout 120000 \
+  && npm install --no-audit --no-fund \
+  && test -f node_modules/sharp/package.json
 
 # v1.13: both manuals (EN canonical + FA translation) sit one level up so
 # copy-manual.mjs resolves them via '..'. FA is optional — the script
@@ -23,7 +29,10 @@ RUN npm ci
 COPY USER_MANUAL.md /USER_MANUAL.md
 COPY USER_MANUAL.fa.md /USER_MANUAL.fa.md
 
-# Everything else from the frontend dir.
+# Everything else from the frontend dir. CACHEBUST invalidates this layer on
+# demand (`docker compose build --build-arg CACHEBUST=$(date +%s) frontend-build`).
+ARG CACHEBUST=1
+RUN echo "frontend source cache bust: ${CACHEBUST}"
 COPY frontend/ .
 
 RUN npm run build

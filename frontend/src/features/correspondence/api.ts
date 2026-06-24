@@ -133,7 +133,7 @@ export async function setLetterStatus(
   id: string,
   status: LetterStatus,
 ): Promise<Letter> {
-  return (await api.post<Letter>(`${base(teamId, projectId)}/${id}/status`, { status })).data;
+  return (await api.patch<Letter>(`${base(teamId, projectId)}/${id}/status`, { status })).data;
 }
 
 // --- Referrals (ارجاع) ---
@@ -152,9 +152,9 @@ export async function referLetter(
   projectId: string,
   id: string,
   targets: ReferralInput[],
-): Promise<Referral[]> {
+): Promise<Letter> {
   return (
-    await api.post<Referral[]>(`${base(teamId, projectId)}/${id}/referrals`, { targets })
+    await api.post<Letter>(`${base(teamId, projectId)}/${id}/referrals`, { targets })
   ).data;
 }
 
@@ -214,10 +214,8 @@ export async function downloadLetterAttachment(
   letterId: string,
   attachment: CorrespondenceAttachment,
 ): Promise<void> {
-  const res = await api.get<Blob>(
-    `${base(teamId, projectId)}/${letterId}/attachments/${attachment.id}/download`,
-    { responseType: 'blob' },
-  );
+  const urlPath = `${base(teamId, projectId)}/${letterId}/attachments/${attachment.id}`;
+  const res = await api.get<Blob>(urlPath, { responseType: 'blob' });
   const url = URL.createObjectURL(res.data);
   const a = document.createElement('a');
   a.href = url;

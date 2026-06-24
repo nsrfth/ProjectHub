@@ -9,6 +9,7 @@ const COLORS: Record<string, string> = {
   TODO: '#94a3b8', // slate-400
   IN_PROGRESS: '#3b82f6', // blue-500
   REVIEW: '#f59e0b', // amber-500
+  PENDING_APPROVAL: '#a855f7', // purple-500
   DONE: '#10b981', // emerald-500
 };
 
@@ -16,11 +17,18 @@ const LABEL: Record<string, string> = {
   TODO: 'To do',
   IN_PROGRESS: 'In progress',
   REVIEW: 'Review',
+  PENDING_APPROVAL: 'Pending approval',
   DONE: 'Done',
 };
 
 interface Props {
-  byStatus: { TODO: number; IN_PROGRESS: number; REVIEW: number; DONE: number };
+  byStatus: {
+    TODO: number;
+    IN_PROGRESS: number;
+    REVIEW: number;
+    PENDING_APPROVAL: number;
+    DONE: number;
+  };
 }
 
 // Helper: convert a slice (startAngle, endAngle in radians) into the SVG
@@ -45,12 +53,13 @@ function arcPath(r1: number, r2: number, a0: number, a1: number): string {
 }
 
 export default function StatusDonut({ byStatus }: Props): JSX.Element {
-  const order = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'] as const;
+  const order = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL', 'DONE'] as const;
   const total = order.reduce((sum, k) => sum + byStatus[k], 0);
 
   // Open / Done split for the centre label — the most common question is
   // "how much is still open?", not "how much is done?".
-  const open = byStatus.TODO + byStatus.IN_PROGRESS + byStatus.REVIEW;
+  const open =
+    byStatus.TODO + byStatus.IN_PROGRESS + byStatus.REVIEW + byStatus.PENDING_APPROVAL;
 
   // Compute slice angles. Start at 12 o'clock (-PI/2), sweep clockwise.
   let a = -Math.PI / 2;

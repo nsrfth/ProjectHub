@@ -23,7 +23,7 @@ export interface WorkloadRow {
   assigneeId: string | null;
   assigneeName: string | null;
   total: number;
-  byStatus: { TODO: number; IN_PROGRESS: number; REVIEW: number };
+  byStatus: { TODO: number; IN_PROGRESS: number; REVIEW: number; PENDING_APPROVAL: number };
 }
 
 export async function fetchWorkload(teamId: string): Promise<{ items: WorkloadRow[] }> {
@@ -95,7 +95,13 @@ export interface SummaryReport {
   doneLast7Days: number;
   overdueCount: number;
   openCount: number;
-  byStatus: { TODO: number; IN_PROGRESS: number; REVIEW: number; DONE: number };
+  byStatus: {
+    TODO: number;
+    IN_PROGRESS: number;
+    REVIEW: number;
+    PENDING_APPROVAL: number;
+    DONE: number;
+  };
 }
 
 export async function fetchSummary(teamId: string): Promise<SummaryReport> {

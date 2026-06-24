@@ -1,7 +1,7 @@
 import type { Prisma, TaskPriority, TaskStatus } from '@prisma/client';
 import type { WidgetFilterCondition, WidgetFilters } from '../schemas/dashboards.js';
 
-const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW'];
+const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL'];
 
 export function parseGroupBy(groupBy: string | null | undefined): {
   kind: 'builtin';

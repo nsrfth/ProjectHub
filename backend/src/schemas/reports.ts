@@ -105,6 +105,7 @@ export const summaryResponse = z.object({
     TODO: z.number().int().nonnegative(),
     IN_PROGRESS: z.number().int().nonnegative(),
     REVIEW: z.number().int().nonnegative(),
+    PENDING_APPROVAL: z.number().int().nonnegative(),
     DONE: z.number().int().nonnegative(),
   }),
 });

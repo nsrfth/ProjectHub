@@ -33,6 +33,9 @@ export function LetterEditor({
   // Once saved (or when editing an existing letter), we have an id and can
   // show attachments + referrals.
   const [savedId, setSavedId] = useState<string | null>(letter?.id ?? null);
+  const [referenceNumber, setReferenceNumber] = useState<string | null>(
+    letter?.referenceNumber ?? null,
+  );
 
   const [subject, setSubject] = useState(letter?.subject ?? '');
   const [body, setBody] = useState(letter?.body ?? '');
@@ -69,6 +72,7 @@ export function LetterEditor({
     onSuccess: async (saved) => {
       setFormError(null);
       setSavedId(saved.id);
+      setReferenceNumber(saved.referenceNumber);
       invalidateList();
       await qc.invalidateQueries({ queryKey: ['correspondence', 'letter', saved.id] });
     },
@@ -81,10 +85,10 @@ export function LetterEditor({
       onClose={onClose}
     >
       <div className="space-y-4">
-        {savedId && letter?.referenceNumber && (
+        {savedId && referenceNumber && (
           <p className="text-xs text-slate-500">
             {t('correspondence.field.referenceNumber')}:{' '}
-            <span dir="ltr" className="font-mono">{letter.referenceNumber}</span>
+            <span dir="ltr" className="font-mono">{referenceNumber}</span>
           </p>
         )}
 

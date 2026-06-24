@@ -51,7 +51,13 @@ export interface SummaryReport {
   doneLast7Days: number;
   overdueCount: number;
   openCount: number;
-  byStatus: { TODO: number; IN_PROGRESS: number; REVIEW: number; DONE: number };
+  byStatus: {
+    TODO: number;
+    IN_PROGRESS: number;
+    REVIEW: number;
+    PENDING_APPROVAL: number;
+    DONE: number;
+  };
 }
 
 // "How did we do against the plan?" — three numbers a manager wants to see:
@@ -113,7 +119,7 @@ export interface BudgetReport {
 
 export type { BudgetCurrencyRollup };
 
-const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW'];
+const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL'];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export class ReportsService {
@@ -238,14 +244,26 @@ export class ReportsService {
       }),
     ]);
 
-    const byStatus = { TODO: 0, IN_PROGRESS: 0, REVIEW: 0, DONE: 0 };
+    const byStatus = {
+      TODO: 0,
+      IN_PROGRESS: 0,
+      REVIEW: 0,
+      PENDING_APPROVAL: 0,
+      DONE: 0,
+    };
     for (const c of statusCounts) {
-      byStatus[c.status as keyof typeof byStatus] = c._count._all;
+      if (c.status in byStatus) {
+        byStatus[c.status as keyof typeof byStatus] = c._count._all;
+      }
     }
     return {
       doneLast7Days,
       overdueCount,
-      openCount: byStatus.TODO + byStatus.IN_PROGRESS + byStatus.REVIEW,
+      openCount:
+        byStatus.TODO +
+        byStatus.IN_PROGRESS +
+        byStatus.REVIEW +
+        byStatus.PENDING_APPROVAL,
       byStatus,
     };
   }
