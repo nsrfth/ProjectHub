@@ -8,6 +8,7 @@
   "nav.dashboards": "داشبوردهای سفارشی",
   "nav.calendar": "تقویم",
   "nav.planner": "برنامه‌ریز",
+  "nav.portfolio": "سبد پروژه",
 
   "reports.team": "تیم",
   "reports.allTeams": "همه تیم‌ها",
@@ -935,5 +936,29 @@
   "profiles.chooseProfile": "یک پروفایل انتخاب کنید…",
   "profiles.saveOverrides": "ذخیرهٔ بازنویسی‌ها",
   "profiles.on": "روشن",
-  "profiles.off": "خاموش"
+  "profiles.off": "خاموش",
+
+  "portfolio.title": "سبد پروژه",
+  "portfolio.subtitle": "جمع‌بندی برنامه و سبد پروژه در سطح بالاتر از تیم‌ها. با اتصال پروژه‌ها به واحدهای سازمانی، در گزارش‌های زیردرخت لحاظ می‌شوند.",
+  "portfolio.noAccess": "برای دسترسی به درخت سبد پروژه به مجوز portfolio.view (معمولاً مدیر تیم) نیاز دارید.",
+  "portfolio.tree": "ساختار سازمانی",
+  "portfolio.create": "افزودن واحد",
+  "portfolio.rootParent": "ریشه (فقط HOLDING)",
+  "portfolio.name": "نام",
+  "portfolio.code": "کد",
+  "portfolio.add": "افزودن",
+  "portfolio.selectNode": "یک واحد سازمانی انتخاب کنید تا گزارش‌های جمع‌بندی را ببینید.",
+  "portfolio.projects": "پروژه",
+  "portfolio.active": "پروژه‌های فعال",
+  "portfolio.openTasks": "تسک‌های باز",
+  "portfolio.overdue": "تسک‌های معوق",
+  "portfolio.rag": "سلامت (RAG)",
+  "portfolio.ragCounts": "سبز {g} · کهربایی {a} · قرمز {r}",
+  "portfolio.cost": "بودجهٔ برنامه‌ریزی‌شده",
+  "portfolio.progress": "پیشرفت",
+  "portfolio.projectAttach": "واحد سازمانی سبد",
+  "portfolio.projectAttachHint": "این پروژه را به یک واحد سازمانی وصل کنید تا در جمع‌بندی سبد (فراتر از تیم) بیاید.",
+  "portfolio.chooseOrgUnit": "انتخاب واحد…",
+  "portfolio.detach": "— قطع اتصال —",
+  "portfolio.saved": "ذخیره شد"
 }

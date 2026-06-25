@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Modal from '@/features/ui/Modal';
+import { useAuth } from '@/features/auth/AuthContext';
 import { getTeam, listTeamMembersForAssignees } from '@/features/teams/api';
+import { useTeams } from '@/features/teams/TeamsContext';
 import { visibleTeamMembers } from '@/lib/systemUser';
 import { useT } from '@/lib/i18n';
 import type { ProjectCrossTeam } from '@/features/projects/api';
@@ -12,6 +14,7 @@ import ProjectFormFields, {
 } from '@/features/projects/ProjectFormFields';
 import ProjectDelegatesField from '@/features/projects/ProjectDelegatesField';
 import ProjectProfilePanel from '@/features/projects/ProjectProfilePanel';
+import ProjectOrgUnitPanel from '@/features/projects/ProjectOrgUnitPanel';
 
 interface ProjectEditModalProps {
   project: ProjectCrossTeam;
@@ -31,6 +34,11 @@ export default function ProjectEditModal({
   onSave,
 }: ProjectEditModalProps): JSX.Element {
   const t = useT();
+  const { user } = useAuth();
+  const { teams } = useTeams();
+  const canPortfolio =
+    user?.globalRole === 'ADMIN' ||
+    teams.find((tm) => tm.id === project.teamId)?.myRole === 'MANAGER';
   const [values, setValues] = useState<ProjectFormValues>(() => projectFormValuesFromProject(project));
   const [dateError, setDateError] = useState<string | null>(null);
 
@@ -112,6 +120,13 @@ export default function ProjectEditModal({
             teamId={project.teamId}
             projectId={project.id}
             canManage={teamDetail?.capabilities.manageProfiles ?? false}
+          />
+        )}
+        {!nameOnly && (
+          <ProjectOrgUnitPanel
+            teamId={project.teamId}
+            projectId={project.id}
+            canAttach={canPortfolio}
           />
         )}
         <div className="flex justify-end gap-2 pt-2">

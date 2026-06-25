@@ -8,6 +8,7 @@
   "nav.dashboards": "Dashboards",
   "nav.calendar": "Calendar",
   "nav.planner": "Planner",
+  "nav.portfolio": "Portfolio",
 
   "reports.team": "Team",
   "reports.allTeams": "All teams",
@@ -1038,5 +1039,29 @@
   "profiles.chooseProfile": "Choose a profile…",
   "profiles.saveOverrides": "Save overrides",
   "profiles.on": "On",
-  "profiles.off": "Off"
+  "profiles.off": "Off",
+
+  "portfolio.title": "Portfolio",
+  "portfolio.subtitle": "Cross-team program and portfolio roll-up above individual teams. Attach projects to org units to include them in subtree reports.",
+  "portfolio.noAccess": "You need portfolio.view (typically a team Manager) to access the portfolio tree.",
+  "portfolio.tree": "Org structure",
+  "portfolio.create": "Add org unit",
+  "portfolio.rootParent": "Root (HOLDING only)",
+  "portfolio.name": "Name",
+  "portfolio.code": "CODE",
+  "portfolio.add": "Add",
+  "portfolio.selectNode": "Select an org unit to view roll-up reports.",
+  "portfolio.projects": "projects",
+  "portfolio.active": "Active projects",
+  "portfolio.openTasks": "Open tasks",
+  "portfolio.overdue": "Overdue tasks",
+  "portfolio.rag": "Health (RAG)",
+  "portfolio.ragCounts": "Green {g} · Amber {a} · Red {r}",
+  "portfolio.cost": "Planned budget",
+  "portfolio.progress": "Progress",
+  "portfolio.projectAttach": "Portfolio org unit",
+  "portfolio.projectAttachHint": "Attach this project to an org unit for portfolio roll-up (cross-team).",
+  "portfolio.chooseOrgUnit": "Choose org unit…",
+  "portfolio.detach": "— Detach —",
+  "portfolio.saved": "Saved"
 }

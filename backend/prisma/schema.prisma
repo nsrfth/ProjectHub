@@ -397,6 +397,7 @@ model User {
   memberships    TeamMembership[]
   ownedProjects  Project[]        @relation("ProjectOwner")
   accountableForProjects Project[] @relation("ProjectAccountable")
+  managedOrgUnits OrgUnit[]       @relation("OrgUnitManager")
   assignedTasks  Task[]           @relation("TaskAssignee")
   createdTasks   Task[]           @relation("TaskCreator")
   responsibleForTasks    Task[]    @relation("TaskResponsible")
@@ -578,6 +579,7 @@ model Team {
   contacts                Contact[]
   correspondence          Correspondence[]
   correspondenceReferrals CorrespondenceReferral[]
+  orgUnitLinks            TeamOrgUnit[]
   directory     Directory?       @relation("TeamDirectory", fields: [directoryId], references: [id], onDelete: SetNull)
 
   @@index([directoryId])
@@ -694,6 +696,7 @@ model Project {
   createdAt      DateTime  @default(now())
   updatedAt     DateTime      @updatedAt
   team          Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  orgUnit       OrgUnit?      @relation(fields: [orgUnitId], references: [id], onDelete: SetNull)
   profile       ProjectProfile? @relation("ProjectAssignedProfile", fields: [profileId], references: [id], onDelete: SetNull)
   // ownerId is nullable + SetNull so admins can delete a user without
   // cascading the deletion to every project they own. The project then shows
@@ -846,6 +849,59 @@ model ProfileModuleSetting {
 
   @@unique([profileId, moduleKey])
   @@index([profileId])
+}
+
+// v1.99 (PMIS R3 — portfolio / program): typed hierarchy above Team.
+// HOLDING → PORTFOLIO → PROGRAM. Projects attach to any node via
+// Project.orgUnitId; roll-up reports aggregate the subtree (materialized
+// `path` prefix). Teams stay the security boundary — TeamOrgUnit is an
+// optional hint for default-attachment suggestions only.
+enum OrgUnitType {
+  HOLDING
+  PORTFOLIO
+  PROGRAM
+}
+
+model OrgUnit {
+  id        String       @id @default(cuid())
+  parentId  String?
+  type      OrgUnitType
+  name      String
+  // Machine code, unique within the parent (root parentId null).
+  code      String
+  // Materialized ancestry path: "/{id}" for root, "{parent.path}/{id}" for
+  // descendants. Used for subtree roll-ups (startsWith prefix match).
+  path      String
+  managerId String?
+  // Optional reporting currency for this subtree (R4 consumes it).
+  currency  Currency?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  parent    OrgUnit?     @relation("OrgUnitTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  OrgUnit[]    @relation("OrgUnitTree")
+  manager   User?        @relation("OrgUnitManager", fields: [managerId], references: [id], onDelete: SetNull)
+  projects  Project[]
+  teamLinks TeamOrgUnit[]
+
+  @@unique([parentId, code])
+  @@index([path])
+  @@index([parentId])
+  @@index([type])
+}
+
+// Optional team ↔ org-unit link for default-attachment suggestions.
+model TeamOrgUnit {
+  id        String   @id @default(cuid())
+  teamId    String
+  orgUnitId String
+  createdAt DateTime @default(now())
+
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  orgUnit OrgUnit @relation(fields: [orgUnitId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, orgUnitId])
+  @@index([orgUnitId])
 }
 
 // v1.50 / v1.51: team-scoped user groups for granting project access without

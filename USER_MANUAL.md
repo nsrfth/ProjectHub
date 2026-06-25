@@ -186,6 +186,22 @@ project code, baselines); profiles only toggle the *optional* modules on top.
 - Profiles never grant a permission your role lacks — they can only hide an optional
   module. They take full effect as the individual PMIS modules ship.
 
+### Portfolio / org units (v1.99)
+
+The **Portfolio** page (`/portfolio`, Managers and global ADMIN) shows the
+**org-unit tree** above teams: **Holding → Portfolio → Program**. Projects attach
+to any node; roll-up reports count every project in that node's subtree across
+all teams.
+
+- A seeded **Holding** root exists after migration; Managers can add Portfolio
+  and Program nodes beneath it.
+- **Attach a project:** Project edit (full mode) → **Portfolio org unit** picker
+  (`portfolio.attach_project`). Detached projects (`orgUnitId` null) do not appear
+  in roll-ups — same as before R3.
+- **Reports per node:** summary (counts), progress (% complete), health (RAG
+  distribution), planned budget by currency, and CSV export. EVM roll-up arrives
+  with the cost-control module (R7).
+
 ---
 
 ## Tasks — the basics

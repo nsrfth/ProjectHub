@@ -7,6 +7,26 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.99.0] — 2026-06-26
+
+**PMIS R3 — Portfolio / Program (OrgUnit).** A typed hierarchy above Team
+(HOLDING → PORTFOLIO → PROGRAM) for cross-team portfolio roll-up. Teams stay the
+security boundary; projects attach via `orgUnitId` and subtree reports aggregate
+every attached project under a node (materialized `path` prefix). Identity-safe:
+existing projects remain `orgUnitId` null (invisible to roll-ups).
+
+- **Schema:** `OrgUnit {parentId, type, name, code, path, managerId, currency}` +
+  optional `TeamOrgUnit {teamId, orgUnitId}` link for future default-attachment
+  hints. `Project.orgUnitId` gains its FK (column existed since v1.96). Migration
+  `20260708120000_pmis_r3_org_units` seeds one HOLDING root (`orgunit_holding`).
+- **API:** `GET/POST/PUT/DELETE /api/org-units[/:id]`, `POST …/:id/move`;
+  `PUT …/teams/:teamId/projects/:projectId/org-unit` (`portfolio.attach_project`);
+  subtree roll-ups `GET …/org-units/:id/reports/{summary,progress,rag,cost,evm,
+  portfolio.csv}` gated `portfolio.view` / `portfolio.manage`. EVM report is a
+  placeholder until R7. Cross-team project attach → existence-hiding 404.
+- **UI:** top-level **Portfolio** nav (Managers/ADMIN); tree browser + roll-up
+  cards; Project Settings → org-unit attach picker. EN + FA.
+
 ## [1.98.0] — 2026-06-25
 
 **PMIS R2 — Project Profiles.** Pluggable industry "profiles" toggle the optional

@@ -1,4 +1,6 @@
 import { NavLink, Link } from 'react-router-dom';
+import { useAuth } from '@/features/auth/AuthContext';
+import { useTeams } from '@/features/teams/TeamsContext';
 import { useT } from '@/lib/i18n';
 import {
   IconCalendar,
@@ -32,11 +34,18 @@ interface NavItem {
 
 export default function LeftSidebar({ open, onClose }: Props): JSX.Element {
   const t = useT();
+  const { user } = useAuth();
+  const { teams } = useTeams();
+  const showPortfolio =
+    user?.globalRole === 'ADMIN' || teams.some((tm) => tm.myRole === 'MANAGER');
 
   const items: NavItem[] = [
     { to: '/dashboard', label: t('nav.dashboard'), icon: IconDashboard },
     { to: '/teams', label: t('nav.teams'), icon: IconTeams },
     { to: '/projects', label: t('nav.projects'), icon: IconProjects },
+    ...(showPortfolio
+      ? [{ to: '/portfolio', label: t('nav.portfolio'), icon: IconReports }]
+      : []),
     { to: '/planner/my-tasks', label: t('nav.planner'), icon: IconCalendar },
     { to: '/reports', label: t('nav.reports'), icon: IconReports },
     { to: '/workload', label: t('nav.workload'), icon: IconWorkload },

@@ -16,6 +16,7 @@ import {
   teamProfileDefaultsRoutes,
   teamProfilesRoutes,
 } from './routes/profiles.js';
+import { orgUnitsRoutes, projectOrgUnitRoutes } from './routes/orgUnits.js';
 import { wbsRoutes } from './routes/wbs.js';
 import { tasksRoutes } from './routes/tasks.js';
 import { commentsRoutes } from './routes/comments.js';
@@ -230,6 +231,11 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     });
     await api.register(projectEffectiveConfigRoutes, {
       prefix: '/teams/:teamId/projects/:projectId/effective-config',
+    });
+    // v1.99: PMIS R3 — portfolio / program org-unit tree + roll-up reports.
+    await api.register(orgUnitsRoutes, { prefix: '/org-units' });
+    await api.register(projectOrgUnitRoutes, {
+      prefix: '/teams/:teamId/projects/:projectId/org-unit',
     });
     // v1.30: cross-team full-text search. Top-level mount — the endpoint
     // spans every team the caller is a member of, so it isn't nested
