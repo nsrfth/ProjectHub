@@ -7,6 +7,30 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.91.0] — 2026-06-25
+
+**Projects — health (RAG) signal for portfolio roll-up.**
+First slice of the PMIS "neutral core": every project carries a Red/Amber/Green
+health status so a future portfolio layer can roll up project health uniformly
+across teams and businesses. Backend + API only in this release — no SPA UI yet.
+
+- **Schema:** new `RagStatus` enum + `Project.ragStatus` (default `GREEN`, no
+  backfill needed), `Project.ragReason` (optional note), and
+  `Project.healthUpdatedAt` (migration `20260630120000_project_health`, additive).
+- **API:** `PUT /api/teams/:teamId/projects/:projectId/health` sets
+  `{ ragStatus, ragReason? }` and stamps `healthUpdatedAt`. The three fields are
+  now included on every project response.
+- **Decisions:** gated on project **WRITE** access (owner, `project.write_all`,
+  or a FULL group grant) — the same authority that edits a project's tasks; a
+  member without write access gets the existence-hiding 404. Health is a manual
+  PM judgement for now; a later slice may derive it from schedule/cost variance.
+- **UI:** none yet — the SPA will surface the RAG chip on the projects list and
+  the status report in a follow-up slice.
+
+> Versioning note: first of a multi-slice PMIS effort. CHANGELOG / `ARCHITECTURE.md`
+> / `package.json` had drifted behind the `TASKHUB_VERSION` product line (v1.90);
+> they are realigned to v1.91.0 here.
+
 ## [1.87.0] — 2026-06-20
 
 **Tasks — optional approval workflow.**
