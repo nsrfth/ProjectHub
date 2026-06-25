@@ -280,7 +280,7 @@ describe('Project profiles (PMIS R2)', () => {
       statusCode: 403,
       code: 'module_disabled',
     });
-    expect(gate(reqFor(neutralProject), {} as never)).rejects.toBeInstanceOf(AppError);
+    await expect(gate(reqFor(neutralProject), {} as never)).rejects.toBeInstanceOf(AppError);
 
     // EPC project → cost_control enabled → passes (resolves).
     await expect(gate(reqFor(epcProject), {} as never)).resolves.toBeUndefined();
