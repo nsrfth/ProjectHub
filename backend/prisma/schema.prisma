@@ -402,6 +402,12 @@ model User {
   createdTasks   Task[]           @relation("TaskCreator")
   responsibleForTasks    Task[]    @relation("TaskResponsible")
   approverForTasks       Task[]    @relation("TaskApprover")
+  // v2.0 (PMIS R4): time tracking + rate cards. Audit ids (decidedById on a
+  // period, createdById on an actual, submitted/decidedById on an expense) are
+  // plain scalars, not relations — they're observability stamps, not FKs.
+  rateCards        RateCard[]
+  timesheetPeriods TimesheetPeriod[]
+  timeEntries      TimeEntry[]      @relation("TimeEntryUser")
   responsibleForSubtasks Subtask[] @relation("SubtaskResponsible")
   // v1.42: Subtask assignee — distinct from responsible (RACI). Anyone
   // with project access can change this; SetNull on user delete.
@@ -580,6 +586,15 @@ model Team {
   correspondence          Correspondence[]
   correspondenceReferrals CorrespondenceReferral[]
   orgUnitLinks            TeamOrgUnit[]
+  // v2.0 (PMIS R4 — cost control + time tracking).
+  rateCards          RateCard[]
+  timesheetPeriods   TimesheetPeriod[]
+  timeEntries        TimeEntry[]
+  costAccounts       CostAccount[]
+  budgetLines        BudgetLine[]
+  commitments        Commitment[]
+  actualCostEntries  ActualCostEntry[]
+  expenses           Expense[]
   directory     Directory?       @relation("TeamDirectory", fields: [directoryId], references: [id], onDelete: SetNull)
 
   @@index([directoryId])
@@ -711,6 +726,13 @@ model Project {
   correspondence        Correspondence[]
   correspondenceCounters CorrespondenceCounter[]
   baselines             ProjectBaseline[]
+  // v2.0 (PMIS R4 — cost control + time tracking).
+  timeEntries        TimeEntry[]
+  costAccounts       CostAccount[]
+  budgetLines        BudgetLine[]
+  commitments        Commitment[]
+  actualCostEntries  ActualCostEntry[]
+  expenses           Expense[]
 
   // v1.30: tsvector for full-text search. See Task.searchVector for
   // rationale + lifecycle (managed by raw SQL, never read via Prisma).
@@ -1143,6 +1165,10 @@ model Task {
   customFieldValues CustomFieldValue[]
   // v1.94 (PMIS R1): Consulted/Informed RACI assignments for this task.
   raci         TaskRaci[]
+  // v2.0 (PMIS R4): this task as a WBS node for cost/time roll-up.
+  timeEntries       TimeEntry[]
+  budgetLines       BudgetLine[]
+  actualCostEntries ActualCostEntry[]
 
   // v1.30: tsvector for full-text search. Managed by raw SQL — the column
   // is GENERATED ALWAYS AS STORED with a GIN index. Prisma never reads it
@@ -1802,5 +1828,290 @@ model AutomationRun {
   rule        AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@index([ruleId, createdAt])
+  @@index([taskId])
+}
+
+// ============================================================================
+// v2.0 (PMIS R4 — Cost Control + Time Tracking). Two profile-gated modules:
+//   timesheets   — RateCard, TimesheetPeriod, TimeEntry
+//   cost_control — CostAccount (CBS), BudgetLine, Commitment, Expense,
+//                  ActualCostEntry (the append-only canonical AC ledger)
+// All money is stored as INTEGER minor units (`amountMinor: BigInt`) + a
+// Currency, per the R0 money convention (lib/money.ts). Cross-currency roll-up
+// uses FxRate → a snapshotted `baseAmountMinor` in the team reportingCurrency.
+// Everything is additive: existing projects backfill to a DEFAULT cost account
+// + one MIGRATED budget line from their legacy `plannedBudget`.
+// ============================================================================
+
+enum RateScope {
+  USER
+  ROLE
+}
+
+// Timesheet period lifecycle. Mirrors the task approval vocabulary (there is no
+// shared Approval table) but lives on the period: OPEN→SUBMITTED→APPROVED|REJECTED,
+// REJECTED/APPROVED→REOPENED (a manager re-opens to allow edits). Entries are
+// only editable while the owning period is OPEN or REOPENED (or has no period).
+enum TimesheetStatus {
+  OPEN
+  SUBMITTED
+  APPROVED
+  REJECTED
+  REOPENED
+}
+
+enum BudgetLineSource {
+  MIGRATED
+  MANUAL
+}
+
+enum CommitmentStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+// Where an actual-cost ledger entry came from. TIMESHEET/EXPENSE are posted by
+// approval flows; MANUAL/INVOICE by a cost manager. Corrections never edit a
+// row — they post a reversing entry (reversalOfId set, amount negated).
+enum CostEntrySource {
+  TIMESHEET
+  EXPENSE
+  INVOICE
+  MANUAL
+}
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+// Cost/bill rate for a user (or a team role). The active rate at a TimeEntry's
+// date is SNAPSHOTTED onto the entry so historical actuals never drift when a
+// rate changes. `effectiveTo` null = open-ended.
+model RateCard {
+  id            String    @id @default(cuid())
+  teamId        String
+  scope         RateScope
+  userId        String?
+  role          TeamRole?
+  costRateMinor BigInt
+  billRateMinor BigInt?
+  currency      Currency
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  team Team  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, scope])
+  @@index([userId])
+}
+
+model TimesheetPeriod {
+  id              String          @id @default(cuid())
+  teamId          String
+  userId          String
+  periodStart     DateTime        @db.Date
+  periodEnd       DateTime        @db.Date
+  status          TimesheetStatus @default(OPEN)
+  submittedAt     DateTime?
+  decidedAt       DateTime?
+  // Audit-only stamp; not an FK (mirrors how other audit ids are kept).
+  decidedById     String?
+  rejectionReason String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  team    Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries TimeEntry[]
+
+  @@unique([userId, periodStart])
+  @@index([teamId, userId])
+  @@index([status])
+}
+
+model TimeEntry {
+  id       String   @id @default(cuid())
+  teamId   String
+  userId   String
+  projectId String
+  // Optional WBS node (a Task) the time is booked against.
+  taskId   String?
+  periodId String?
+  date     DateTime @db.Date
+  minutes  Int
+  billable Boolean  @default(true)
+  note     String?
+  // Cost rate snapshotted from the active RateCard at create time (null when no
+  // rate is on file → the entry contributes hours but no labour cost).
+  costRateMinorSnapshot BigInt?
+  currencySnapshot      Currency?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team    Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user    User             @relation("TimeEntryUser", fields: [userId], references: [id], onDelete: Cascade)
+  project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task    Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  period  TimesheetPeriod? @relation(fields: [periodId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, projectId])
+  @@index([userId, date])
+  @@index([periodId])
+  @@index([taskId])
+}
+
+// Cost Breakdown Structure node. A per-project tree (materialized `path`, same
+// idiom as OrgUnit). Every project gets a seeded DEFAULT root at first use /
+// migration. `taskId` optionally pins an account to a WBS node.
+model CostAccount {
+  id        String  @id @default(cuid())
+  teamId    String
+  projectId String
+  parentId  String?
+  code      String
+  name      String
+  path      String
+  isDefault Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team     Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent   CostAccount?  @relation("CostAccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children CostAccount[] @relation("CostAccountTree")
+  budgetLines       BudgetLine[]
+  commitments       Commitment[]
+  actualCostEntries ActualCostEntry[]
+  expenses          Expense[]
+
+  @@unique([projectId, code])
+  @@index([teamId])
+  @@index([projectId])
+  @@index([parentId])
+}
+
+// Planned value (PV source): a budgeted amount on a cost account (optionally a
+// WBS node). The budget report sums these instead of the legacy plannedBudget.
+model BudgetLine {
+  id            String           @id @default(cuid())
+  teamId        String
+  projectId     String
+  costAccountId String
+  taskId        String?
+  amountMinor   BigInt
+  currency      Currency
+  source        BudgetLineSource @default(MANUAL)
+  note          String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  team        Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costAccount CostAccount @relation(fields: [costAccountId], references: [id], onDelete: Restrict)
+  task        Task?       @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([costAccountId])
+  @@index([teamId, currency])
+}
+
+// A committed-but-not-yet-actual obligation (e.g. a PO). Manual in R4; R9
+// procurement will emit these automatically (procurementRefId reserved).
+model Commitment {
+  id              String           @id @default(cuid())
+  teamId          String
+  projectId       String
+  costAccountId   String?
+  vendorName      String?
+  reference       String?
+  amountMinor     BigInt
+  currency        Currency
+  status          CommitmentStatus @default(OPEN)
+  procurementRefId String?
+  incurredOn      DateTime?        @db.Date
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  team        Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costAccount CostAccount? @relation(fields: [costAccountId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([costAccountId])
+  @@index([status])
+}
+
+// A cost incurred by a person/expense report. On APPROVE it posts an
+// ActualCostEntry(source=EXPENSE). Simple per-row status machine.
+model Expense {
+  id            String        @id @default(cuid())
+  teamId        String
+  projectId     String
+  costAccountId String?
+  taskId        String?
+  amountMinor   BigInt
+  currency      Currency
+  status        ExpenseStatus @default(DRAFT)
+  description   String?
+  incurredOn    DateTime      @db.Date
+  // Audit-only stamps (not FKs).
+  submittedById String?
+  decidedById   String?
+  decidedAt     DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  team        Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costAccount CostAccount? @relation(fields: [costAccountId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([status])
+  @@index([costAccountId])
+}
+
+// The canonical, APPEND-ONLY actual-cost ledger. `baseAmountMinor` is `amountMinor`
+// converted to the team reportingCurrency via FxRate at post time (snapshotted).
+// Corrections post a reversing row (reversalOfId set, amount negated) — rows are
+// never updated or deleted.
+model ActualCostEntry {
+  id            String          @id @default(cuid())
+  teamId        String
+  projectId     String
+  costAccountId String?
+  taskId        String?
+  source        CostEntrySource
+  amountMinor   BigInt
+  currency      Currency
+  baseAmountMinor BigInt
+  baseCurrency  Currency
+  fxRateId      String?
+  incurredOn    DateTime        @db.Date
+  description   String?
+  reversalOfId  String?
+  // Soft links back to the originating row (not FKs — the ledger is canonical).
+  sourceTimeEntryId String?
+  sourceExpenseId   String?
+  createdById   String?
+  createdAt     DateTime        @default(now())
+
+  team        Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costAccount CostAccount?      @relation(fields: [costAccountId], references: [id], onDelete: SetNull)
+  task        Task?             @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  reversalOf  ActualCostEntry?  @relation("ActualReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
+  reversedBy  ActualCostEntry[] @relation("ActualReversal")
+
+  @@index([projectId])
+  @@index([costAccountId])
+  @@index([teamId, incurredOn])
+  @@index([source])
   @@index([taskId])
 }

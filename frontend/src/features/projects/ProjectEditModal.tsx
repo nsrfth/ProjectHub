@@ -15,6 +15,7 @@ import ProjectFormFields, {
 import ProjectDelegatesField from '@/features/projects/ProjectDelegatesField';
 import ProjectProfilePanel from '@/features/projects/ProjectProfilePanel';
 import ProjectOrgUnitPanel from '@/features/projects/ProjectOrgUnitPanel';
+import ProjectCostPanel from '@/features/projects/ProjectCostPanel';
 
 interface ProjectEditModalProps {
   project: ProjectCrossTeam;
@@ -127,6 +128,13 @@ export default function ProjectEditModal({
             teamId={project.teamId}
             projectId={project.id}
             canAttach={canPortfolio}
+          />
+        )}
+        {!nameOnly && (
+          <ProjectCostPanel
+            teamId={project.teamId}
+            projectId={project.id}
+            canManage={canPortfolio}
           />
         )}
         <div className="flex justify-end gap-2 pt-2">

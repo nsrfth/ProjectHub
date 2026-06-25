@@ -110,6 +110,17 @@ export const PERMISSIONS = [
   'portfolio.manage',
   'portfolio.attach_project',
   'portfolio.manage_managers',
+  // v2.0 (PMIS R4 — cost control + time tracking). All ADDITIVE to the profile
+  // module gate (`cost_control` / `timesheets`): a role still needs these to
+  // mutate, and the module must be enabled for the project. Logging your OWN
+  // time is an implicit member capability (like creating a task) — no perm.
+  // `cost.manage` gates the cost ledger (cost accounts, budget lines,
+  // commitments, expenses, manual/reversing actuals, FX rates). `timesheet.approve`
+  // gates approving/rejecting OTHERS' timesheet periods (period owners submit
+  // their own). `timesheet.manage_rates` gates the team rate-card admin.
+  'cost.manage',
+  'timesheet.approve',
+  'timesheet.manage_rates',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -156,6 +167,9 @@ export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
     'portfolio.attach_project',
     'portfolio.manage_managers',
   ],
+  // v2.0 (PMIS R4): cost + time control.
+  Cost: ['cost.manage'],
+  Timesheets: ['timesheet.approve', 'timesheet.manage_rates'],
 };
 
 // Validate a string against the known constants. Used by the role-update

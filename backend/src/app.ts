@@ -17,6 +17,8 @@ import {
   teamProfilesRoutes,
 } from './routes/profiles.js';
 import { orgUnitsRoutes, projectOrgUnitRoutes } from './routes/orgUnits.js';
+import { timesheetsRoutes } from './routes/timesheets.js';
+import { costRoutes, fxRatesRoutes } from './routes/cost.js';
 import { wbsRoutes } from './routes/wbs.js';
 import { tasksRoutes } from './routes/tasks.js';
 import { commentsRoutes } from './routes/comments.js';
@@ -237,6 +239,10 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(projectOrgUnitRoutes, {
       prefix: '/teams/:teamId/projects/:projectId/org-unit',
     });
+    // v2.0: PMIS R4 — cost control + time tracking.
+    await api.register(timesheetsRoutes, { prefix: '/teams/:teamId' });
+    await api.register(costRoutes, { prefix: '/teams/:teamId/projects/:projectId/cost' });
+    await api.register(fxRatesRoutes, { prefix: '/teams/:teamId/fx-rates' });
     // v1.30: cross-team full-text search. Top-level mount — the endpoint
     // spans every team the caller is a member of, so it isn't nested
     // under /teams/:teamId like most read endpoints.

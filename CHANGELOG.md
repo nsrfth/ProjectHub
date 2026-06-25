@@ -7,6 +7,48 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [2.0.0] — 2026-06-26
+
+**PMIS R4 — Cost Control + Time Tracking.** Wave B opens: TaskHub now tracks
+*actual* cost and time, not just a planned-budget number. Timesheets feed the
+cost ledger — approving a timesheet posts labour into an append-only
+actual-cost ledger at the rate snapshotted when the time was logged. Both
+modules are profile-gated (`timesheets`, `cost_control`) and additive: a NEUTRAL
+project sees nothing new, and existing projects keep working unchanged.
+
+- **Money convention:** all R4 money is stored as integer **minor units**
+  (`amountMinor: BigInt`) + ISO currency (the R0 `lib/money.ts` convention), and
+  cross-currency roll-up snapshots a `baseAmountMinor` in the team
+  `reportingCurrency` via the `FxRate` table (`lib/fx.ts`; identity rows seeded).
+- **Schema (8 models):** `RateCard` (USER/ROLE cost + bill rates, effective
+  dates), `TimesheetPeriod` (OPEN→SUBMITTED→APPROVED|REJECTED→REOPENED),
+  `TimeEntry` (minutes + snapshotted rate); `CostAccount` (CBS tree, materialized
+  `path`, a seeded DEFAULT per project), `BudgetLine` (planned value),
+  `Commitment`, `Expense` (approve → posts an actual), and the append-only
+  `ActualCostEntry` ledger (corrections = reversing rows). Migration
+  `20260709120000_pmis_r4_cost_time` backfills a DEFAULT cost account + a
+  `MIGRATED` budget line from each project's legacy `plannedBudget`, seeds
+  identity FX rows, and grants the new permissions to Manager roles.
+- **Permissions:** `cost.manage`, `timesheet.approve`, `timesheet.manage_rates`
+  (additive to the module gate; logging your *own* time is an implicit member
+  capability).
+- **API — timesheets** (team-scoped, a weekly sheet spans projects):
+  `GET/POST/PUT/DELETE …/teams/:teamId/rate-cards`,
+  `…/time-entries` (+ `/bulk`, PATCH, DELETE),
+  `…/timesheets` (ensure period) + `/:id/{submit,approve,reject,reopen}`.
+  **Cost** (project-scoped, gated `cost_control`):
+  `…/projects/:id/cost/{summary,accounts,budget-lines,commitments,expenses,
+  actuals}` (+ `expenses/:id/{approve,reject}`, `actuals/:id/reverse`), and
+  team-scoped `…/fx-rates`. The per-project **`/cost/summary`** is the new
+  authoritative planned/committed/actual/remaining view (per currency + a
+  reporting-currency base total).
+- **UI:** new **Timesheets** page (log time, open/submit a weekly period, manager
+  approval queue) and a **Cost control** panel in Project settings (summary table
+  + add budget line + actual-ledger view). EN + FA.
+- **Carryover notes:** the team `…/reports/budget` stays legacy planned-only
+  (read-through) this release per the roadmap — the project cost summary is the
+  authoritative cost view; `workload?metric=hours` and EVM (R7) are not wired yet.
+
 ## [1.99.0] — 2026-06-26
 
 **PMIS R3 — Portfolio / Program (OrgUnit).** A typed hierarchy above Team

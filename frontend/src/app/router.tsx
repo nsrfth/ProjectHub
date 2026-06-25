@@ -32,6 +32,7 @@ import PublicFormPage from '@/pages/PublicFormPage';
 import AutomationsPage from '@/pages/settings/AutomationsPage';
 import ProfilesPage from '@/pages/settings/ProfilesPage';
 import PortfolioPage from '@/pages/PortfolioPage';
+import TimesheetsPage from '@/pages/TimesheetsPage';
 import SearchPage from '@/pages/SearchPage';
 import HelpPage from '@/pages/HelpPage';
 import AboutPage from '@/pages/AboutPage';
@@ -60,6 +61,7 @@ export const router = createBrowserRouter([
       { path: '/teams', element: <TeamsPage /> },
       { path: '/projects', element: <ProjectsPage /> },
       { path: '/portfolio', element: <PortfolioPage /> },
+      { path: '/timesheets', element: <TimesheetsPage /> },
       { path: '/projects/:projectId/tasks', element: <TasksPage /> },
       { path: '/projects/:projectId/tasks/:taskId', element: <TaskDetailPage /> },
       // v1.42: per-project Gantt report.

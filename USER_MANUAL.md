@@ -202,6 +202,36 @@ all teams.
   distribution), planned budget by currency, and CSV export. EVM roll-up arrives
   with the cost-control module (R7).
 
+### Cost control & time tracking (v2.0)
+
+Two new project modules turn TaskHub from "planned budget" tracking into real
+cost control. They are **off by default** and only appear when a project's
+profile enables **Timesheets** and/or **Cost Control** (Project edit → Profile).
+
+**Timesheets** (the **Timesheets** page in the sidebar):
+
+- **Log time** against a project (and optionally a task) by date and hours.
+- **Open a weekly period**, then **Submit** it for approval. While a period is
+  Open or Reopened you can still edit/delete its entries; once submitted it locks.
+- A **rate card** (cost rate per person or per role, set by a Manager) is
+  snapshotted onto each entry when you log it, so changing a rate later never
+  rewrites old timesheets.
+- Managers see an **approval queue**: **Approve** posts the labour cost into the
+  project's cost ledger; **Reject** returns it; **Reopen** unlocks an approved
+  period and reverses the cost it posted.
+
+**Cost control** (the **Cost control** panel in Project settings):
+
+- A per-project **summary** shows **Planned / Committed / Actual / Remaining** per
+  currency, plus a single total in the team's reporting currency.
+- **Planned** comes from **budget lines** (your existing project planned-budget is
+  migrated into one automatically); **Committed** from commitments; **Actual**
+  from the **append-only ledger** fed by approved timesheets, approved expenses,
+  and manual entries. Corrections are made by **reversing** an entry, never editing.
+- Managing budgets, commitments, expenses, actuals, and rate cards needs the new
+  **cost.manage** / **timesheet.manage_rates** / **timesheet.approve** permissions
+  (granted to Managers by default). Logging your own time needs no special right.
+
 ---
 
 ## Tasks — the basics
