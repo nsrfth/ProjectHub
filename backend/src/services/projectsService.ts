@@ -33,6 +33,7 @@ export interface ProjectView {
   accountableId: string | null;
   accountableName: string | null;
   name: string;
+  code: string | null;
   description: string | null;
   status: ProjectStatus;
   plannedBudget: string | null;
@@ -83,6 +84,7 @@ function toView(p: ProjectRow): ProjectView {
     accountableId: p.accountableId ?? null,
     accountableName: p.accountable?.name ?? null,
     name: p.name,
+    code: p.code,
     description: p.description,
     status: p.status,
     plannedBudget: p.plannedBudget === null ? null : p.plannedBudget.toFixed(2),
@@ -179,6 +181,7 @@ async function callerHasProjectEdit(
 }
 
 function updateTouchesNonNameFields(input: {
+  code?: string | null;
   description?: string | null;
   status?: ProjectStatus;
   ownerId?: string | null;
@@ -190,7 +193,8 @@ function updateTouchesNonNameFields(input: {
   labelIds?: string[];
 }): boolean {
   return (
-    input.description !== undefined
+    input.code !== undefined
+    || input.description !== undefined
     || input.status !== undefined
     // v1.86: owner reassignment is a non-name field — a rename-only manager
     // must NOT be able to hand the project (and its FULL access) to anyone.
@@ -204,6 +208,17 @@ function updateTouchesNonNameFields(input: {
   );
 }
 
+// v1.92 (PMIS R1): a duplicate project `code` within a team trips the
+// @@unique([teamId, code]) constraint → Prisma P2002. Surface it as a clean 409
+// instead of leaking a 500. Project has no other writable unique constraint, so
+// a P2002 from a project write is always the code clash.
+function rethrowProjectCodeConflict(err: unknown): never {
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+    throw Errors.conflict('A project with this code already exists in this team');
+  }
+  throw err;
+}
+
 export class ProjectsService {
   async create(
     // `creatorId` is the authenticated requester — the DEFAULT owner, NOT
@@ -213,6 +228,7 @@ export class ProjectsService {
     creatorId: string,
     input: {
       name: string;
+      code?: string | null;
       description?: string;
       status?: ProjectStatus;
       ownerId?: string | null;
@@ -248,30 +264,35 @@ export class ProjectsService {
       });
       budgetCurrency = team?.defaultCurrency ?? 'IRR';
     }
-    const p = await prisma.project.create({
-      data: {
-        teamId,
-        ownerId: effectiveOwnerId,
-        accountableId: input.accountableId ?? null,
-        name: input.name,
-        description: input.description ?? null,
-        ...(input.status !== undefined && { status: input.status }),
-        budgetCurrency,
-        ...(planned !== undefined && { plannedBudget: planned }),
-        ...(startDate !== undefined && { startDate }),
-        ...(endDate !== undefined && { endDate }),
-      },
-      include: projectInclude,
-    });
-    if (input.labelIds !== undefined && input.labelIds.length > 0) {
-      await syncProjectLabels(p.id, input.labelIds);
-      const hydrated = await prisma.project.findUniqueOrThrow({
-        where: { id: p.id },
+    try {
+      const p = await prisma.project.create({
+        data: {
+          teamId,
+          ownerId: effectiveOwnerId,
+          accountableId: input.accountableId ?? null,
+          name: input.name,
+          ...(input.code !== undefined && { code: input.code }),
+          description: input.description ?? null,
+          ...(input.status !== undefined && { status: input.status }),
+          budgetCurrency,
+          ...(planned !== undefined && { plannedBudget: planned }),
+          ...(startDate !== undefined && { startDate }),
+          ...(endDate !== undefined && { endDate }),
+        },
         include: projectInclude,
       });
-      return toView(hydrated);
+      if (input.labelIds !== undefined && input.labelIds.length > 0) {
+        await syncProjectLabels(p.id, input.labelIds);
+        const hydrated = await prisma.project.findUniqueOrThrow({
+          where: { id: p.id },
+          include: projectInclude,
+        });
+        return toView(hydrated);
+      }
+      return toView(p);
+    } catch (err) {
+      rethrowProjectCodeConflict(err);
     }
-    return toView(p);
   }
 
   async list(
@@ -312,6 +333,7 @@ export class ProjectsService {
     callerGlobalRole: GlobalRole,
     input: {
       name?: string;
+      code?: string | null;
       description?: string | null;
       status?: ProjectStatus;
       ownerId?: string | null;
@@ -370,6 +392,7 @@ export class ProjectsService {
         where: { id: projectId },
         data: {
           ...(input.name !== undefined && { name: input.name }),
+          ...(input.code !== undefined && { code: input.code }),
           ...(input.description !== undefined && { description: input.description }),
           ...(input.status !== undefined && { status: input.status }),
           ...(input.ownerId !== undefined && { ownerId: input.ownerId }),
@@ -394,7 +417,7 @@ export class ProjectsService {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw Errors.notFound('Project not found');
       }
-      throw err;
+      rethrowProjectCodeConflict(err);
     }
   }
 

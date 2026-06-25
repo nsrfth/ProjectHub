@@ -40,6 +40,8 @@ const budgetSchema = z
 export const createProjectBody = z
   .object({
     name: z.string().min(1).max(120).trim(),
+    // v1.92 (PMIS R1): optional human project code, unique per team when set.
+    code: z.string().trim().min(1).max(40).nullable().optional(),
     description: z.string().max(2000).trim().optional(),
     status: projectStatusEnum.optional(),
     // v1.85: selectable project OWNER at creation. Owner = FULL project access,
@@ -58,6 +60,8 @@ export const createProjectBody = z
 export const updateProjectBody = z
   .object({
     name: z.string().min(1).max(120).trim().optional(),
+    // v1.92 (PMIS R1): set/clear the project code (null clears). Non-name field.
+    code: z.string().trim().min(1).max(40).nullable().optional(),
     description: z.string().max(2000).trim().nullable().optional(),
     status: projectStatusEnum.optional(),
     // v1.86: reassignable OWNER from the edit form. Owner = FULL project access,
@@ -76,6 +80,7 @@ export const updateProjectBody = z
   .refine(
     (v) =>
       v.name !== undefined ||
+      v.code !== undefined ||
       v.description !== undefined ||
       v.status !== undefined ||
       v.ownerId !== undefined ||
@@ -136,6 +141,8 @@ export const projectResponse = z.object({
   accountableId: z.string().nullable(),
   accountableName: z.string().nullable(),
   name: z.string(),
+  // v1.92 (PMIS R1): optional human project code (unique per team).
+  code: z.string().nullable(),
   description: z.string().nullable(),
   status: projectStatusEnum,
   plannedBudget: z.string().nullable(),

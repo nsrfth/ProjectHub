@@ -607,6 +607,10 @@ model Project {
   // delete so we don't cascade-nuke projects.
   accountableId String?
   name          String
+  // v1.92 (PMIS R1 — neutral core): optional human-facing project code, unique
+  // within the team when set (e.g. "EPC-014"). Nullable so existing projects
+  // stay valid with no backfill; the org assigns codes as it adopts them.
+  code          String?
   description   String?
   status        ProjectStatus @default(ACTIVE)
   // v1.41: optional budget fields. DECIMAL(18,2): 16 digits before the
@@ -653,6 +657,7 @@ model Project {
   // SearchService talks to it via $queryRaw only.
   searchVector Unsupported("tsvector")?
 
+  @@unique([teamId, code])
   @@index([teamId, status])
   @@index([teamId, startDate])
   @@index([ownerId])

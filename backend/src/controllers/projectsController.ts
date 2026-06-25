@@ -28,6 +28,7 @@ function serialize(p: {
   accountableId: string | null;
   accountableName: string | null;
   name: string;
+  code: string | null;
   description: string | null;
   status: string;
   // v1.41: budget fields are already string-shaped by the service's toView.
@@ -50,6 +51,7 @@ function serialize(p: {
     accountableId: p.accountableId,
     accountableName: p.accountableName,
     name: p.name,
+    code: p.code,
     description: p.description,
     status: p.status,
     plannedBudget: p.plannedBudget,

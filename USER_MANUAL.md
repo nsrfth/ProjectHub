@@ -338,6 +338,8 @@ There's a **Print** button for a clean single-page printout, and the page render
 
 **Project health (RAG) — v1.91.** Every project now carries a **health** signal — **Green / Amber / Red** with an optional reason — set by anyone with project **write** access (owner, manager, or a full-access delegate). It's the first piece of the upcoming **portfolio roll-up**, which will show health across every project at a glance. In this release health is set through the API (`PUT …/projects/:id/health`); the on-screen RAG chip and its slot in this status report arrive in a follow-up.
 
+**Project code — v1.92.** A project can carry an optional **code** (e.g. `EPC-014`) — a short identifier unique within the team — set when you create or edit the project. It's there for the upcoming **portfolio roll-up** to reference. Codes are optional, and two different teams may reuse the same code.
+
 ### Project Gantt chart (v1.42, scales v1.76)
 
 Open a project → **Gantt** (or `/projects/:id/reports/gantt`). The chart lists every **scheduled subtask** (start + end dates) grouped under its parent task. Bars are coloured by parent status; overdue open items get a red border. Off-days (weekends + holidays) are shaded red; hover a red day for the holiday name.

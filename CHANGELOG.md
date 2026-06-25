@@ -7,6 +7,23 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.92.0] — 2026-06-25
+
+**Projects — human-facing project code.**
+Second slice of the PMIS "neutral core": projects can carry an optional **code**
+(e.g. `EPC-014`), unique within a team, ready for the portfolio roll-up to key on.
+
+- **Schema:** nullable `Project.code` + `@@unique([teamId, code])` (migration
+  `20260701120000_project_code`, additive — no backfill; existing projects keep
+  `code = NULL`, which the unique index permits in any number per team).
+- **API:** `code` accepted on project **create** and **update** (`PATCH …`), and
+  returned on every project response. Send `null` to clear it.
+- **Decisions:** a duplicate code in the same team → **409 CONFLICT**; the same
+  code in different teams is allowed. `code` is a non-name field, so a rename-only
+  manager can't set it (owner / global-admin only), matching budget/dates.
+- **UI:** none yet — the SPA will show/edit the code alongside the project in a
+  follow-up slice.
+
 ## [1.91.0] — 2026-06-25
 
 **Projects — health (RAG) signal for portfolio roll-up.**
