@@ -107,6 +107,7 @@ export default function ProjectEditModal({
           members={members}
           nameOnly={nameOnly}
           dateError={dateError}
+          hideBudget={!nameOnly}
         />
         {/* v1.86: owner-facing full-edit delegates — only in full-edit mode. */}
         {!nameOnly && (

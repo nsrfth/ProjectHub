@@ -28,6 +28,8 @@ interface ProjectFormFieldsProps {
   members: TeamMember[];
   nameOnly?: boolean;
   dateError?: string | null;
+  /** Hide the plannedBudget/budgetCurrency fields when ProjectCostPanel already covers them. */
+  hideBudget?: boolean;
 }
 
 const STATUSES: ProjectStatus[] = ['ACTIVE', 'ON_HOLD', 'ARCHIVED'];
@@ -76,6 +78,7 @@ export default function ProjectFormFields({
   members,
   nameOnly = false,
   dateError,
+  hideBudget = false,
 }: ProjectFormFieldsProps): JSX.Element {
   const t = useT();
   const locked = nameOnly;
@@ -188,29 +191,31 @@ export default function ProjectFormFields({
         disabled={locked}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span>{t('budget.currency')}</span>
-          <CurrencySelector
-            value={values.budgetCurrency}
-            onChange={(c) => onChange({ budgetCurrency: c })}
-            disabled={locked}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span>{t('projects.budget.planned')}</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={values.plannedBudget}
-            onChange={(e) => onChange({ plannedBudget: e.target.value })}
-            disabled={locked}
-            className="rounded border px-2 py-1.5 dark:bg-slate-700 disabled:opacity-60"
-            dir="ltr"
-          />
-        </label>
-      </div>
+      {!hideBudget && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+            <span>{t('budget.currency')}</span>
+            <CurrencySelector
+              value={values.budgetCurrency}
+              onChange={(c) => onChange({ budgetCurrency: c })}
+              disabled={locked}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span>{t('projects.budget.planned')}</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={values.plannedBudget}
+              onChange={(e) => onChange({ plannedBudget: e.target.value })}
+              disabled={locked}
+              className="rounded border px-2 py-1.5 dark:bg-slate-700 disabled:opacity-60"
+              dir="ltr"
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
