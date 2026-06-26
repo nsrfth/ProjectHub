@@ -10,6 +10,7 @@ import {
   createTaskBody,
   listTasksQuery,
   moveTaskBody,
+  progressBody,
   rejectTaskBody,
   reorderTaskBody,
   responsibleCandidatesResponse,
@@ -130,6 +131,21 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.move,
+  });
+
+  // v2.1.1 (PMIS R1 supplement): set percentComplete + mode atomically.
+  // MANUAL mode requires percentComplete; FROM_CHILDREN and FROM_STATUS derive it.
+  r.put('/:taskId/progress', {
+    preHandler: [requireProjectWriteAccess(), requireScope('tasks:write')],
+    schema: {
+      tags: ['tasks'],
+      summary: 'Update task progress (percentComplete + mode)',
+      params: z.object({ teamId: z.string(), projectId: z.string(), taskId: z.string() }),
+      body: progressBody,
+      response: { 200: taskResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.updateProgress,
   });
 
   // v1.87: approval decisions. Deliberately NOT requireProjectWriteAccess — the

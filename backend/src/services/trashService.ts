@@ -2,6 +2,7 @@ import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import type { GlobalRole, TeamRole } from '@prisma/client';
 import { userHasPermission } from '../middleware/requirePermission.js';
+import { buildWbsPath, refreshIsSummary, repathDescendants } from '../lib/wbs.js';
 
 // v1.21: per-team trash for soft-deleted Tasks + Comments.
 //
@@ -138,13 +139,49 @@ export class TrashService {
   }
 
   async restoreTask(teamId: string, taskId: string): Promise<void> {
-    const t = await prisma.task.findUnique({ where: { id: taskId }, select: { teamId: true, deletedAt: true } });
+    const t = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { teamId: true, deletedAt: true, parentId: true },
+    });
     if (!t || t.teamId !== teamId || t.deletedAt === null) {
       throw Errors.notFound('Task not in trash');
     }
-    await prisma.task.update({
-      where: { id: taskId },
-      data: { deletedAt: null, deletedById: null },
+    await prisma.$transaction(async (tx) => {
+      // Recompute wbsPath from parent's current path (parent may have moved
+      // while this task was in the trash).
+      let wbsPath: string;
+      let wbsDepth: number;
+      if (t.parentId) {
+        const parent = await tx.task.findFirst({
+          where: { id: t.parentId, deletedAt: null },
+          select: { wbsPath: true, wbsDepth: true },
+        });
+        if (parent?.wbsPath) {
+          wbsPath = buildWbsPath(parent.wbsPath, taskId);
+          wbsDepth = parent.wbsDepth + 1;
+        } else {
+          // Parent is also trashed or has no path — fall back to root.
+          wbsPath = `/${taskId}`;
+          wbsDepth = 0;
+        }
+      } else {
+        wbsPath = `/${taskId}`;
+        wbsDepth = 0;
+      }
+      await tx.task.update({
+        where: { id: taskId },
+        data: { deletedAt: null, deletedById: null, wbsPath, wbsDepth },
+      });
+      // Parent now has at least one more live child.
+      if (t.parentId) {
+        const liveParent = await tx.task.findFirst({
+          where: { id: t.parentId, deletedAt: null },
+          select: { id: true },
+        });
+        if (liveParent) {
+          await tx.task.update({ where: { id: t.parentId }, data: { isSummary: true } });
+        }
+      }
     });
   }
 
@@ -171,11 +208,28 @@ export class TrashService {
   ): Promise<void> {
     const setting = await readEmptyAllowedRoles();
     await assertCanPurge(setting, callerId, teamId, callerTeamRole, callerGlobalRole);
-    const t = await prisma.task.findUnique({ where: { id: taskId }, select: { teamId: true, deletedAt: true } });
+    const t = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { teamId: true, deletedAt: true, projectId: true, wbsPath: true, wbsDepth: true },
+    });
     if (!t || t.teamId !== teamId || t.deletedAt === null) {
       throw Errors.notFound('Task not in trash');
     }
-    await prisma.task.delete({ where: { id: taskId } });
+    await prisma.$transaction(async (tx) => {
+      // Fix live children before deleting: they become roots.
+      const liveChildren = await tx.task.findMany({
+        where: { parentId: taskId, deletedAt: null },
+        select: { id: true, wbsPath: true, wbsDepth: true },
+      });
+      for (const child of liveChildren) {
+        const oldChildPath = child.wbsPath ?? `/${child.id}`;
+        const newChildPath = `/${child.id}`;
+        const depthDelta = -(child.wbsDepth ?? 0);
+        await repathDescendants(tx, t.projectId, oldChildPath, newChildPath, depthDelta);
+        await tx.task.update({ where: { id: child.id }, data: { wbsPath: newChildPath, wbsDepth: 0 } });
+      }
+      await tx.task.delete({ where: { id: taskId } });
+    });
   }
 
   async purgeComment(
@@ -218,6 +272,18 @@ export class TrashService {
       const t = await tx.task.deleteMany({
         where: { teamId, deletedAt: { not: null } },
       });
+      // v2.1.1: after deleteMany the FK SetNull cascade may have set parentId=null
+      // on live children of purged tasks. Reset their wbsPath+wbsDepth to root
+      // so they are no longer orphaned. Their children's paths are still stale
+      // but parentId chains are intact, so /wbs continues to work correctly.
+      await tx.$executeRaw`
+        UPDATE "Task"
+        SET "wbsPath" = '/' || "id", "wbsDepth" = 0
+        WHERE "teamId" = ${teamId}
+          AND "deletedAt" IS NULL
+          AND "parentId" IS NULL
+          AND ("wbsPath" IS NULL OR "wbsPath" != '/' || "id")
+      `;
       return { tasksPurged: t.count, commentsPurged: c.count };
     });
   }

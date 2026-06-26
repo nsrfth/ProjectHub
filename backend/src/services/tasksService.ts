@@ -1,4 +1,5 @@
-import { Prisma, type Currency, type GlobalRole, type TaskPriority, type TaskStatus, type TeamRole } from '@prisma/client';
+import { Prisma, type Currency, type GlobalRole, type PercentCompleteMode, type TaskPriority, type TaskStatus, type TeamRole } from '@prisma/client';
+import { buildWbsPath, refreshIsSummary, repathDescendants } from '../lib/wbs.js';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import {
@@ -174,15 +175,19 @@ export interface TaskView {
   actualStart: Date | null;
   actualEnd: Date | null;
   percentComplete: number;
+  // v2.1.1 (PMIS R1 supplement): how percentComplete was last set.
+  percentCompleteMode: PercentCompleteMode;
   // v1.42: optional task budget fields. Fixed-2 strings on the wire
   // (Decimal serializes to string to preserve precision); null when unset.
   plannedBudget: string | null;
   actualSpent: string | null;
   budgetCurrency: Currency;
   position: number;
-  // v1.97 (PMIS R1): WBS parent id (null = root). Outline code/depth are
-  // derived by the /wbs endpoint, not on the flat task row.
+  // v1.97 (PMIS R1): WBS parent id (null = root).
   parentId: string | null;
+  // v2.1.1 (PMIS R1 supplement): materialized WBS columns.
+  wbsDepth: number;
+  isSummary: boolean;
   createdAt: Date;
   updatedAt: Date;
   labels: TaskLabelView[];
@@ -249,12 +254,15 @@ function toView(
     actualStart: row.actualStart,
     actualEnd: row.actualEnd,
     percentComplete: row.percentComplete,
+    percentCompleteMode: row.percentCompleteMode,
     // v1.42: Decimal → fixed-2 string. Mirrors v1.41 Project.toView.
     plannedBudget: row.plannedBudget === null ? null : row.plannedBudget.toFixed(2),
     actualSpent: row.actualSpent === null ? null : row.actualSpent.toFixed(2),
     budgetCurrency: row.project.budgetCurrency,
     position: row.position,
     parentId: row.parentId,
+    wbsDepth: row.wbsDepth,
+    isSummary: row.isSummary,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     labels: row.labels.map((tl) => ({ id: tl.label.id, name: tl.label.name, color: tl.label.color })),
@@ -310,6 +318,18 @@ async function assertLabelsInTeam(teamId: string, labelIds: string[]): Promise<s
   return unique;
 }
 
+// v2.1.1: maps TaskStatus → a canonical percentComplete for FROM_STATUS mode.
+function statusToPercent(status: TaskStatus): number {
+  const map: Record<TaskStatus, number> = {
+    TODO: 0,
+    IN_PROGRESS: 50,
+    REVIEW: 75,
+    PENDING_APPROVAL: 90,
+    DONE: 100,
+  };
+  return map[status] ?? 0;
+}
+
 async function attachCustomFields(teamId: string, views: TaskView[]): Promise<TaskView[]> {
   if (views.length === 0) return views;
   const map = await _customFields.buildCustomFieldsForTasks(
@@ -361,6 +381,8 @@ export class TasksService {
       actualStart?: string | null;
       actualEnd?: string | null;
       percentComplete?: number;
+      // v2.1.1 (PMIS R1 supplement): how percentComplete is interpreted.
+      percentCompleteMode?: PercentCompleteMode;
       // v1.42: optional budget pair. number | string | null.
       plannedBudget?: number | string | null;
       actualSpent?: number | string | null;
@@ -452,14 +474,19 @@ export class TasksService {
     // the last root when parentId is null). Same sparse-less append shape as the
     // kanban position above, but keyed on (projectId, parentId).
     let wbsParentId: string | null = null;
+    let parentWbsPath: string | null = null;
+    let parentWbsDepth = -1;
     if (input.parentId) {
       const parent = await prisma.task.findFirst({
         where: { id: input.parentId, projectId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, wbsPath: true, wbsDepth: true },
       });
       if (!parent) throw Errors.badRequest('Parent task not found in this project');
       wbsParentId = input.parentId;
+      parentWbsPath = parent.wbsPath;
+      parentWbsDepth = parent.wbsDepth;
     }
+    const newWbsDepth = wbsParentId !== null ? parentWbsDepth + 1 : 0;
     const lastSibling = await prisma.task.findFirst({
       where: { projectId, parentId: wbsParentId, deletedAt: null },
       orderBy: { wbsOrder: 'desc' },
@@ -520,10 +547,14 @@ export class TasksService {
             actualEnd: input.actualEnd === null ? null : new Date(input.actualEnd),
           }),
           ...(input.percentComplete !== undefined && { percentComplete: input.percentComplete }),
+          percentCompleteMode: input.percentCompleteMode ?? 'FROM_CHILDREN',
           position,
           // v1.97 (PMIS R1): WBS placement.
           parentId: wbsParentId,
           wbsOrder,
+          wbsDepth: newWbsDepth,
+          isSummary: false,
+          // wbsPath is set via a follow-up update (needs the task id).
           // v1.42: Decimal? — Prisma accepts undefined ("don't write") so
           // the conditional spread keeps the default NULL when caller omits.
           ...(normaliseBudget(input.plannedBudget) !== undefined && {
@@ -535,6 +566,11 @@ export class TasksService {
         },
         include: TASK_INCLUDE,
       });
+      // v2.1.1: set the materialized wbsPath now that we have the task id.
+      const wbsPath = buildWbsPath(parentWbsPath, task.id);
+      await tx.task.update({ where: { id: task.id }, data: { wbsPath } });
+      // Mark the parent as a summary task (it now has at least one live child).
+      await refreshIsSummary(tx, wbsParentId);
       // v1.78.2: bulk-attach validated labels. createMany is one INSERT
       // (no row-by-row round trips); skipDuplicates is defensive — the
       // task is newly created so no collision should happen in practice.
@@ -692,6 +728,8 @@ export class TasksService {
       actualStart?: string | null;
       actualEnd?: string | null;
       percentComplete?: number;
+      // v2.1.1 (PMIS R1 supplement): how percentComplete is interpreted.
+      percentCompleteMode?: PercentCompleteMode;
       isMilestone?: boolean;
       milestoneKind?: string | null;
       // v1.42: budget patch — undefined leaves, null clears.
@@ -1005,6 +1043,7 @@ export class TasksService {
               actualEnd: input.actualEnd === null ? null : new Date(input.actualEnd),
             }),
             ...(input.percentComplete !== undefined && { percentComplete: input.percentComplete }),
+            ...(input.percentCompleteMode !== undefined && { percentCompleteMode: input.percentCompleteMode }),
             ...(input.isMilestone !== undefined && { isMilestone: input.isMilestone }),
             ...(input.milestoneKind !== undefined && { milestoneKind: input.milestoneKind }),
             // v1.42: budget patch.
@@ -1439,7 +1478,7 @@ export class TasksService {
 
     const task = await prisma.task.findFirst({
       where: { id: taskId, projectId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, parentId: true, wbsPath: true, wbsDepth: true },
     });
     if (!task) throw Errors.notFound('Task not found');
     if (input.newParentId === taskId) {
@@ -1491,6 +1530,25 @@ export class TasksService {
           data:
             ordered[i] === taskId ? { parentId: newParentId, wbsOrder: i } : { wbsOrder: i },
         });
+      }
+      // v2.1.1: update materialized WBS path + depth for task and its subtree.
+      const newParentRow = newParentId
+        ? await tx.task.findFirst({ where: { id: newParentId }, select: { wbsPath: true, wbsDepth: true } })
+        : null;
+      const oldPath = task.wbsPath ?? `/${taskId}`;
+      const newPath = buildWbsPath(newParentRow?.wbsPath ?? null, taskId);
+      const oldDepth = task.wbsDepth ?? 0;
+      const newDepth = newParentRow ? newParentRow.wbsDepth + 1 : 0;
+      await repathDescendants(tx, projectId, oldPath, newPath, newDepth - oldDepth);
+      await tx.task.update({ where: { id: taskId }, data: { wbsPath: newPath, wbsDepth: newDepth } });
+      // Update isSummary on old parent (it may have lost its last live child).
+      const oldParentId = task.parentId;
+      if (oldParentId !== newParentId) {
+        await refreshIsSummary(tx, oldParentId);
+      }
+      // New parent always has at least one live child after this move.
+      if (newParentId) {
+        await tx.task.update({ where: { id: newParentId }, data: { isSummary: true } });
       }
     });
 
@@ -1584,6 +1642,51 @@ export class TasksService {
     return out;
   }
 
+  // v2.1.1 (PMIS R1 supplement): set percentComplete + mode atomically. Mode controls
+  // how the value is derived: MANUAL = supplied value, FROM_STATUS = map task.status
+  // to %, FROM_CHILDREN = weighted leaf rollup of the subtree at call time.
+  async updateProgress(
+    teamId: string,
+    projectId: string,
+    taskId: string,
+    actorId: string,
+    actorGlobalRole: GlobalRole,
+    input: { percentComplete?: number; mode: PercentCompleteMode },
+  ): Promise<TaskView> {
+    await assertCanWriteProject(projectId, teamId, actorId, actorGlobalRole);
+    const task = await prisma.task.findFirst({
+      where: { id: taskId, projectId, deletedAt: null },
+      select: { id: true, status: true },
+    });
+    if (!task) throw Errors.notFound('Task not found');
+
+    let newPct: number;
+    if (input.mode === 'MANUAL') {
+      // Validated by the schema layer; checked here for the service signature.
+      if (input.percentComplete === undefined) throw Errors.badRequest('percentComplete required for MANUAL mode');
+      newPct = input.percentComplete;
+    } else if (input.mode === 'FROM_STATUS') {
+      newPct = statusToPercent(task.status);
+    } else {
+      // FROM_CHILDREN: snapshot the current rollup from the WBS tree.
+      const wbsNodes = await this.projectWbs(teamId, projectId);
+      const node = wbsNodes.find((n) => n.id === taskId);
+      newPct = node?.rollupPercentComplete ?? 0;
+    }
+
+    await prisma.task.update({
+      where: { id: taskId },
+      data: { percentComplete: newPct, percentCompleteMode: input.mode },
+    });
+    await logActivity(prisma, {
+      taskId,
+      actorId,
+      action: 'task.progress_updated',
+      meta: { percentComplete: newPct, mode: input.mode },
+    });
+    return withCustomFields(teamId, await this.get(teamId, projectId, taskId));
+  }
+
   // Rewrite every task in (projectId, status) with sparse positions. Used as
   // a fallback when adjacent positions are too close to slot a new value between.
   private async renumberColumn(
@@ -1642,9 +1745,13 @@ export class TasksService {
       throw Errors.forbidden('Read-only access to this project');
     }
     const existing = await this.get(teamId, projectId, taskId); // 404 if not in this project/team
-    await prisma.task.update({
-      where: { id: taskId },
-      data: { deletedAt: new Date(), deletedById: actorId },
+    await prisma.$transaction(async (tx) => {
+      await tx.task.update({
+        where: { id: taskId },
+        data: { deletedAt: new Date(), deletedById: actorId },
+      });
+      // v2.1.1: parent may no longer have any live children.
+      await refreshIsSummary(tx, existing.parentId);
     });
     // Webhook subscribers DO want to know — the delete event fires from the
     // service layer because it's the only place we have the team scope after

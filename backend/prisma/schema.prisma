@@ -59,6 +59,15 @@ enum TaskPriority {
   URGENT
 }
 
+// v2.1.1 (PMIS R1 supplement): controls how Task.percentComplete is interpreted.
+// MANUAL = the stored value; FROM_CHILDREN = weighted leaf rollup at call time;
+// FROM_STATUS = derived from the task's current status.
+enum PercentCompleteMode {
+  MANUAL
+  FROM_CHILDREN
+  FROM_STATUS
+}
+
 // v1.94 (PMIS R1 — neutral core): the Consulted / Informed legs of RACI.
 // Responsible (Task.responsibleId) and Accountable (Project.accountableId)
 // already exist as scalar fields; C and I are many-per-task, so they live in a
@@ -1196,18 +1205,27 @@ model Task {
   baselineEnd   DateTime?
   actualStart   DateTime?
   actualEnd     DateTime?
-  percentComplete Int        @default(0)
-  // v1.97 (PMIS R1 — neutral core): WBS n-level tree. `parentId` is a
-  // self-reference within the SAME project (enforced in the service); a null
-  // parent is a WBS root. `wbsOrder` sequences siblings under a parent (the
-  // /wbs read sorts by it, then createdAt). The outline code "1.2.3", depth,
-  // and isSummary are DERIVED on read in the /wbs endpoint rather than stored —
-  // this keeps task create/move/delete from having to rewrite the whole
-  // project's codes, and makes soft-delete/restore self-correcting (a child of
-  // a trashed parent simply floats to a root in the tree view). Subtask stays
-  // the leaf checklist; WBS nests Tasks.
+  percentComplete     Int                  @default(0)
+  // v2.1.1 (PMIS R1 supplement): how percentComplete was last set.
+  // MANUAL = stored value; FROM_CHILDREN = leaf-weighted rollup at call time;
+  // FROM_STATUS = derived from task status. Defaults to FROM_CHILDREN so new
+  // tasks roll up naturally; existing rows were backfilled to FROM_CHILDREN.
+  percentCompleteMode PercentCompleteMode  @default(FROM_CHILDREN)
+  // v1.97 (PMIS R1 — neutral core): WBS n-level tree. `parentId` is a self-
+  // reference within the SAME project; a null parent is a WBS root. `wbsOrder`
+  // sequences siblings. The outline code "1.2.3" is still DERIVED on read
+  // (would require sibling resequencing on any insert/delete). wbsPath,
+  // wbsDepth, and isSummary are MATERIALIZED so subtree queries and EVM
+  // leaf-detection work at SQL level without a full DFS walk.
   parentId    String?
   wbsOrder    Int          @default(0)
+  // Materialized ancestry path: "/{id}" for root, "{parent.path}/{id}" for
+  // children. Set on create/move/restore; cleared tasks retain their last path.
+  wbsPath     String?
+  wbsDepth    Int          @default(0)
+  // true iff this task has at least one live (non-deleted) child. Maintained
+  // by tasksService on create/move/remove and trashService on restore/purge.
+  isSummary   Boolean      @default(false)
   // v2.1 (PMIS R5 — scheduling): zero-duration milestone marker on the Gantt.
   isMilestone   Boolean      @default(false)
   milestoneKind String?
@@ -1276,6 +1294,8 @@ model Task {
   @@index([projectId, status, position])
   // v1.97 (PMIS R1): WBS tree reads load a project's children grouped by parent.
   @@index([projectId, parentId])
+  // v2.1.1 (PMIS R1 supplement): subtree queries via wbsPath LIKE prefix.
+  @@index([projectId, wbsPath])
   @@unique([spawnedFromTemplateId, spawnedForPeriod])
 }
 

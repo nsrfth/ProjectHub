@@ -5,6 +5,7 @@ import type {
   CreateTaskBody,
   ListTasksQuery,
   MoveTaskBody,
+  ProgressBody,
   RejectTaskBody,
   ReorderTaskBody,
   UpdateTaskBody,
@@ -168,6 +169,23 @@ export class TasksController {
       req.user.sub,
       req.user.globalRole,
       req.body,
+    );
+    return reply.send(serialize(t));
+  };
+
+  // v2.1.1 (PMIS R1 supplement): set percentComplete + mode atomically.
+  updateProgress = async (
+    req: FastifyRequest<{ Params: TaskParams; Body: ProgressBody }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    const t = await this.svc.updateProgress(
+      req.params.teamId,
+      req.params.projectId,
+      req.params.taskId,
+      req.user.sub,
+      req.user.globalRole,
+      { percentComplete: req.body.percentComplete, mode: req.body.mode },
     );
     return reply.send(serialize(t));
   };

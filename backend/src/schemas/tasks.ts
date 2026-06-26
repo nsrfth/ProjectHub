@@ -70,6 +70,9 @@ export const createTaskBody = z.object({
   actualStart: z.string().datetime().nullable().optional(),
   actualEnd: z.string().datetime().nullable().optional(),
   percentComplete: z.number().int().min(0).max(100).optional(),
+  // v2.1.1 (PMIS R1 supplement): how percentComplete is interpreted.
+  // Prefer the dedicated PUT …/progress endpoint to set both together.
+  percentCompleteMode: z.enum(['MANUAL', 'FROM_CHILDREN', 'FROM_STATUS']).optional(),
   // v1.42: optional task-level budget fields, mirrors Project budget rules.
   plannedBudget: budgetSchema,
   actualSpent: budgetSchema,
@@ -110,6 +113,8 @@ export const updateTaskBody = z
     actualStart: z.string().datetime().nullable().optional(),
     actualEnd: z.string().datetime().nullable().optional(),
     percentComplete: z.number().int().min(0).max(100).optional(),
+    // v2.1.1 (PMIS R1 supplement): how percentComplete is interpreted.
+    percentCompleteMode: z.enum(['MANUAL', 'FROM_CHILDREN', 'FROM_STATUS']).optional(),
     // v2.1 (PMIS R5): zero-duration milestone marker for the Gantt.
     isMilestone: z.boolean().optional(),
     milestoneKind: z.string().max(50).nullable().optional(),
@@ -219,15 +224,20 @@ export const taskResponse = z.object({
   actualStart: z.string().nullable(),
   actualEnd: z.string().nullable(),
   percentComplete: z.number().int(),
+  // v2.1.1 (PMIS R1 supplement): how percentComplete was last set.
+  percentCompleteMode: z.enum(['MANUAL', 'FROM_CHILDREN', 'FROM_STATUS']),
   // v1.42: optional task budget fields (fixed-2 strings, null when unset).
   plannedBudget: z.string().nullable(),
   actualSpent: z.string().nullable(),
   // v1.59: inherited from parent project — tasks do not store currency.
   budgetCurrency: currencyEnum,
   position: z.number().int(),
-  // v1.97 (PMIS R1): WBS parent id (null = root). The outline code/depth are
-  // derived by the dedicated /wbs endpoint, not carried on the flat task row.
+  // v1.97 (PMIS R1): WBS parent id (null = root).
   parentId: z.string().nullable(),
+  // v2.1.1 (PMIS R1 supplement): materialized WBS depth (0 = root) and
+  // summary flag (true = has at least one live child).
+  wbsDepth: z.number().int().nonnegative(),
+  isSummary: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
   labels: z.array(taskLabelResponse),
@@ -277,6 +287,18 @@ export const wbsResponse = z.object({
   items: z.array(wbsNodeResponse),
 });
 
+// v2.1.1 (PMIS R1 supplement): dedicated progress endpoint. mode controls how
+// percentComplete is computed; percentComplete is only required for MANUAL.
+export const progressBody = z.object({
+  percentComplete: z.number().int().min(0).max(100).optional(),
+  mode: z.enum(['MANUAL', 'FROM_CHILDREN', 'FROM_STATUS']),
+}).superRefine((v, ctx) => {
+  if (v.mode === 'MANUAL' && v.percentComplete === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'percentComplete is required for MANUAL mode', path: ['percentComplete'] });
+  }
+});
+
 export type CreateTaskBody = z.infer<typeof createTaskBody>;
 export type UpdateTaskBody = z.infer<typeof updateTaskBody>;
 export type ListTasksQuery = z.infer<typeof listTasksQuery>;
+export type ProgressBody = z.infer<typeof progressBody>;
