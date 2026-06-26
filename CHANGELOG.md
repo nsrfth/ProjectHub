@@ -7,6 +7,25 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [1.92.0] — 2026-06-26
+
+**Timesheets — rate-card management + reject reason.** A QA pass found the
+Timesheets page was missing the **rate cards** UI entirely: without cost/bill
+rates there was nothing for an approved timesheet to snapshot, so labour posted
+to the cost ledger at no rate.
+
+- **Rate cards** — managers get a new section on the Timesheets page to list,
+  add, and delete rate cards, scoped **by role** (Member/Manager) or **by
+  person**, with a currency, cost rate, optional bill rate, and an effective-
+  from / -to window. Backed by the existing `…/rate-cards` endpoints
+  (`timesheet.manage_rates`).
+- **Reject reason** — rejecting a submitted timesheet now prompts for a reason
+  instead of sending a hard-coded "Returned for correction" string.
+
+No backend changes. Frontend bumped 1.91.0 → 1.92.0. *Still deferred (minor):
+per-task time entry, entry edit, bulk entry, and the billable flag in the log
+form.*
+
 ## [1.91.0] — 2026-06-26
 
 **WBS gets a GUI (PMIS R1).** The Work Breakdown Structure was backend-only —

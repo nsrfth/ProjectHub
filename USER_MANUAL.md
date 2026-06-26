@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v1.94.0** (2026-06-26)
+Version **v1.95.0** (2026-06-26)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -213,9 +213,10 @@ profile enables **Timesheets** and/or **Cost Control** (Project edit → Profile
 - **Log time** against a project (and optionally a task) by date and hours.
 - **Open a weekly period**, then **Submit** it for approval. While a period is
   Open or Reopened you can still edit/delete its entries; once submitted it locks.
-- A **rate card** (cost rate per person or per role, set by a Manager) is
-  snapshotted onto each entry when you log it, so changing a rate later never
-  rewrites old timesheets.
+- A **rate card** (cost rate per person or per role, managed by a Manager in the
+  **Rate cards** section of the Timesheets page — with a currency, optional bill
+  rate, and an effective-from/-to window) is snapshotted onto each entry when you
+  log it, so changing a rate later never rewrites old timesheets.
 - Managers see an **approval queue**: **Approve** posts the labour cost into the
   project's cost ledger; **Reject** returns it; **Reopen** unlocks an approved
   period and reverses the cost it posted.

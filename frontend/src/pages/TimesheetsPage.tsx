@@ -5,6 +5,7 @@ import { useTeams } from '@/features/teams/TeamsContext';
 import { useT } from '@/lib/i18n';
 import { listProjects } from '@/features/projects/api';
 import * as ts from '@/features/timesheets/api';
+import { RateCardsSection } from '@/features/timesheets/RateCardsSection';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -90,7 +91,7 @@ export default function TimesheetsPage(): JSX.Element {
   const submitMut = useMutation({ mutationFn: (id: string) => ts.submitPeriod(teamId!, id), onSuccess: invalidate });
   const approveMut = useMutation({ mutationFn: (id: string) => ts.approvePeriod(teamId!, id), onSuccess: invalidate });
   const rejectMut = useMutation({
-    mutationFn: (id: string) => ts.rejectPeriod(teamId!, id, 'Returned for correction'),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => ts.rejectPeriod(teamId!, id, reason),
     onSuccess: invalidate,
   });
   const reopenMut = useMutation({ mutationFn: (id: string) => ts.reopenPeriod(teamId!, id), onSuccess: invalidate });
@@ -242,6 +243,8 @@ export default function TimesheetsPage(): JSX.Element {
         )}
       </section>
 
+      {canApprove && <RateCardsSection teamId={teamId} canManage={canApprove} />}
+
       {canApprove && (
         <section className="rounded-lg border border-border bg-surface p-4">
           <h2 className="mb-2 text-sm font-medium">{t('timesheets.approvalQueue')}</h2>
@@ -258,7 +261,14 @@ export default function TimesheetsPage(): JSX.Element {
                     <button type="button" className="text-xs text-success hover:underline" onClick={() => approveMut.mutate(p.id)}>
                       {t('timesheets.approve')}
                     </button>
-                    <button type="button" className="text-xs text-danger hover:underline" onClick={() => rejectMut.mutate(p.id)}>
+                    <button
+                      type="button"
+                      className="text-xs text-danger hover:underline"
+                      onClick={() => {
+                        const reason = window.prompt(t('timesheets.rejectPrompt'));
+                        if (reason && reason.trim()) rejectMut.mutate({ id: p.id, reason: reason.trim() });
+                      }}
+                    >
                       {t('timesheets.reject')}
                     </button>
                   </span>
