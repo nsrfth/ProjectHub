@@ -13,6 +13,30 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.5] — 2026-06-26
+
+**GUI coverage — RACI, progress, baseline capture, timesheet task/billable, project health/code.**
+A deep QA pass identified six backend features that had no frontend exposure. All are now wired:
+
+- **RACI (C/I) in task detail** — new "RACI (C/I)" section on `TaskDetailPage`: displays
+  Consulted and Informed lists, add/remove via `PUT .../raci`; gated on `canChangeResponsible`.
+- **Task percent-complete** — new "Progress" section: mode selector (`FROM_STATUS` /
+  `FROM_CHILDREN` / `MANUAL`) + slider+bar when MANUAL; calls `PUT .../progress`.
+- **Capture baseline** — "📸 Capture baseline" button on the Gantt page when the `baselines`
+  module is enabled; uses `window.prompt` for a name, calls `POST .../baselines`.
+- **Timesheet task + billable** — the log-time form now has an optional task dropdown (populated
+  from the selected project) and a Billable checkbox; both passed to `createTimeEntry`.
+- **Project health (RAG)** — "Set health (RAG)" menu item in the project actions menu opens a
+  modal (GREEN/AMBER/RED radio + reason textarea), calls `PUT .../health`; chips shown for
+  AMBER/RED on the project list row.
+- **Project code** — owner/admin can set the unique project code in the edit form; code chip
+  displayed (font-mono) in the project list row.
+
+Also fixed: `docker/backend.Dockerfile` was calling `npx prisma generate` which now downloads
+Prisma 7.x (breaking the `url = env("DATABASE_URL")` schema syntax). Pinned to `npx prisma@5`.
+
+No backend changes. Bumped 2.5.4 → 2.5.5. i18n keys added for all new UI in EN + FA.
+
 ## [2.5.4] — 2026-06-26
 
 **Timesheets — rate-card management + reject reason.** A QA pass found the

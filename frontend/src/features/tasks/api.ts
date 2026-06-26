@@ -35,6 +35,8 @@ export interface TaskSubtask {
   position: number;
 }
 
+export type PercentCompleteMode = 'MANUAL' | 'FROM_CHILDREN' | 'FROM_STATUS';
+
 export interface Task {
   id: string;
   projectId: string;
@@ -66,6 +68,9 @@ export interface Task {
   plannedBudget: string | null;
   actualSpent: string | null;
   budgetCurrency: BudgetCurrency;
+  // v2.1.1 (PMIS R1): progress tracking.
+  percentComplete: number;
+  percentCompleteMode: PercentCompleteMode;
   position: number;
   createdAt: string;
   updatedAt: string;
@@ -192,6 +197,57 @@ export async function reorderTask(
   return (
     await api.post<Task>(
       `/teams/${teamId}/projects/${projectId}/tasks/${taskId}/reorder`,
+      input,
+    )
+  ).data;
+}
+
+// v1.94 (PMIS neutral core): RACI assignments (Consulted/Informed legs).
+export type RaciRole = 'CONSULTED' | 'INFORMED';
+
+export interface RaciEntry {
+  userId: string;
+  userName: string;
+  role: RaciRole;
+}
+
+export async function listTaskRaci(
+  teamId: string,
+  projectId: string,
+  taskId: string,
+): Promise<RaciEntry[]> {
+  return (
+    await api.get<{ entries: RaciEntry[] }>(
+      `/teams/${teamId}/projects/${projectId}/tasks/${taskId}/raci`,
+    )
+  ).data.entries;
+}
+
+export async function putTaskRaci(
+  teamId: string,
+  projectId: string,
+  taskId: string,
+  entries: { userId: string; role: RaciRole }[],
+): Promise<RaciEntry[]> {
+  return (
+    await api.put<{ entries: RaciEntry[] }>(
+      `/teams/${teamId}/projects/${projectId}/tasks/${taskId}/raci`,
+      { entries },
+    )
+  ).data.entries;
+}
+
+// v2.1.1 (PMIS R1): set percentComplete + mode atomically.
+// MANUAL mode requires percentComplete; FROM_CHILDREN and FROM_STATUS derive it.
+export async function updateTaskProgress(
+  teamId: string,
+  projectId: string,
+  taskId: string,
+  input: { mode: PercentCompleteMode; percentComplete?: number },
+): Promise<Task> {
+  return (
+    await api.put<Task>(
+      `/teams/${teamId}/projects/${projectId}/tasks/${taskId}/progress`,
       input,
     )
   ).data;

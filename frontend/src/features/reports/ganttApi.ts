@@ -80,3 +80,22 @@ export async function fetchGantt(
     })
   ).data;
 }
+
+export interface ProjectBaseline {
+  id: string;
+  name: string;
+  source: 'MANUAL' | 'CHANGE_REQUEST';
+  isCurrent: boolean;
+  capturedAt: string;
+  entryCount: number;
+}
+
+export async function captureBaseline(
+  teamId: string,
+  projectId: string,
+  name: string,
+): Promise<ProjectBaseline> {
+  return (
+    await api.post<ProjectBaseline>(`/teams/${teamId}/projects/${projectId}/baselines`, { name })
+  ).data;
+}

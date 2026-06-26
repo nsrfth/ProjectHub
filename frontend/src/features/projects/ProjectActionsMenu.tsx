@@ -6,6 +6,7 @@ export interface ProjectActionsMenuProps {
   onToggle: (e: React.MouseEvent) => void;
   onEdit: () => void;
   onEditBudget: () => void;
+  onSetHealth?: () => void;
   onDelete: () => void;
 }
 
@@ -15,6 +16,7 @@ export default function ProjectActionsMenu({
   onToggle,
   onEdit,
   onEditBudget,
+  onSetHealth,
   onDelete,
 }: ProjectActionsMenuProps): JSX.Element {
   const t = useT();
@@ -59,6 +61,19 @@ export default function ProjectActionsMenu({
           >
             {t('projects.action.editBudget')}
           </button>
+          {onSetHealth && (
+            <button
+              type="button"
+              role="menuitem"
+              className="block w-full text-start px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSetHealth();
+              }}
+            >
+              {t('projects.action.setHealth')}
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"

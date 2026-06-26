@@ -4,6 +4,8 @@ import type { TaskLabel } from '@/features/labels/api';
 
 export type ProjectStatus = 'ACTIVE' | 'ARCHIVED' | 'ON_HOLD';
 
+export type RagStatus = 'GREEN' | 'AMBER' | 'RED';
+
 export interface Project {
   id: string;
   teamId: string;
@@ -14,8 +16,14 @@ export interface Project {
   accountableId: string | null;
   accountableName: string | null;
   name: string;
+  // v1.92 (PMIS neutral core): optional human-facing code, unique per team.
+  code: string | null;
   description: string | null;
   status: ProjectStatus;
+  // v1.91 (PMIS neutral core): RAG health signal for portfolio roll-up.
+  ragStatus: RagStatus;
+  ragReason: string | null;
+  healthUpdatedAt: string | null;
   // v1.41: budget fields. Strings (Decimal serialises to string; preserves
   // precision past Number.MAX_SAFE_INTEGER). Always two decimal places when
   // set; null when unset.
@@ -33,7 +41,14 @@ export interface Project {
 }
 
 function normalizeProject<P extends Project>(p: P): P {
-  return { ...p, labels: p.labels ?? [] };
+  return {
+    ...p,
+    labels: p.labels ?? [],
+    code: p.code ?? null,
+    ragStatus: p.ragStatus ?? 'GREEN',
+    ragReason: p.ragReason ?? null,
+    healthUpdatedAt: p.healthUpdatedAt ?? null,
+  };
 }
 
 export async function listProjects(teamId: string): Promise<Project[]> {
@@ -60,6 +75,8 @@ export async function createProject(
     name: string;
     description?: string;
     status?: ProjectStatus;
+    // v1.92 (PMIS neutral core): optional human-facing project code.
+    code?: string | null;
     // v1.85: selectable owner at creation. Omitted → server defaults to creator.
     ownerId?: string | null;
     accountableId?: string | null;
@@ -84,6 +101,8 @@ export async function updateProject(
     name?: string;
     description?: string | null;
     status?: ProjectStatus;
+    // v1.92 (PMIS neutral core): optional human-facing project code.
+    code?: string | null;
     // v1.86: reassignable owner. Owner = FULL access; server validates the new
     // owner is a team member and that the caller is the owner or a global ADMIN.
     ownerId?: string | null;
@@ -160,4 +179,16 @@ export async function getMyDelegateStatus(
   return (
     await api.get<MyDelegateStatus>(`/teams/${teamId}/projects/${projectId}/delegates/me`)
   ).data;
+}
+
+// v1.91 (PMIS neutral core): update a project's RAG health status.
+// Gated on project WRITE (owner / project.write_all / FULL group grant).
+export async function updateProjectHealth(
+  teamId: string,
+  projectId: string,
+  input: { ragStatus: RagStatus; ragReason?: string | null },
+): Promise<Project> {
+  return normalizeProject(
+    (await api.put<Project>(`/teams/${teamId}/projects/${projectId}/health`, input)).data,
+  );
 }

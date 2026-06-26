@@ -18,6 +18,7 @@ import { SubtaskList } from '@/features/subtasks/SubtaskList';
 import { AttachmentsSection } from '@/features/attachments/AttachmentsSection';
 import RecurrenceSection from '@/features/recurrence/RecurrenceSection';
 import DependenciesSection from '@/features/dependencies/DependenciesSection';
+import RaciSection from '@/features/tasks/RaciSection';
 import { TaskCustomFieldsSection } from '@/features/customFields/TaskCustomFieldsSection';
 import { TaskResourceAssignments } from '@/features/resources/TaskResourceAssignments';
 import {
@@ -244,6 +245,14 @@ export default function TaskDetailPage(): JSX.Element {
     onSuccess: async () => {
       setRejectReason('');
       setShowReject(false);
+      await invalidateTask();
+    },
+  });
+
+  const progressMut = useMutation({
+    mutationFn: (input: { mode: tasksApi.PercentCompleteMode; percentComplete?: number }) =>
+      tasksApi.updateTaskProgress(teamId!, projectId!, taskId!, input),
+    onSuccess: async () => {
       await invalidateTask();
     },
   });
@@ -627,6 +636,70 @@ export default function TaskDetailPage(): JSX.Element {
             </div>
           </section>
 
+          {/* v2.1.1 (PMIS R1): percentComplete + mode editor. */}
+          <section className="bg-white rounded shadow p-6 mb-6">
+            <h2 className="font-medium mb-3">Progress</h2>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="text-xs font-medium text-slate-600 w-20 shrink-0">Mode</label>
+                <select
+                  value={task.percentCompleteMode}
+                  disabled={progressMut.isPending}
+                  onChange={(e) =>
+                    progressMut.mutate({
+                      mode: e.target.value as tasksApi.PercentCompleteMode,
+                      percentComplete:
+                        e.target.value === 'MANUAL' ? task.percentComplete : undefined,
+                    })
+                  }
+                  className="rounded border border-border px-2 py-1 text-sm dark:bg-slate-700"
+                >
+                  <option value="FROM_STATUS">From status</option>
+                  <option value="FROM_CHILDREN">From subtasks</option>
+                  <option value="MANUAL">Manual</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="text-xs font-medium text-slate-600 w-20 shrink-0">
+                  Complete
+                </label>
+                {task.percentCompleteMode === 'MANUAL' ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      defaultValue={task.percentComplete}
+                      disabled={progressMut.isPending}
+                      onMouseUp={(e) =>
+                        progressMut.mutate({
+                          mode: 'MANUAL',
+                          percentComplete: Number((e.target as HTMLInputElement).value),
+                        })
+                      }
+                      className="flex-1"
+                    />
+                    <span className="text-sm font-mono w-10 text-end">
+                      {task.percentComplete}%
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-sm font-mono">{task.percentComplete}%</span>
+                )}
+              </div>
+              <div
+                className="h-2 rounded-full bg-slate-200 overflow-hidden"
+                title={`${task.percentComplete}%`}
+              >
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${task.percentComplete}%` }}
+                />
+              </div>
+            </div>
+          </section>
+
           {/* v1.42: task-level budget. Mirrors the v1.41 project budget UI
               shape — read-only display when set + inline editor. Anyone with
               project access can edit (no permission gate). */}
@@ -652,6 +725,17 @@ export default function TaskDetailPage(): JSX.Element {
               canEdit={canEditTask}
               teamMembers={teamMembers}
             />
+          )}
+
+          {teamId && projectId && taskId && (
+            <section className="bg-white rounded shadow p-6 mb-6">
+              <RaciSection
+                teamId={teamId}
+                projectId={projectId}
+                taskId={taskId}
+                canWrite={canChangeResponsible}
+              />
+            </section>
           )}
 
           <section className="bg-white rounded shadow p-6 mb-6">

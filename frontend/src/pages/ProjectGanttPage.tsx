@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { fetchGantt, type GanttLinkRow, type GanttSubtaskRow, type GanttTaskScheduleRow } from '@/features/reports/ganttApi';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { captureBaseline, fetchGantt, type GanttLinkRow, type GanttSubtaskRow, type GanttTaskScheduleRow } from '@/features/reports/ganttApi';
 import { getEffectiveConfig } from '@/features/profiles/api';
 import { formatGanttPeriodLabel } from '@/features/reports/ganttPeriodLabel';
 import {
@@ -49,6 +49,7 @@ interface RouteParams extends Record<string, string | undefined> {
 export default function ProjectGanttPage(): JSX.Element {
   const { projectId } = useParams<RouteParams>();
   const t = useT();
+  const qc = useQueryClient();
 
   const { data: allProjects } = useQuery({
     queryKey: ['projects', 'all'],
@@ -60,6 +61,17 @@ export default function ProjectGanttPage(): JSX.Element {
   });
   const project = allProjects?.find((p) => p.id === projectId) ?? null;
   const teamId = project?.teamId ?? null;
+
+  const [baselineError, setBaselineError] = useState<string | null>(null);
+  const baselineMut = useMutation({
+    mutationFn: ({ name }: { name: string }) =>
+      captureBaseline(teamId!, projectId!, name),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['gantt', teamId, projectId] });
+      setBaselineError(null);
+    },
+    onError: () => setBaselineError('Could not capture baseline'),
+  });
 
   const [filterTaskId, setFilterTaskId] = useState<string>('');
   const [filterAssigneeId, setFilterAssigneeId] = useState<string>('');
@@ -318,6 +330,24 @@ export default function ProjectGanttPage(): JSX.Element {
             >
               Clear filters
             </button>
+            {baselinesEnabled && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={baselineMut.isPending}
+                  onClick={() => {
+                    const name = window.prompt('Baseline name:', `Baseline ${new Date().toLocaleDateString()}`);
+                    if (name?.trim()) baselineMut.mutate({ name: name.trim() });
+                  }}
+                  className="px-3 py-1 text-xs rounded border border-primary text-primary hover:bg-primary/10 disabled:opacity-50"
+                >
+                  {baselineMut.isPending ? 'Capturing…' : '📸 Capture baseline'}
+                </button>
+                {baselineError && (
+                  <span className="text-xs text-danger">{baselineError}</span>
+                )}
+              </div>
+            )}
           </section>
 
           {scheduledRows.length > 0 && (

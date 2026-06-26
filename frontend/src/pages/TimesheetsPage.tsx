@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useTeams } from '@/features/teams/TeamsContext';
 import { useT } from '@/lib/i18n';
 import { listProjects } from '@/features/projects/api';
+import { listTasks } from '@/features/tasks/api';
 import * as ts from '@/features/timesheets/api';
 import { RateCardsSection } from '@/features/timesheets/RateCardsSection';
 
@@ -53,10 +54,18 @@ export default function TimesheetsPage(): JSX.Element {
   });
 
   const [projectId, setProjectId] = useState('');
+  const [taskId, setTaskId] = useState('');
+  const [billable, setBillable] = useState(false);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [hours, setHours] = useState('1');
   const [note, setNote] = useState('');
   const [err, setErr] = useState<string | null>(null);
+
+  const { data: projectTasks = [] } = useQuery({
+    queryKey: ['ts', 'tasks', teamId, projectId],
+    queryFn: () => listTasks(teamId!, projectId),
+    enabled: !!teamId && !!projectId,
+  });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['ts'] });
 
@@ -64,12 +73,16 @@ export default function TimesheetsPage(): JSX.Element {
     mutationFn: () =>
       ts.createTimeEntry(teamId!, {
         projectId,
+        taskId: taskId || undefined,
         date,
         minutes: Math.round(parseFloat(hours || '0') * 60),
+        billable,
         note: note.trim() || undefined,
       }),
     onSuccess: () => {
       setNote('');
+      setTaskId('');
+      setBillable(false);
       setErr(null);
       void invalidate();
     },
@@ -146,12 +159,28 @@ export default function TimesheetsPage(): JSX.Element {
             <select
               className="mt-1 block w-full rounded border border-border bg-surface px-2 py-1 text-sm text-text"
               value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
+              onChange={(e) => { setProjectId(e.target.value); setTaskId(''); }}
             >
               <option value="">{t('timesheets.pickProject')}</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-text-muted">
+            {t('timesheets.task')}
+            <select
+              className="mt-1 block w-full rounded border border-border bg-surface px-2 py-1 text-sm text-text"
+              value={taskId}
+              onChange={(e) => setTaskId(e.target.value)}
+              disabled={!projectId}
+            >
+              <option value="">{t('timesheets.noTask')}</option>
+              {projectTasks.map((tk) => (
+                <option key={tk.id} value={tk.id}>
+                  {tk.title}
                 </option>
               ))}
             </select>
@@ -169,6 +198,10 @@ export default function TimesheetsPage(): JSX.Element {
             <input className="mt-1 block w-full rounded border border-border bg-surface px-2 py-1 text-sm" value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
         </div>
+        <label className="inline-flex items-center gap-2 text-xs text-text-muted cursor-pointer">
+          <input type="checkbox" checked={billable} onChange={(e) => setBillable(e.target.checked)} />
+          {t('timesheets.billable')}
+        </label>
         {err && <p className="text-xs text-danger">{err}</p>}
         <button type="submit" disabled={logMut.isPending} className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
           {t('timesheets.addEntry')}

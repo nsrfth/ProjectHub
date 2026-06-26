@@ -8,6 +8,8 @@ import type { ProjectStatus } from '@/features/projects/api';
 
 export interface ProjectFormValues {
   name: string;
+  // v1.92 (PMIS neutral core): optional human-facing project code, unique per team.
+  code: string;
   description: string;
   status: ProjectStatus;
   // v1.86: reassignable owner. null is accepted by the API (clears owner) but
@@ -30,12 +32,15 @@ interface ProjectFormFieldsProps {
   dateError?: string | null;
   /** Hide the plannedBudget/budgetCurrency fields when ProjectCostPanel already covers them. */
   hideBudget?: boolean;
+  /** When true the caller is the project owner or a global ADMIN (may set code). */
+  isOwnerOrAdmin?: boolean;
 }
 
 const STATUSES: ProjectStatus[] = ['ACTIVE', 'ON_HOLD', 'ARCHIVED'];
 
 export function projectFormValuesFromProject(p: {
   name: string;
+  code?: string | null;
   description: string | null;
   status: ProjectStatus;
   ownerId: string | null;
@@ -48,6 +53,7 @@ export function projectFormValuesFromProject(p: {
 }): ProjectFormValues {
   return {
     name: p.name,
+    code: p.code ?? '',
     description: p.description ?? '',
     status: p.status,
     ownerId: p.ownerId,
@@ -79,6 +85,7 @@ export default function ProjectFormFields({
   nameOnly = false,
   dateError,
   hideBudget = false,
+  isOwnerOrAdmin = false,
 }: ProjectFormFieldsProps): JSX.Element {
   const t = useT();
   const locked = nameOnly;
@@ -96,6 +103,23 @@ export default function ProjectFormFields({
           className="rounded border px-2 py-1.5 dark:bg-slate-700"
         />
       </label>
+
+      {/* v1.92: project code — non-name field, owner/admin only */}
+      {isOwnerOrAdmin && (
+        <label className="flex flex-col gap-1 text-sm">
+          <span>{t('projects.code')}</span>
+          <input
+            type="text"
+            value={values.code}
+            onChange={(e) => onChange({ code: e.target.value })}
+            maxLength={30}
+            placeholder={t('projects.code.placeholder')}
+            className="rounded border px-2 py-1.5 dark:bg-slate-700 font-mono"
+            dir="ltr"
+          />
+          <span className="text-xs text-text-muted">{t('projects.code.hint')}</span>
+        </label>
+      )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>{t('projects.edit.description')}</span>

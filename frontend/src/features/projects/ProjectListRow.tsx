@@ -19,6 +19,7 @@ export interface ProjectListRowProps {
   onOpen: () => void;
   onEditProject: () => void;
   onEditBudget: () => void;
+  onSetHealth?: () => void;
   onDelete: () => void;
   bucketMenu: React.ReactNode;
 }
@@ -35,6 +36,7 @@ export default function ProjectListRow({
   onOpen,
   onEditProject,
   onEditBudget,
+  onSetHealth,
   onDelete,
   bucketMenu,
 }: ProjectListRowProps): JSX.Element {
@@ -56,6 +58,11 @@ export default function ProjectListRow({
     onEditBudget();
   }
 
+  function handleSetHealth(): void {
+    onCloseActionsMenu();
+    onSetHealth?.();
+  }
+
   function handleDelete(): void {
     onCloseActionsMenu();
     if (window.confirm(t('projects.delete.confirm').replace('{name}', project.name))) {
@@ -74,6 +81,29 @@ export default function ProjectListRow({
             <button type="button" onClick={onOpen} className="font-medium truncate hover:underline">
               {project.name}
             </button>
+            {project.code && (
+              <span
+                className="text-xs font-mono px-1.5 py-0.5 rounded bg-surface-alt border border-border text-text-muted shrink-0"
+                title={t('projects.code')}
+                dir="ltr"
+              >
+                {project.code}
+              </span>
+            )}
+            {/* v1.91: RAG health chip */}
+            {project.ragStatus && project.ragStatus !== 'GREEN' && (
+              <span
+                className={[
+                  'text-xs px-1.5 py-0.5 rounded font-medium shrink-0',
+                  project.ragStatus === 'RED'
+                    ? 'bg-danger/15 text-danger'
+                    : 'bg-warning/15 text-warning',
+                ].join(' ')}
+                title={project.ragReason ?? undefined}
+              >
+                {project.ragStatus === 'RED' ? '🔴' : '🟡'} {t(`projects.health.${project.ragStatus.toLowerCase()}` as never)}
+              </span>
+            )}
             <span className="text-xs uppercase tracking-wide text-slate-500 shrink-0">
               {statusLabel}
             </span>
@@ -115,6 +145,7 @@ export default function ProjectListRow({
                 onToggle={onToggleActionsMenu}
                 onEdit={handleEdit}
                 onEditBudget={handleBudget}
+                onSetHealth={onSetHealth ? handleSetHealth : undefined}
                 onDelete={handleDelete}
               />
             )}

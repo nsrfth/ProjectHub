@@ -23,6 +23,7 @@ import {
 } from '@/features/projectBuckets/storage';
 import CreateProjectForm from '@/features/projects/CreateProjectForm';
 import ProjectEditModal, { type ProjectFormValues } from '@/features/projects/ProjectEditModal';
+import ProjectHealthModal from '@/features/projects/ProjectHealthModal';
 import ProjectListRow from '@/features/projects/ProjectListRow';
 import ProjectActionsMenu from '@/features/projects/ProjectActionsMenu';
 import { toggleActionsMenuProjectId } from '@/features/projects/projectActionsLogic';
@@ -61,6 +62,8 @@ export default function ProjectsPage(): JSX.Element {
   const [actionsMenuProjectId, setActionsMenuProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [projectSaveError, setProjectSaveError] = useState<string | null>(null);
+  const [healthProjectId, setHealthProjectId] = useState<string | null>(null);
+  const [healthSaveError, setHealthSaveError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsedBuckets());
   const bucketMenuRef = useRef<HTMLDivElement>(null);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
@@ -200,6 +203,8 @@ export default function ProjectsPage(): JSX.Element {
         ? { name: values.name }
         : {
             name: values.name,
+            // v1.92: project code (owner/admin only; empty string → null).
+            code: values.code.trim() || null,
             description: values.description || null,
             status: values.status,
             // v1.86: owner reassignment (owner/admin full-edit path only).
@@ -220,6 +225,22 @@ export default function ProjectsPage(): JSX.Element {
       await qc.invalidateQueries({ queryKey: ['projects', vars.teamId] });
     },
     onError: (err) => setProjectSaveError(errorMessage(err, t('projects.edit.error'))),
+  });
+
+  const healthMut = useMutation({
+    mutationFn: (args: {
+      teamId: string;
+      projectId: string;
+      ragStatus: projectsApi.RagStatus;
+      ragReason: string | null;
+    }) => projectsApi.updateProjectHealth(args.teamId, args.projectId, { ragStatus: args.ragStatus, ragReason: args.ragReason }),
+    onSuccess: async (_d, vars) => {
+      setHealthSaveError(null);
+      setHealthProjectId(null);
+      await qc.invalidateQueries({ queryKey: ['projects', 'all'] });
+      await qc.invalidateQueries({ queryKey: ['projects', vars.teamId] });
+    },
+    onError: (err) => setHealthSaveError(errorMessage(err, t('projects.health.error'))),
   });
 
   const deleteMut = useMutation({
@@ -503,6 +524,10 @@ export default function ProjectsPage(): JSX.Element {
                   setProjectSaveError(null);
                   setEditProjectId(p.id);
                 }}
+                onSetHealth={() => {
+                  setHealthSaveError(null);
+                  setHealthProjectId(p.id);
+                }}
                 onDelete={() => deleteMut.mutate({ teamId: p.teamId, projectId: p.id })}
                 bucketMenu={renderBucketAssignMenu(p)}
               />
@@ -531,6 +556,25 @@ export default function ProjectsPage(): JSX.Element {
           }
         />
       )}
+
+      {/* v1.91: Project RAG health modal */}
+      {healthProjectId && (() => {
+        const p = projects.find((pr) => pr.id === healthProjectId);
+        if (!p) return null;
+        return (
+          <ProjectHealthModal
+            projectName={p.name}
+            currentStatus={p.ragStatus ?? 'GREEN'}
+            currentReason={p.ragReason ?? null}
+            pending={healthMut.isPending}
+            error={healthSaveError}
+            onClose={() => { setHealthProjectId(null); setHealthSaveError(null); }}
+            onSave={(ragStatus, ragReason) =>
+              healthMut.mutate({ teamId: p.teamId, projectId: p.id, ragStatus, ragReason })
+            }
+          />
+        );
+      })()}
     </div>
   );
 }

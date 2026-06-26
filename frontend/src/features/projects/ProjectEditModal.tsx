@@ -37,6 +37,8 @@ export default function ProjectEditModal({
   const t = useT();
   const { user } = useAuth();
   const { teams } = useTeams();
+  const isOwnerOrAdmin =
+    user?.globalRole === 'ADMIN' || user?.id === project.ownerId;
   const canPortfolio =
     user?.globalRole === 'ADMIN' ||
     teams.find((tm) => tm.id === project.teamId)?.myRole === 'MANAGER';
@@ -108,6 +110,7 @@ export default function ProjectEditModal({
           nameOnly={nameOnly}
           dateError={dateError}
           hideBudget={!nameOnly}
+          isOwnerOrAdmin={isOwnerOrAdmin}
         />
         {/* v1.86: owner-facing full-edit delegates — only in full-edit mode. */}
         {!nameOnly && (

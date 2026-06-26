@@ -11,7 +11,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN npx prisma@5 generate
 
 COPY tsconfig.json ./
 COPY scripts/copy-data.mjs scripts/generate-ir-holidays.mjs ./scripts/
@@ -48,4 +48,4 @@ USER app
 
 EXPOSE 4000
 # Run migrations on startup, then the server.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+CMD ["sh", "-c", "npx prisma@5 migrate deploy && node dist/server.js"]
