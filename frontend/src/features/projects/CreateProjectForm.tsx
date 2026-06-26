@@ -39,9 +39,6 @@ export default function CreateProjectForm({
   const t = useT();
 
   const [formTeamId, setFormTeamId] = useState<string>(() => currentTeamId ?? '');
-  // v1.85: selectable owner; default = current user (the creator) so an
-  // untouched form behaves exactly as before (owner = creator).
-  const [ownerId, setOwnerId] = useState<string>(() => user?.id ?? '');
   const effectiveFormTeamId = formTeamId || currentTeamId || '';
   const { data: formMembersRaw = [] } = useQuery({
     queryKey: ['teams', effectiveFormTeamId, 'assignees'],
@@ -56,8 +53,6 @@ export default function CreateProjectForm({
     name: '',
     description: '',
     status: 'ACTIVE',
-    // Owner is tracked in the dedicated `ownerId` state above and merged in at
-    // submit ({ ...values, ownerId }); this placeholder just satisfies the type.
     ownerId: user?.id ?? null,
     accountableId: null,
     plannedBudget: '',
@@ -84,7 +79,7 @@ export default function CreateProjectForm({
   }, [selectedTeam?.id, selectedTeam?.defaultCurrency]);
 
   const createMut = useMutation({
-    mutationFn: (input: ProjectFormValues & { ownerId: string }) =>
+    mutationFn: (input: ProjectFormValues) =>
       projectsApi.createProject(effectiveFormTeamId, {
         name: input.name,
         description: input.description || undefined,
@@ -123,7 +118,7 @@ export default function CreateProjectForm({
       setDateError(rangeErr);
       return;
     }
-    createMut.mutate({ ...values, name: trimmed, ownerId });
+    createMut.mutate({ ...values, name: trimmed });
   }
 
   return (
@@ -135,9 +130,7 @@ export default function CreateProjectForm({
             value={effectiveFormTeamId}
             onChange={(e) => {
               setFormTeamId(e.target.value);
-              patch({ accountableId: null });
-              // New team → reset owner to the creator (always a member of it).
-              setOwnerId(user?.id ?? '');
+              patch({ accountableId: null, ownerId: user?.id ?? null });
             }}
             className="w-full rounded border-border dark:bg-slate-700 dark:text-slate-100 px-2 py-1.5 border text-sm"
           >
@@ -149,23 +142,6 @@ export default function CreateProjectForm({
           </select>
         </label>
       )}
-
-      <label className="block">
-        <span className="block text-xs text-text-muted mb-1">
-          {t('projects.owner')}
-        </span>
-        <select
-          value={ownerId}
-          onChange={(e) => setOwnerId(e.target.value)}
-          className="w-full rounded border-border dark:bg-slate-700 dark:text-slate-100 px-2 py-1.5 border text-sm"
-        >
-          {formMembers.map((m) => (
-            <option key={m.userId} value={m.userId}>
-              {m.name} ({m.role})
-            </option>
-          ))}
-        </select>
-      </label>
 
       <ProjectFormFields
         teamId={effectiveFormTeamId}

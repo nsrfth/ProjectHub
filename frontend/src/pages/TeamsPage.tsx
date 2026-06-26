@@ -8,8 +8,6 @@ import { formatShamsiTimestampDate } from '@/lib/shamsi';
 import { visibleTeamMembers } from '@/lib/systemUser';
 import { useT } from '@/lib/i18n';
 import TeamGroupsPanel from '@/features/groups/TeamGroupsPanel';
-import CurrencySelector from '@/features/budget/CurrencySelector';
-import type { BudgetCurrency } from '@/lib/formatBudget';
 
 function MemberStatusBadges({ member, t }: { member: teamsApi.TeamMember; t: (k: string) => string }): JSX.Element | null {
   if (member.disabled) {
@@ -439,7 +437,6 @@ export default function TeamsPage(): JSX.Element {
                 </div>
                 <div className="flex items-start gap-2 shrink-0">
                   {canEditDetails && !editingName && <TeamColourPicker team={detail} />}
-                  {canEditDetails && !editingName && <TeamDefaultCurrencyPicker team={detail} />}
                   {(canEditDetails || canDelete) && !editingName && (
                     <div className="relative">
                       <button
@@ -912,33 +909,6 @@ const PRESET_COLOURS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
   '#8b5cf6', '#ec4899', '#14b8a6', '#64748b',
 ];
-
-function TeamDefaultCurrencyPicker({ team }: { team: teamsApi.TeamDetail }): JSX.Element {
-  const qc = useQueryClient();
-  const { refresh } = useTeams();
-  const t = useT();
-  const updateMut = useMutation({
-    mutationFn: (defaultCurrency: BudgetCurrency) =>
-      teamsApi.updateTeam(team.id, { defaultCurrency }),
-    onSuccess: async () => {
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ['teams', 'detail', team.id] }),
-        refresh(),
-      ]);
-    },
-  });
-  return (
-    <label className="flex items-center gap-1 text-xs text-text">
-      <span>{t('team.defaultCurrency')}</span>
-      <CurrencySelector
-        value={team.defaultCurrency}
-        onChange={(c) => updateMut.mutate(c)}
-        disabled={updateMut.isPending}
-        className="rounded border px-1 py-0.5 dark:bg-slate-700 text-xs"
-      />
-    </label>
-  );
-}
 
 function TeamColourPicker({ team }: { team: teamsApi.TeamDetail }): JSX.Element {
   const qc = useQueryClient();
