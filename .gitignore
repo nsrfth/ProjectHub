@@ -45,10 +45,9 @@ backend/prisma/*.db
 # Claude Code session metadata (user-local, never relevant to others)
 .claude/
 
-# v1.10.1 + v1.13.0: USER_MANUAL{,.fa}.md are canonical at the repo root;
-# the frontend copies are auto-synced by `npm run sync-manual` (also runs
-# pre-build / pre-dev).
-frontend/public/USER_MANUAL.md
-frontend/public/USER_MANUAL.fa.md
+# USER_MANUAL{,.fa}.md are canonical at the repo root; the copies under
+# frontend/public are committed mirrors (so GitHub and the in-app /help route
+# show the same content). Re-run `npm run sync-manual` after editing the root
+# files, and commit the regenerated copies alongside.
 DIAGNOSTIC_REPORT.md
 docs/PMIS_ROADMAP.md
