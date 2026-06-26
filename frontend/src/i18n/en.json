@@ -1339,5 +1339,7 @@
   "evm.metric.eac": "EAC",
   "evm.metric.vac": "VAC",
   "evm.metric.tcpi": "TCPI",
-  "evm.series.title": "S-Curve"
+  "evm.series.title": "S-Curve",
+
+  "module.disabled": "This module is not enabled for this project. Enable it in Settings → Profiles."
 }

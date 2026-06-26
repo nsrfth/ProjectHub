@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useT } from '@/lib/i18n';
 import Modal from '@/features/ui/Modal';
+import { isModuleDisabled, ModuleDisabledBanner } from '@/features/ui/ModuleDisabledBanner';
 import * as api from './api';
 import type { CRStatus, BudgetCurrency } from './api';
 
@@ -46,9 +47,10 @@ export function ChangeRequestRegister({ teamId, projectId, canManage }: Props): 
   const [decideForm, setDecideForm] = useState<DecideForm>({ decision: 'APPROVED', rejectionReason: '' });
   const [decideError, setDecideError] = useState<string | null>(null);
 
-  const { data: items = [], isLoading } = useQuery({
+  const { data: items = [], isLoading, isError, error } = useQuery({
     queryKey: ['changeRequests', teamId, projectId],
     queryFn: () => api.listChangeRequests(teamId, projectId),
+    retry: false,
   });
 
   const invalidate = (): Promise<void> =>
@@ -93,6 +95,7 @@ export function ChangeRequestRegister({ teamId, projectId, canManage }: Props): 
   });
 
   if (isLoading) return <p className="text-sm text-text-muted">{t('common.loading')}</p>;
+  if (isError) return isModuleDisabled(error) ? <ModuleDisabledBanner /> : <></>;
 
   return (
     <div>

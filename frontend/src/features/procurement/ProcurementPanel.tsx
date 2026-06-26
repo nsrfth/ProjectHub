@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useT } from '@/lib/i18n';
 import Modal from '@/features/ui/Modal';
+import { isModuleDisabled, ModuleDisabledBanner } from '@/features/ui/ModuleDisabledBanner';
 import * as api from './api';
 import type { ContractStatus, PoStatus, BudgetCurrency } from './api';
 
@@ -54,8 +55,8 @@ export function ProcurementPanel({ teamId, projectId, canManage }: Props): JSX.E
   const [pCurrency, setPCurrency] = useState<BudgetCurrency>('IRR');
 
   const vendors = useQuery({ queryKey: ['vendors', teamId], queryFn: () => api.listVendors(teamId) });
-  const contracts = useQuery({ queryKey: ['contracts', teamId, projectId], queryFn: () => api.listContracts(teamId, projectId) });
-  const pos = useQuery({ queryKey: ['purchaseOrders', teamId, projectId], queryFn: () => api.listPurchaseOrders(teamId, projectId) });
+  const contracts = useQuery({ queryKey: ['contracts', teamId, projectId], queryFn: () => api.listContracts(teamId, projectId), retry: false });
+  const pos = useQuery({ queryKey: ['purchaseOrders', teamId, projectId], queryFn: () => api.listPurchaseOrders(teamId, projectId), retry: false });
 
   const inv = (): void => {
     void qc.invalidateQueries({ queryKey: ['vendors', teamId] });
@@ -103,6 +104,8 @@ export function ProcurementPanel({ teamId, projectId, canManage }: Props): JSX.E
     else if (tab === 'contracts') createContractMut.mutate();
     else createPoMut.mutate();
   };
+
+  if (contracts.isError && isModuleDisabled(contracts.error)) return <ModuleDisabledBanner />;
 
   const isPending = createVendorMut.isPending || createContractMut.isPending || createPoMut.isPending;
   const canSubmit = tab === 'vendors' ? !!vName.trim() : tab === 'contracts' ? !!cTitle.trim() : !!pTitle.trim();

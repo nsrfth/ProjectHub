@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useT } from '@/lib/i18n';
 import Modal from '@/features/ui/Modal';
+import { isModuleDisabled, ModuleDisabledBanner } from '@/features/ui/ModuleDisabledBanner';
 import * as api from './api';
 import type { NcrSeverity, NcrDisposition } from './api';
 
@@ -27,9 +28,10 @@ export function NcrRegister({ teamId, projectId, canManage }: Props): JSX.Elemen
   const [form, setForm] = useState<CreateForm>(emptyForm);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const { data: items = [], isLoading } = useQuery({
+  const { data: items = [], isLoading, isError, error } = useQuery({
     queryKey: ['ncrs', teamId, projectId],
     queryFn: () => api.listNcrs(teamId, projectId),
+    retry: false,
   });
 
   const inv = (): Promise<void> => qc.invalidateQueries({ queryKey: ['ncrs', teamId, projectId] });
@@ -62,6 +64,7 @@ export function NcrRegister({ teamId, projectId, canManage }: Props): JSX.Elemen
   });
 
   if (isLoading) return <p className="text-sm text-text-muted">{t('common.loading')}</p>;
+  if (isError) return isModuleDisabled(error) ? <ModuleDisabledBanner /> : <></>;
 
   const DISPOSITIONS: NcrDisposition[] = ['USE_AS_IS', 'REWORK', 'REJECT', 'CONCESSION'];
 

@@ -6,6 +6,7 @@ import { LifecycleController } from '../controllers/lifecycleController.js';
 import { requireAuth, requireTeamRole, requireTeamRoleOrGrantedProject } from '../middleware/auth.js';
 import { requireProjectAccess, requireProjectWriteAccess } from '../middleware/requireProjectAccess.js';
 import { requirePermission } from '../middleware/requirePermission.js';
+import { requireModule } from '../middleware/requireModule.js';
 import {
   changeRequestResponse,
   contractResponse,
@@ -37,6 +38,7 @@ export async function riskRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requireProjectAccess());
+  r.addHook('preHandler', requireModule('risk'));
 
   r.get('/', {
     schema: { tags: ['risk'], summary: 'List risks', params: z.object({ teamId: z.string(), projectId: z.string() }), response: { 200: z.object({ items: z.array(riskResponse) }) }, security: [{ bearerAuth: [] }] },
@@ -77,6 +79,7 @@ export async function changeRequestRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requireProjectAccess());
+  r.addHook('preHandler', requireModule('change_control'));
 
   r.get('/', {
     schema: { tags: ['change-control'], summary: 'List change requests', params: z.object({ teamId: z.string(), projectId: z.string() }), response: { 200: z.object({ items: z.array(changeRequestResponse) }) }, security: [{ bearerAuth: [] }] },
@@ -157,6 +160,7 @@ export async function contractRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requireProjectAccess());
+  r.addHook('preHandler', requireModule('procurement'));
 
   r.get('/', {
     schema: { tags: ['procurement'], summary: 'List contracts', params: z.object({ teamId: z.string(), projectId: z.string() }), response: { 200: z.object({ items: z.array(contractResponse) }) }, security: [{ bearerAuth: [] }] },
@@ -183,6 +187,7 @@ export async function purchaseOrderRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requireProjectAccess());
+  r.addHook('preHandler', requireModule('procurement'));
 
   r.get('/', {
     schema: { tags: ['procurement'], summary: 'List purchase orders', params: z.object({ teamId: z.string(), projectId: z.string() }), response: { 200: z.object({ items: z.array(poResponse) }) }, security: [{ bearerAuth: [] }] },
@@ -209,6 +214,7 @@ export async function ncrRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requireProjectAccess());
+  r.addHook('preHandler', requireModule('quality'));
 
   r.get('/', {
     schema: { tags: ['quality'], summary: 'List NCRs', params: z.object({ teamId: z.string(), projectId: z.string() }), response: { 200: z.object({ items: z.array(ncrResponse) }) }, security: [{ bearerAuth: [] }] },

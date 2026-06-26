@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useT } from '@/lib/i18n';
+import { isModuleDisabled, ModuleDisabledBanner } from '@/features/ui/ModuleDisabledBanner';
 import * as api from './api';
 import type { EacMethod } from './api';
 
@@ -59,6 +60,8 @@ export function EvmDashboard({ teamId, projectId, canManage }: Props): JSX.Eleme
   });
 
   const m = metricsQ.data;
+
+  if (metricsQ.isError && isModuleDisabled(metricsQ.error)) return <ModuleDisabledBanner />;
 
   return (
     <div className="space-y-6">

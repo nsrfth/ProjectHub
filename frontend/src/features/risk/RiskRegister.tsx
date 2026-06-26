@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as riskApi from './api';
 import Modal from '@/features/ui/Modal';
+import { isModuleDisabled, ModuleDisabledBanner } from '@/features/ui/ModuleDisabledBanner';
 import { useT } from '@/lib/i18n';
 
 interface RiskRegisterProps {
@@ -24,10 +25,11 @@ export function RiskRegister({ teamId, projectId, canManage }: RiskRegisterProps
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
 
-  const { data: risks = [], isLoading } = useQuery({
+  const { data: risks = [], isLoading, isError, error } = useQuery({
     queryKey: ['risks', teamId, projectId],
     queryFn: () => riskApi.listRisks(teamId, projectId),
     enabled: !!teamId && !!projectId,
+    retry: false,
   });
 
   const invalidate = (): void => {
@@ -42,6 +44,8 @@ export function RiskRegister({ teamId, projectId, canManage }: RiskRegisterProps
     mutationFn: (id: string) => riskApi.deleteRisk(teamId, projectId, id),
     onSuccess: invalidate,
   });
+
+  if (isError) return isModuleDisabled(error) ? <ModuleDisabledBanner /> : <></>;
 
   return (
     <div className="space-y-4">

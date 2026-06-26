@@ -5,6 +5,7 @@ import { EvmService } from '../services/evmService.js';
 import { EvmController } from '../controllers/evmController.js';
 import { requireAuth, requireTeamRoleOrGrantedProject } from '../middleware/auth.js';
 import { requireProjectAccess, requireProjectWriteAccess } from '../middleware/requireProjectAccess.js';
+import { requireModule } from '../middleware/requireModule.js';
 import {
   evmMetricsResponse,
   evmQuery,
@@ -22,6 +23,7 @@ export async function evmRoutes(app: FastifyInstance): Promise<void> {
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requireProjectAccess());
+  r.addHook('preHandler', requireModule('evm'));
 
   r.get('/', {
     schema: {

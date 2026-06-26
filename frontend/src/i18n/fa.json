@@ -1236,5 +1236,7 @@
   "evm.metric.eac": "EAC",
   "evm.metric.vac": "VAC",
   "evm.metric.tcpi": "TCPI",
-  "evm.series.title": "منحنی S"
+  "evm.series.title": "منحنی S",
+
+  "module.disabled": "این ماژول برای این پروژه فعال نیست. آن را در تنظیمات ← پروفایل‌ها فعال کنید."
 }
