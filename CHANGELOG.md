@@ -6,14 +6,14 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Versioning (from v2.5.0):** frontend, backend, the user manual, and
 `TASKHUB_VERSION` now share **one unified version number**. The number is
-**incremented on every change**. The historical `[1.NN]` entries below were
-frontend-only slices folded into the 2.5 line during the unification.
+**incremented on every change**. Entries below `[2.5.0]` use the historical
+`[1.NN]` frontend-only slice numbering from before the unification.
 
 When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
-## [1.92.0] — 2026-06-26
+## [2.5.4] — 2026-06-26
 
 **Timesheets — rate-card management + reject reason.** A QA pass found the
 Timesheets page was missing the **rate cards** UI entirely: without cost/bill
@@ -28,11 +28,11 @@ to the cost ledger at no rate.
 - **Reject reason** — rejecting a submitted timesheet now prompts for a reason
   instead of sending a hard-coded "Returned for correction" string.
 
-No backend changes. Frontend bumped 1.91.0 → 1.92.0. *Still deferred (minor):
+No backend changes. Frontend bumped 2.5.3 → 2.5.4. *Still deferred (minor):
 per-task time entry, entry edit, bulk entry, and the billable flag in the log
 form.*
 
-## [1.91.0] — 2026-06-26
+## [2.5.3] — 2026-06-26
 
 **WBS gets a GUI (PMIS R1).** The Work Breakdown Structure was backend-only —
 `GET /wbs` (outline tree + % rollups) was unconsumed and task nesting/reparenting
@@ -47,9 +47,9 @@ row):
   dialog (`POST /tasks/:id/move`) that excludes the node's own descendants as
   targets and takes a sibling position.
 
-No backend changes. Frontend bumped 1.90.0 → 1.91.0.
+No backend changes. Frontend bumped 2.5.2 → 2.5.3.
 
-## [1.90.0] — 2026-06-26
+## [2.5.2] — 2026-06-26
 
 **PMIS GUI completion — Cost Control, Resources, and Records.** A QA audit found
 three modules were backend-complete but only partially surfaced. This release
@@ -73,7 +73,7 @@ closes those gaps; no backend changes.
 - **Cleanup** — removed a dead-code branch in `ProjectCostPanel`
   (`isModuleDisabled(...) ? null : null`).
 
-## [1.89.0] — 2026-06-26
+## [2.5.1] — 2026-06-26
 
 **PMIS frontend — full UI for R6–R9 modules.**
 All seven PMIS registers and dashboards land in the React SPA:

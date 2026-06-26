@@ -1,6 +1,6 @@
 # TaskHub — User Manual
 
-Version **v2.5.0** (2026-06-26)
+Version **v2.5.4** (2026-06-26)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -218,8 +218,8 @@ profile enables **Timesheets** and/or **Cost Control** (Project edit → Profile
   rate, and an effective-from/-to window) is snapshotted onto each entry when you
   log it, so changing a rate later never rewrites old timesheets.
 - Managers see an **approval queue**: **Approve** posts the labour cost into the
-  project's cost ledger; **Reject** returns it; **Reopen** unlocks an approved
-  period and reverses the cost it posted.
+  project's cost ledger; **Reject** prompts for a reason and returns it to the
+  submitter; **Reopen** unlocks an approved period and reverses the cost it posted.
 
 **Cost control** (the **Cost** link in the project row opens the full page; a
 quick summary also shows in the project edit dialog):
