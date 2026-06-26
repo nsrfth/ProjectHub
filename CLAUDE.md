@@ -4,9 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-TaskHub — self-hosted team task management. Monorepo with two independently-versioned npm
-packages: `backend/` (Fastify API, currently v2.5) and `frontend/` (React SPA, v1.88).
-Fronted by Caddy (TLS + SPA hosting), backed by PostgreSQL 16 (Prisma) and Redis 7.
+TaskHub — self-hosted team task management. Monorepo with `backend/` (Fastify API) and
+`frontend/` (React SPA). Fronted by Caddy (TLS + SPA hosting), backed by PostgreSQL 16 (Prisma)
+and Redis 7.
+
+**Versioning (from v2.5.0):** frontend, backend, the user manual, and `TASKHUB_VERSION` share a
+**single unified version number**, currently **2.5.0**. **Bump it on every change** (patch by
+default) and keep all version stamps in lockstep — see the Deploy workflow section.
 
 The deep design docs are worth reading before non-trivial work:
 - [ARCHITECTURE.md](ARCHITECTURE.md) — the *why* of every major subsystem, with a per-feature

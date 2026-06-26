@@ -4,8 +4,14 @@ All notable changes to TaskHub are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
-`USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
+**Versioning (from v2.5.0):** frontend, backend, the user manual, and
+`TASKHUB_VERSION` now share **one unified version number**. The number is
+**incremented on every change**. The historical `[1.NN]` entries below were
+frontend-only slices folded into the 2.5 line during the unification.
+
+When shipping a change, bump the single version in `frontend/package.json`,
+`backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
+and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
 ## [1.92.0] — 2026-06-26
 
