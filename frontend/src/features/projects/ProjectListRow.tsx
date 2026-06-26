@@ -122,7 +122,7 @@ export default function ProjectListRow({
           <span className="text-[11px] uppercase rounded-full bg-bg-elevated px-2 py-0.5">
             {project.teamName}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <Link
               to={`/projects/${project.id}/reports/status`}
               title={t('projects.status.view')}
@@ -154,6 +154,20 @@ export default function ProjectListRow({
               onClick={(e) => e.stopPropagation()}
             >
               Gantt
+            </Link>
+            <Link
+              to={`/projects/${project.id}/records`}
+              className="text-xs text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {t('records.navShort')}
+            </Link>
+            <Link
+              to={`/projects/${project.id}/risks`}
+              className="text-xs text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {t('risk.navShort')}
             </Link>
             {project.correspondenceEnabled && (
               <Link

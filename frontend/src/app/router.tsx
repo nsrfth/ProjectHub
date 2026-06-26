@@ -8,6 +8,8 @@ import TaskDetailPage from '@/pages/TaskDetailPage';
 import ProjectGanttPage from '@/pages/ProjectGanttPage';
 import ProjectStatusPage from '@/pages/ProjectStatusPage';
 import CorrespondencePage from '@/pages/CorrespondencePage';
+import ProjectRiskPage from '@/pages/ProjectRiskPage';
+import ProjectRecordsPage from '@/pages/ProjectRecordsPage';
 import AdminPage from '@/pages/AdminPage';
 import ReportsPage from '@/pages/ReportsPage';
 import WorkloadPage from '@/pages/WorkloadPage';
@@ -71,6 +73,9 @@ export const router = createBrowserRouter([
       // v1.89: per-project correspondence (دبیرخانه) register. Enabled per
       // project by a global admin; the page guards on the project being found.
       { path: '/projects/:projectId/correspondence', element: <CorrespondencePage /> },
+      // v2.4 / v2.5 (PMIS R8 / R9): per-project record + risk registers.
+      { path: '/projects/:projectId/records', element: <ProjectRecordsPage /> },
+      { path: '/projects/:projectId/risks', element: <ProjectRiskPage /> },
       { path: '/admin', element: <Navigate to="/settings/admin" replace /> },
       { path: '/reports', element: <ReportsPage /> },
       { path: '/workload', element: <WorkloadPage /> },
