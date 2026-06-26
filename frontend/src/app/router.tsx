@@ -10,6 +10,11 @@ import ProjectStatusPage from '@/pages/ProjectStatusPage';
 import CorrespondencePage from '@/pages/CorrespondencePage';
 import ProjectRiskPage from '@/pages/ProjectRiskPage';
 import ProjectRecordsPage from '@/pages/ProjectRecordsPage';
+import ProjectChangeControlPage from '@/pages/ProjectChangeControlPage';
+import ProjectProcurementPage from '@/pages/ProjectProcurementPage';
+import ProjectResourcesPage from '@/pages/ProjectResourcesPage';
+import ProjectQualityPage from '@/pages/ProjectQualityPage';
+import ProjectEvmPage from '@/pages/ProjectEvmPage';
 import AdminPage from '@/pages/AdminPage';
 import ReportsPage from '@/pages/ReportsPage';
 import WorkloadPage from '@/pages/WorkloadPage';
@@ -73,9 +78,14 @@ export const router = createBrowserRouter([
       // v1.89: per-project correspondence (دبیرخانه) register. Enabled per
       // project by a global admin; the page guards on the project being found.
       { path: '/projects/:projectId/correspondence', element: <CorrespondencePage /> },
-      // v2.4 / v2.5 (PMIS R8 / R9): per-project record + risk registers.
+      // v2.4 / v2.5 (PMIS R8 / R9): per-project registers.
       { path: '/projects/:projectId/records', element: <ProjectRecordsPage /> },
       { path: '/projects/:projectId/risks', element: <ProjectRiskPage /> },
+      { path: '/projects/:projectId/change-control', element: <ProjectChangeControlPage /> },
+      { path: '/projects/:projectId/procurement', element: <ProjectProcurementPage /> },
+      { path: '/projects/:projectId/resources', element: <ProjectResourcesPage /> },
+      { path: '/projects/:projectId/quality', element: <ProjectQualityPage /> },
+      { path: '/projects/:projectId/evm', element: <ProjectEvmPage /> },
       { path: '/admin', element: <Navigate to="/settings/admin" replace /> },
       { path: '/reports', element: <ReportsPage /> },
       { path: '/workload', element: <WorkloadPage /> },

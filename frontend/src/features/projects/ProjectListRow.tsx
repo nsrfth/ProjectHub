@@ -169,6 +169,41 @@ export default function ProjectListRow({
             >
               {t('risk.navShort')}
             </Link>
+            <Link
+              to={`/projects/${project.id}/change-control`}
+              className="text-xs text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {t('changeControl.navShort')}
+            </Link>
+            <Link
+              to={`/projects/${project.id}/procurement`}
+              className="text-xs text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {t('procurement.navShort')}
+            </Link>
+            <Link
+              to={`/projects/${project.id}/resources`}
+              className="text-xs text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {t('resources.navShort')}
+            </Link>
+            <Link
+              to={`/projects/${project.id}/quality`}
+              className="text-xs text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {t('ncr.navShort')}
+            </Link>
+            <Link
+              to={`/projects/${project.id}/evm`}
+              className="text-xs text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {t('evm.navShort')}
+            </Link>
             {project.correspondenceEnabled && (
               <Link
                 to={`/projects/${project.id}/correspondence`}
