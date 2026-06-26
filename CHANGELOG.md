@@ -7,6 +7,82 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 When shipping a release, also update `ARCHITECTURE.md`, `USER_MANUAL.md`,
 `USER_MANUAL.fa.md`, and set `TASKHUB_VERSION` in the deployment `.env`.
 
+## [2.5.0] — 2026-06-26
+
+**PMIS R9 — Specialized Lifecycle.** Four project-control domains land as
+project-scoped modules: **Risk Register** (probability/impact scoring, response
+strategies, mitigation plans, risk closure), **Change Control** (CR lifecycle
+DRAFT→SUBMITTED→APPROVED→APPLIED, `apply()` transaction that snapshots a
+`CHANGE_REQUEST` baseline and optionally posts an `ActualCostEntry` for the
+cost impact), **Procurement** (team-scoped Vendor master, project-scoped
+Contracts and Purchase Orders with a PO→Commitment auto-post on ISSUED
+status), and **Quality** (NCR severity/disposition with optional corrective task
+link). All entities carry sequential reference numbers (`RISK-001`, `CR-001`,
+`CON-001`, `PO-001`, `NCR-001`).
+
+- **Schema:** `RiskRecord`, `ChangeRequest`, `Vendor`, `Contract`,
+  `PurchaseOrder`, `QualityNcr` + 6 enums (`RiskResponse`,
+  `ChangeRequestStatus`, `ContractStatus`, `PoStatus`, `NcrSeverity`,
+  `NcrDisposition`). Migration `20260715120000_pmis_r9_lifecycle`.
+- **Permissions:** `risk.manage`, `change.manage`, `change.approve`,
+  `procurement.manage`, `quality.manage` — all granted to Manager system roles.
+- **Services/routes:** `lifecycleService.ts` (single file for all four
+  domains), `lifecycleController.ts`, `lifecycle.ts` routes.
+
+## [2.4.0] — 2026-06-26
+
+**PMIS R8 — Record Framework.** Generic project-record register for any
+document, communication, or item the PM wants to track in a consistent way.
+`PmisRecordType` defines the type (key, name, status workflow, field schema);
+`PmisRecord` holds instances with a JSON `fieldValues` bag and a free-text
+discussion thread (`PmisRecordComment`). Five global built-in types are seeded:
+**Issue**, **RFI**, **Document**, **Stakeholder**, **MoM** (global `teamId=NULL`
+so they're available to every team). Teams can add custom types. Records carry
+sequential reference numbers keyed by type (`ISSUE-001`, `RFI-001`, …).
+
+- **Schema:** `PmisRecordType`, `PmisRecord`, `PmisRecordComment` +
+  `RecordTypeKind` enum. Migration `20260714120000_pmis_r8_records`.
+- **Permission:** `record.manage` — granted to Manager system roles.
+- **Services/routes:** `recordService.ts`, `recordController.ts`,
+  `records.ts` routes. Naming uses `Pmis` prefix to avoid collision with
+  TypeScript's built-in `Record<K,V>` utility type.
+
+## [2.3.0] — 2026-06-26
+
+**PMIS R7 — Earned Value Management.** On-demand EVM computation against the
+project's budget lines and baseline schedule bars. BAC = Σ BudgetLines;
+PV = time-phased from the most recent baseline's `BaselineEntry` bars (linear
+interpolation over start/end × task budget, since no `plannedValueMinor` is
+stored); EV = Σ(percentComplete/100 × task budget) for WBS leaf tasks;
+AC = Σ ActualCostEntry up to `asOf`. Derives CV, SV, CPI, SPI, EAC (three
+methods: CPI_BASED, SPI_BASED, TCPI_BASED), VAC, TCPI. Snapshots persist to
+`EvmSnapshot` for S-curve series.
+
+- **Schema:** `EvmSnapshot` + `EacMethod` enum. Migration
+  `20260713120000_pmis_r7_evm`.
+- **API:** `GET …/evm?asOf=&eacMethod=` (on-demand compute),
+  `POST …/evm/snapshots` (save), `GET …/evm/series` (S-curve history).
+- **Service:** `evmService.ts`; controller/routes in `evmController.ts` /
+  `evm.ts`.
+
+## [2.2.0] — 2026-06-26
+
+**PMIS R6 — Resource Management.** Team-scoped Resource and Skill catalogs
+with WBS-task assignments. Resources carry type (HUMAN/EQUIPMENT/MATERIAL),
+optional linked User, max units, hourly cost rate, and an optional
+`CapacityCalendar`. Skill tags attach to resources with a proficiency level.
+Assignments link a resource to a WBS task with planned/actual hours and a units
+fraction. A workload report aggregates planned and actual hours per resource
+across a project.
+
+- **Schema:** `Resource`, `Skill`, `ResourceSkill`, `ResourceAssignment` +
+  `ResourceType` enum. Soft-delete on `Resource`. Migration
+  `20260712120000_pmis_r6_resources`.
+- **Permission:** `resource.manage` — granted to Manager system roles.
+- **Services/routes:** `resourceService.ts`, `resourceController.ts`,
+  `resources.ts` routes (catalog, skills, task-level assignments, team workload
+  report).
+
 ## [2.1.0] — 2026-06-26
 
 **PMIS R5 — Scheduling engine + baselines on the Gantt.** Wave B continues: TaskHub
