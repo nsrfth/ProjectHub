@@ -208,7 +208,12 @@ export const budgetReportResponse = z.object({
 export const projectStatusResponse = z.object({
   projectId: z.string(),
   name: z.string(),
+  code: z.string().nullable(),
+  description: z.string().nullable(),
   status: z.enum(['ACTIVE', 'ON_HOLD', 'ARCHIVED']),
+  ragStatus: z.enum(['GREEN', 'AMBER', 'RED']),
+  ragReason: z.string().nullable(),
+  healthUpdatedAt: z.string().nullable(),
   startDate: z.string().nullable(),
   endDate: z.string().nullable(),
   ownerName: z.string().nullable(),
@@ -223,8 +228,16 @@ export const projectStatusResponse = z.object({
     total: z.number().int().nonnegative(),
   }),
   overdueCount: z.number().int().nonnegative(),
-  // done/total*100, rounded; 0 when the project has no tasks (never NaN).
   percentComplete: z.number().int().min(0).max(100),
+  // Module-gated sections (null when module disabled).
+  risks: z.object({ open: z.number().int(), total: z.number().int() }).nullable(),
+  changeRequests: z.object({ pending: z.number().int(), approved: z.number().int(), total: z.number().int() }).nullable(),
+  costSummary: z.object({
+    plannedBudgetLines: z.string(),
+    committed: z.string(),
+    actual: z.string(),
+    currency: z.string(),
+  }).nullable(),
 });
 
 export type DoneTasksQuery = z.infer<typeof doneTasksQuery>;

@@ -6,7 +6,12 @@ import { api } from '@/lib/api';
 export interface ProjectStatusReport {
   projectId: string;
   name: string;
+  code: string | null;
+  description: string | null;
   status: 'ACTIVE' | 'ON_HOLD' | 'ARCHIVED';
+  ragStatus: 'GREEN' | 'AMBER' | 'RED';
+  ragReason: string | null;
+  healthUpdatedAt: string | null;
   startDate: string | null;
   endDate: string | null;
   ownerName: string | null;
@@ -22,6 +27,14 @@ export interface ProjectStatusReport {
   };
   overdueCount: number;
   percentComplete: number;
+  risks: { open: number; total: number } | null;
+  changeRequests: { pending: number; approved: number; total: number } | null;
+  costSummary: {
+    plannedBudgetLines: string;
+    committed: string;
+    actual: string;
+    currency: string;
+  } | null;
 }
 
 export async function fetchProjectStatus(

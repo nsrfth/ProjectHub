@@ -13,6 +13,21 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.6] — 2026-06-27
+
+**Project status page — RAG health, risks, change requests, cost summary.**
+The one-page project status report now surfaces all PMIS module data:
+
+- **RAG badge** (GREEN/AMBER/RED) with colour-coded dot, reason text below the header.
+- **Project code** shown in monospace under the project name.
+- **Description** paragraph in the header.
+- **Risks tile** (open / total counts) — shown only when the `risk` module is enabled.
+- **Change requests tile** (pending / approved / total) — shown only when `change_control` is enabled.
+- **Cost summary** (planned budget lines / committed / actual) — shown only when `cost_control` is enabled.
+- Fixed three bugs in `projectStatusService.ts`: wrong Prisma model name (`risk` → `riskRecord`),
+  wrong SQL table (`CostCommitment` → `Commitment`), wrong status enum value (`ACTIVE` → `OPEN`).
+- New i18n keys added in EN + FA for all new fields.
+
 ## [2.5.5] — 2026-06-26
 
 **GUI coverage — RACI, progress, baseline capture, timesheet task/billable, project health/code.**
