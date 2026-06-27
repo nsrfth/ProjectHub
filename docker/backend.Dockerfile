@@ -32,11 +32,10 @@ RUN apk add --no-cache openssl postgresql16-client
 RUN addgroup -S app && adduser -S app -G app
 
 ENV NODE_ENV=production
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
-
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+# Copy the full node_modules from the builder (already has prisma generated)
+# instead of running npm ci again in the runner — avoids @prisma/client
+# postinstall re-running prisma generate without a schema file present.
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 
