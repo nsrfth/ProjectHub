@@ -1,6 +1,7 @@
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { reportingCurrencyFor } from './costService.js';
+import { CURRENCY_DECIMALS } from '../lib/money.js';
 import type { EvmQuery, EvmSeriesQuery } from '../schemas/evm.js';
 import type { Currency, EacMethod } from '@prisma/client';
 
@@ -85,12 +86,14 @@ export class EvmService {
       ev += (t.percentComplete / 100) * taskBudget;
     }
 
-    // AC: sum of actual cost entries up to asOf
+    // AC: sum of actual cost entries in reporting currency.
+    // baseAmountMinor uses the reporting currency's own decimal places (IRR=0, USD=2).
     const acAgg = await prisma.actualCostEntry.aggregate({
       where: { projectId, incurredOn: { lte: asOf } },
       _sum: { baseAmountMinor: true },
     });
-    const ac = Number(acAgg._sum.baseAmountMinor ?? 0n) / 100;
+    const reportingFactor = Math.pow(10, CURRENCY_DECIMALS[currency]);
+    const ac = Number(acAgg._sum.baseAmountMinor ?? 0n) / reportingFactor;
 
     return this.deriveMetrics({ bac, pv, ev, ac, method, currency, asOf, projectId });
   }
@@ -132,7 +135,7 @@ export class EvmService {
       where: { projectId },
       orderBy: { snapshotDate: 'asc' },
     });
-    // DB stores minor units; divide by 100 to return major units.
+    // DB stores ×100 (saveSnapshot multiplies by 100 before write); divide back.
     return {
       items: snaps.map((s) => ({
         date: s.snapshotDate.toISOString().slice(0, 10),
