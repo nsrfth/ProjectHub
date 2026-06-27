@@ -13,6 +13,14 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.7] — 2026-06-27
+
+**Fix: EVM metrics returned in minor units (cents) instead of major units.**
+`evmService` was passing raw `amountMinor` values directly to the API response without
+dividing by 100 — causing BAC/EV/AC/etc. to display as e.g. "451.00M" instead of "4.51M".
+Fixed: all monetary inputs (BAC, PV, EV, AC) divided by 100 in `computeEvm()`; snapshot
+save multiplies back by 100 for DB storage; series read divides by 100 on output.
+
 ## [2.5.6] — 2026-06-27
 
 **Project status page — RAG health, risks, change requests, cost summary.**

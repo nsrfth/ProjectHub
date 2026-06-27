@@ -36,12 +36,12 @@ export class EvmService {
     const asOf = query.asOf ? new Date(`${query.asOf}T23:59:59.999Z`) : new Date();
     const method: EacMethod = query.eacMethod ?? 'CPI_BASED';
 
-    // BAC: sum of budget lines in reporting currency (baseAmountMinor already converted)
+    // BAC: sum of budget lines. amountMinor is in minor units (cents) → divide by 100.
     const budgetAgg = await prisma.budgetLine.aggregate({
       where: { projectId },
       _sum: { amountMinor: true },
     });
-    const bac = Number(budgetAgg._sum.amountMinor ?? 0n);
+    const bac = Number(budgetAgg._sum.amountMinor ?? 0n) / 100;
 
     // PV: time-phased from the most recent baseline's BaselineEntry schedule bars
     // + the task's BudgetLine amounts (linear interpolation over the window).
@@ -58,7 +58,7 @@ export class EvmService {
         include: { task: { include: { budgetLines: { select: { amountMinor: true } } } } },
       });
       for (const e of entries) {
-        const taskBudget = e.task.budgetLines.reduce((s, b) => s + Number(b.amountMinor), 0);
+        const taskBudget = e.task.budgetLines.reduce((s, b) => s + Number(b.amountMinor) / 100, 0);
         if (!taskBudget) continue;
         const start = e.start?.getTime();
         const end = e.end?.getTime();
@@ -81,7 +81,7 @@ export class EvmService {
     });
     let ev = 0;
     for (const t of leafTasks) {
-      const taskBudget = t.budgetLines.reduce((s, b) => s + Number(b.amountMinor), 0);
+      const taskBudget = t.budgetLines.reduce((s, b) => s + Number(b.amountMinor) / 100, 0);
       ev += (t.percentComplete / 100) * taskBudget;
     }
 
@@ -90,29 +90,31 @@ export class EvmService {
       where: { projectId, incurredOn: { lte: asOf } },
       _sum: { baseAmountMinor: true },
     });
-    const ac = Number(acAgg._sum.baseAmountMinor ?? 0n);
+    const ac = Number(acAgg._sum.baseAmountMinor ?? 0n) / 100;
 
     return this.deriveMetrics({ bac, pv, ev, ac, method, currency, asOf, projectId });
   }
 
   async saveSnapshot(teamId: string, projectId: string, query: EvmQuery) {
     const metrics = await this.computeEvm(teamId, projectId, query);
+    // metrics are in major units; DB stores minor units → multiply by 100.
+    const toMinor = (v: number) => BigInt(Math.round(v * 100));
     const snap = await prisma.evmSnapshot.create({
       data: {
         teamId,
         projectId,
         snapshotDate: new Date(metrics.asOf),
-        bac: BigInt(Math.round(metrics.bac)),
-        pv: BigInt(Math.round(metrics.pv)),
-        ev: BigInt(Math.round(metrics.ev)),
-        ac: BigInt(Math.round(metrics.ac)),
-        cv: BigInt(Math.round(metrics.cv)),
-        sv: BigInt(Math.round(metrics.sv)),
+        bac: toMinor(metrics.bac),
+        pv: toMinor(metrics.pv),
+        ev: toMinor(metrics.ev),
+        ac: toMinor(metrics.ac),
+        cv: toMinor(metrics.cv),
+        sv: toMinor(metrics.sv),
         cpi: metrics.cpi,
         spi: metrics.spi,
-        eac: BigInt(Math.round(metrics.eac)),
+        eac: toMinor(metrics.eac),
         eacMethod: metrics.eacMethod,
-        vac: BigInt(Math.round(metrics.vac)),
+        vac: toMinor(metrics.vac),
         tcpi: metrics.tcpi,
         currency: metrics.currency,
       },
@@ -130,13 +132,14 @@ export class EvmService {
       where: { projectId },
       orderBy: { snapshotDate: 'asc' },
     });
+    // DB stores minor units; divide by 100 to return major units.
     return {
       items: snaps.map((s) => ({
         date: s.snapshotDate.toISOString().slice(0, 10),
-        bac: Number(s.bac),
-        pv: Number(s.pv),
-        ev: Number(s.ev),
-        ac: Number(s.ac),
+        bac: Number(s.bac) / 100,
+        pv: Number(s.pv) / 100,
+        ev: Number(s.ev) / 100,
+        ac: Number(s.ac) / 100,
         cpi: Number(s.cpi),
         spi: Number(s.spi),
       })),
