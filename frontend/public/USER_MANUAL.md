@@ -1,6 +1,6 @@
-# TaskHub — User Manual
+# ProjectHub — User Manual
 
-Version **v1.91.0** (2026-06-26)
+Version **v2.5.9** (2026-06-30)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -28,19 +28,19 @@ This manual covers everything a member, manager, or admin needs to do day-to-day
 17. [Admin / manager — Settings](#admin--manager--settings)
     - [Workweek (off-days)](#workweek-off-days)
     - [Security — password policy](#security--password-policy-v143-admin)
-    - [TaskHub server](#taskhub-server-v143-admin)
+    - [ProjectHub server](#projecthub-server-v143-admin)
     - [Directories (LDAP)](#directories-ldap)
     - [SCIM provisioning](#scim-provisioning)
     - [Webhooks](#webhooks)
     - [Audit log](#audit-log)
-18. [Installing TaskHub as an app (PWA)](#installing-taskhub-as-an-app-pwa)
+18. [Installing ProjectHub as an app (PWA)](#installing-projecthub-as-an-app-pwa)
 19. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Concepts
 
-TaskHub organises work in three layers:
+ProjectHub organises work in three layers:
 
 - **Team** — the top-level tenant. Everything you see is scoped to a team. Members in different teams don't see each other's data.
 - **Project** — belongs to a team. A project is just a named container of tasks (often a product, a workstream, or a "bucket").
@@ -57,7 +57,7 @@ You can be a global `MEMBER` and a team `MANAGER` at the same time — these are
 
 ## Signing in
 
-1. Open the URL your admin gave you (usually `https://taskhub.<your-org>/`).
+1. Open the URL your admin gave you (usually `https://projecthub.<your-org>/`).
 2. Enter email + password.
 3. If 2FA is enabled on your account, you'll see a second step asking for a 6-digit code from your authenticator app — enter it. (You can substitute a single-use recovery code in the same field.)
 4. After signing in, the **Dashboard** aggregates KPIs, charts, workload, upcoming deadlines, and recent activity across **every team you belong to** — not just one team.
@@ -66,16 +66,16 @@ If your account is owned by an LDAP directory, you log in with your LDAP passwor
 
 ---
 
-## Dashboard (v1.46)
+## Dashboard (v1.88)
 
-The **Dashboard** (`/dashboard`) is your cross-team home screen:
+The **Dashboard** (`/dashboard`) is your cross-team home screen, aggregating data from every team you belong to:
 
-- **KPI cards** — open tasks, overdue, in progress, and completed (last 7 days), summed across all your teams.
-- **Completion trend** — bar chart scoped by the period tabs (week / month / quarter).
-- **Task status** — pie-style breakdown of TODO / In progress / Review / Done.
-- **Team workload** — open tasks per assignee (assignees merged across teams).
-- **Upcoming deadlines** — your nearest due tasks across teams.
-- **Recent activity** — latest events from all teams you belong to.
+- **KPI cards** — four snapshot metrics: Open tasks, Overdue, In progress, and Completed (last 7 days). Each card shows a mini sparkline trend and is **clickable**: clicking opens a drill-down modal listing the matching tasks with their project name and due/completion date, each linking directly to the task detail page.
+- **Completion trend** — bar chart of tasks completed per day over the selected period, overlaid with a 7-day moving-average line. The **period tabs** (Week / Month / Quarter) in the top-right set the window (7 / 30 / 90 days). A week-over-week delta is shown above the chart.
+- **Task status breakdown** — color-coded list with task counts and percentages for each status: To Do, In Progress, Review, Pending Approval, and Done.
+- **Team workload** — the top 5 assignees by open-task count, each with a stacked bar showing their In Progress / Review / To Do split.
+- **Upcoming deadlines** — up to 10 tasks due within the next 7 days, sorted by due date, labeled Today / Tomorrow / in N days, with a priority badge (Urgent / High / Medium / Low). Each item links to the task.
+- **Recent activity** — the 8 most recent events across all your teams: task created, updated, status changed, assigned, deleted, and comment added — with actor avatar and relative timestamp.
 
 The subtitle under the greeting shows how many teams are included (e.g. “Across 4 teams · all projects you can access”). Join at least one team to see data; otherwise a prompt links to **Teams**.
 
@@ -95,7 +95,7 @@ The **top bar** adds global search and notifications.
 
 Once you're signed in, a sticky **navigation bar** sits at the top of every page:
 
-- **TaskHub** (brand link, far left) — jumps to the Dashboard.
+- **ProjectHub** (brand link, far left) — jumps to the Dashboard.
 - **Dashboard / Projects / Planner / Reports / Teams** — your primary destinations in the left sidebar. The active page is highlighted.
 - **Settings** — left sidebar (opens the first settings section you can access — alphabetically by English label, e.g. **Admin** for global admins). **Admin** and **Trash** live inside Settings for users with access.
 - **Sign out** — user menu in the top bar.
@@ -120,7 +120,7 @@ The buttons appear on every signed-in route so you can always reach help / conte
 
 - **Teams** page — click the team-name dropdown on the dashboard or go to `/teams`. Lists every team you belong to and lets you switch the "current team" (drives what the kanban / reports / settings show).
 - **Create a team** — click **New team**, give it a name + slug (URL-safe, dash-delimited, e.g. `growth-eng`).
-- **Invite a member** — open the team detail, search by **name or email** (type at least 2 characters), pick a user from the results, and choose role `MEMBER` or `MANAGER`. Users already on the team appear greyed out. Only `MANAGER`s (with `team.invite_member`) can add members. The user must already have a TaskHub account.
+- **Invite a member** — open the team detail, search by **name or email** (type at least 2 characters), pick a user from the results, and choose role `MEMBER` or `MANAGER`. Users already on the team appear greyed out. Only `MANAGER`s (with `team.invite_member`) can add members. The user must already have a ProjectHub account.
 - **Remove a member** — managers with `team.remove_member` can remove members from the roster. The last MANAGER cannot be removed. **v1.56:** if the member **owns projects** in the team, removal is blocked until you **reassign ownership** to another team member or choose **Remove anyway** (project `ownerId` stays on the removed user — they are no longer a team member but remain the recorded owner). Owned and accountable projects are listed before you confirm.
 - **Member roster (v1.54+)** — each team member shows a **Disabled** or **Locked** badge when their account is in that state. Users with **accepted group access** who are not team members appear in the roster with an **External** badge and **Full access** / **Read only** label — they cannot be removed from the team roster (manage them in User groups).
 - **Member roster search & pagination (v1.55)** — on team detail, search by name or email, filter by role / account status / member vs external, click column headers to sort, and page through large rosters (25 per page by default). Changing a filter resets to page 1.
@@ -204,7 +204,7 @@ all teams.
 
 ### Cost control & time tracking (v2.0)
 
-Two new project modules turn TaskHub from "planned budget" tracking into real
+Two new project modules turn ProjectHub from "planned budget" tracking into real
 cost control. They are **off by default** and only appear when a project's
 profile enables **Timesheets** and/or **Cost Control** (Project edit → Profile).
 
@@ -213,14 +213,16 @@ profile enables **Timesheets** and/or **Cost Control** (Project edit → Profile
 - **Log time** against a project (and optionally a task) by date and hours.
 - **Open a weekly period**, then **Submit** it for approval. While a period is
   Open or Reopened you can still edit/delete its entries; once submitted it locks.
-- A **rate card** (cost rate per person or per role, set by a Manager) is
-  snapshotted onto each entry when you log it, so changing a rate later never
-  rewrites old timesheets.
+- A **rate card** (cost rate per person or per role, managed by a Manager in the
+  **Rate cards** section of the Timesheets page — with a currency, optional bill
+  rate, and an effective-from/-to window) is snapshotted onto each entry when you
+  log it, so changing a rate later never rewrites old timesheets.
 - Managers see an **approval queue**: **Approve** posts the labour cost into the
-  project's cost ledger; **Reject** returns it; **Reopen** unlocks an approved
-  period and reverses the cost it posted.
+  project's cost ledger; **Reject** prompts for a reason and returns it to the
+  submitter; **Reopen** unlocks an approved period and reverses the cost it posted.
 
-**Cost control** (the **Cost control** panel in Project settings):
+**Cost control** (the **Cost** link in the project row opens the full page; a
+quick summary also shows in the project edit dialog):
 
 - A per-project **summary** shows **Planned / Committed / Actual / Remaining** per
   currency, plus a single total in the team's reporting currency.
@@ -228,6 +230,11 @@ profile enables **Timesheets** and/or **Cost Control** (Project edit → Profile
   migrated into one automatically); **Committed** from commitments; **Actual**
   from the **append-only ledger** fed by approved timesheets, approved expenses,
   and manual entries. Corrections are made by **reversing** an entry, never editing.
+- The Cost page is **tabbed**: **Accounts** (a cost-breakdown / CBS tree you can
+  add to, rename, and prune), **Budget** lines, **Commitments** (open then
+  close/cancel), **Expenses** (submit → approve/reject; approving posts an
+  actual), the **Actuals** ledger (post a manual entry or reverse one), and team
+  **FX rates** used to roll multiple currencies into the reporting currency.
 - Managing budgets, commitments, expenses, actuals, and rate cards needs the new
   **cost.manage** / **timesheet.manage_rates** / **timesheet.approve** permissions
   (granted to Managers by default). Logging your own time needs no special right.
@@ -236,18 +243,21 @@ profile enables **Timesheets** and/or **Cost Control** (Project edit → Profile
 
 A team-level **resource catalogue** so a project can plan *who and what* delivers
 the work, not just the dates. These are **Manager capabilities** (permission
-`resource.manage`, granted to Managers by default); the on-screen pages follow in
-a later release — the same staged rollout used for WBS.
+`resource.manage`, granted to Managers by default). Access via the **Resources**
+link in the project row.
 
 - **Resources** — each has a **type** (Human, Equipment, or Material), an optional
-  link to a TaskHub **user**, a **max units** value (how much is available, e.g.
+  link to a ProjectHub **user**, a **max units** value (how much is available, e.g.
   `1` = full-time), an optional **hourly cost rate** + currency, and an optional
   **working calendar**. Deleting a resource is a soft-delete, so its history on
   past assignments is kept.
-- **Skills** — a simple team skill catalogue; tag a resource with skills and a
-  proficiency **level** to answer "who can do X".
-- **Assignments** — attach a resource to any WBS task with a **units** share and
-  optional **planned / actual hours**; a resource appears on a given task once.
+- **Skills** — a simple team skill catalogue (the **Manage skills** button on the
+  Resources page); tag a resource with skills and a proficiency **level** (the
+  **Skills** action on each resource row) to answer "who can do X".
+- **Assignments** — on a **task's detail page**, the *Assigned resources* panel
+  attaches a resource with a **units** share and optional **planned / actual
+  hours**; a resource appears on a given task once. These rows feed the workload
+  report.
 - **Workload report** — per project, totals each resource's planned vs actual
   hours across its assignments, so you can spot over- and under-loading.
 
@@ -286,11 +296,10 @@ types and records needs **record.manage** (Managers by default).
 
 Four project-control registers round out the governance layer. All are
 project-scoped, numbered automatically, and each gated by its own Manager
-permission. As with the modules above, these are available now through the API;
-the on-screen pages follow in later releases.
+permission. Navigate to the register from the project row in the project list.
 
 - **Risk register** (`risk.manage`) — log a risk with **probability** and
-  **impact** (1–5); TaskHub stores the **score** (probability × impact) so you can
+  **impact** (1–5); ProjectHub stores the **score** (probability × impact) so you can
   rank them. Pick a **response** (Accept / Avoid / Mitigate / Transfer), record a
   mitigation plan and owner, and close it when handled. References are
   **RISK-001**, …
@@ -489,9 +498,9 @@ There's a **Print** button for a clean single-page printout, and the page render
 
 **Project baselines — v1.96, formal bars v2.1.** A project can **capture a baseline** — a named, frozen snapshot of every task's planned dates and progress at that moment — so later reports can compare where things stand against the original plan. Capturing a new baseline makes it the **current** one and retires the previous. From **v2.1**, each captured baseline also stores formal **per-task bars** (`BaselineEntry`) used for Gantt overlay and variance reports. API: `…/projects/:id/baselines` (capture), `…/baselines/:id/activate`, `…/baselines/compare`, and `…/reports/variance` (slip days). Requires project write access **and** the *capture baseline* permission (Managers by default) plus the **`baselines`** profile module when comparing or overlaying on the Gantt.
 
-**Work Breakdown Structure (WBS) — v1.97.** Tasks can now **nest under other tasks**, giving a project an n-level work-breakdown tree (subtasks remain the simple leaf checklist). Create a task with a parent, or **move** a task elsewhere in the tree, via the API; the **`…/projects/:id/wbs`** endpoint returns the whole tree with auto-numbered outline codes (1, 1.1, 1.1.2 …) and a rolled-up percent-complete for summary tasks. A task can't be moved under itself or one of its own descendants. On-screen editing follows in later releases; **v2.1** wires WBS leaf tasks into the project Gantt schedule overlay.
+**Work Breakdown Structure (WBS) — v1.97.** Tasks can now **nest under other tasks**, giving a project an n-level work-breakdown tree (subtasks remain the simple leaf checklist). Create a task with a parent, or **move** a task elsewhere in the tree, via the API; the **`…/projects/:id/wbs`** endpoint returns the whole tree with auto-numbered outline codes (1, 1.1, 1.1.2 …) and a rolled-up percent-complete for summary tasks. A task can't be moved under itself or one of its own descendants. The **WBS** link in the project row opens an on-screen outline view: indented rows with their outline codes and a progress bar (roll-up for summary tasks, own percent for leaves); managers can **add a root task**, **add a child** under any node, and **Move** a node to a new parent/position. **v2.1** also wires WBS leaf tasks into the project Gantt schedule overlay.
 
-**Scheduling & CPM — v2.1.** When the project's profile enables **`cpm_schedule`**, dependencies can carry **lag or lead** (`+2` days after finish-to-start, etc.). TaskHub runs **Critical Path Method (CPM)** on demand over leaf tasks (summary/WBS parents are excluded). Cyclic dependencies are rejected. Enable overlays on the project Gantt with the toolbar checkboxes: **Critical path** (red bars + labelled links), **Baseline overlay** (ghost bars vs the current baseline — needs **`baselines`** module), and **Milestones** (zero-duration diamond markers; set `isMilestone` on a task via the API).
+**Scheduling & CPM — v2.1.** When the project's profile enables **`cpm_schedule`**, dependencies can carry **lag or lead** (`+2` days after finish-to-start, etc.). ProjectHub runs **Critical Path Method (CPM)** on demand over leaf tasks (summary/WBS parents are excluded). Cyclic dependencies are rejected. Enable overlays on the project Gantt with the toolbar checkboxes: **Critical path** (red bars + labelled links), **Baseline overlay** (ghost bars vs the current baseline — needs **`baselines`** module), and **Milestones** (zero-duration diamond markers; set `isMilestone` on a task via the API).
 
 **Task RACI — Consulted & Informed — v1.94.** Beyond a task's **Responsible** person and its project's **Accountable** owner, each task can now list the people who are **Consulted** (asked for input) and **Informed** (kept in the loop). A task can have many of each, and the same person may be both. For now the set is managed via the API: read it at `…/tasks/:taskId/raci`, or replace it wholesale with a `PUT` (everyone listed must be a member of the task's team). Anyone who can edit the project's tasks can change it; on-screen editing follows.
 
@@ -607,7 +616,7 @@ Click a notification to jump to the task; that marks it read.
 
 ### Email delivery (v1.14)
 
-If the operator configured SMTP, TaskHub also sends emails for:
+If the operator configured SMTP, ProjectHub also sends emails for:
 
 - **Verification** — when you register, you get a link that confirms your email (valid 24 h).
 - **Password reset** — when you request a reset, you get a link to choose a new password (valid 1 h).
@@ -658,7 +667,7 @@ Affects how **calendar dates** render — due/start/planned dates, holidays, dat
 - **Timezone** — IANA name (e.g. `Asia/Tehran`). Applies to **timestamps only**: comment times, activity log, audit entries, created/updated labels, notification times. Leave unset to use your browser's zone.
 - **12h / 24h** — how the clock portion of timestamps is shown. Default **24-hour** (Iran convention).
 
-> **Important:** TaskHub stores two kinds of date field. **Calendar dates** (due, start, planned, holidays) are zone-neutral — everyone sees the same calendar day. **Timestamps** (createdAt, completedAt when shown as a moment, comments) are true instants converted to your chosen timezone for display. The database always keeps UTC; nothing shifts at storage time.
+> **Important:** ProjectHub stores two kinds of date field. **Calendar dates** (due, start, planned, holidays) are zone-neutral — everyone sees the same calendar day. **Timestamps** (createdAt, completedAt when shown as a moment, comments) are true instants converted to your chosen timezone for display. The database always keeps UTC; nothing shifts at storage time.
 
 ### Theme
 
@@ -666,7 +675,7 @@ Seven options on **Settings → Preferences** (v1.61). Your choice is stored on 
 
 | Preference | What you see |
 |---|---|
-| **Light** | Original TaskHub look (default). |
+| **Light** | Original ProjectHub look (default). |
 | **Dark** | Slate dark surfaces — same as pre-v1.61 Dark. |
 | **System (auto)** | Follows your OS light/dark setting; updates live without reload. |
 | **Midnight** | Deep blue-black palette. |
@@ -699,7 +708,7 @@ For scripting, CI, or terminal-based work, generate a Bearer token that authenti
 Use it just like a normal Bearer token:
 
 ```sh
-curl https://taskhub.example.com/api/auth/me \
+curl https://projecthub.example.com/api/auth/me \
   -H "Authorization: Bearer th_a1b2c3..."
 ```
 
@@ -713,7 +722,7 @@ The token authenticates as you — it sees what you see. Scopes are advisory in 
 
 The **Settings** link in the left sidebar opens the Settings shell. Sidebar items are ordered alphabetically by their English label (same order in the Persian UI). The items you see depend on your role:
 
-> **System administrator (global ADMIN):** a global admin sees **every** item below and can open and edit **any team's** team-scoped settings — Roles, Labels, Custom fields, Automations, Intake forms, User groups, and Webhooks — **even for teams they are not a member of**. The instance-level items (TaskHub, Directories, Backups, Admin) are admin-only by nature.
+> **System administrator (global ADMIN):** a global admin sees **every** item below and can open and edit **any team's** team-scoped settings — Roles, Labels, Custom fields, Automations, Intake forms, User groups, and Webhooks — **even for teams they are not a member of**. The instance-level items (ProjectHub, Directories, Backups, Admin) are admin-only by nature.
 
 - **Preferences** — everyone (personal calendar + theme + language + **due reminder lead time**). Admins additionally see the Workweek, Holidays, Working-day scheduling, and **Due reminders** sections.
 - **Trash** — everyone (restore or purge soft-deleted projects and tasks).
@@ -721,7 +730,7 @@ The **Settings** link in the left sidebar opens the Settings shell. Sidebar item
 - **Labels** — team label management, in two groups (v1.80). **Predefined labels** are a single global set managed by a **global ADMIN** (the section only shows for admins); they appear automatically in **every** team's label picker on projects and tasks, can be used by anyone, but are read-only to members. **Your team's labels** are the team-scoped labels any member can create/edit/delete. Both kinds show as separate sections when picking labels — so a brand-new team always has the predefined set available even before it has any of its own.
 - **Custom fields** (v1.58) — team-scoped field definitions (Text, Number, Date, Single/Multi select, Checkbox, Person). Requires **`customfield.manage`** (default: team Manager). Define fields under **Settings → Custom fields**; set values on each task from the task detail page.
 - **Security** — everyone (change password, 2FA). Global ADMIN additionally configures the **local password policy** (min length, complexity, lockout). Directory-linked accounts cannot change password here.
-- **TaskHub** — global ADMIN only (public HTTPS/port, upload TLS certificate for Caddy).
+- **ProjectHub** — global ADMIN only (public HTTPS/port, upload TLS certificate for Caddy).
 - **Directories** — global ADMIN only (LDAP / SCIM config).
 - **Audit** — global ADMIN or team MANAGER.
 - **API & Webhooks** — everyone (tokens) + MANAGER (webhooks for that team).
@@ -784,7 +793,7 @@ Two **opt-in** instance toggles under **Settings → Preferences → Working-day
 
 **Personal lead time** — on **Settings → Preferences**, set **Due reminder lead time** (1–168 hours, default 24). The scheduler uses the **assignee's** value when set, otherwise the **creator's**, otherwise the server default (`TASK_DUE_LEAD_HOURS`, 24). Each task due date gets **one** `TASK_DUE` notification; `dueNotifiedAt` is stamped after send and reset only when the due date changes. Changing your lead time does **not** re-notify tasks already reminded.
 
-**Skip off-days (admin)** — under **Settings → Preferences → Due reminders**, enable **Skip off-days for due reminders**. When the computed notify instant would fall on a weekend or holiday, TaskHub shifts it to the **prior working day** (same clock time). If that shifted moment is already in the past when the scheduler runs, the reminder fires **immediately** — still once per due date.
+**Skip off-days (admin)** — under **Settings → Preferences → Due reminders**, enable **Skip off-days for due reminders**. When the computed notify instant would fall on a weekend or holiday, ProjectHub shifts it to the **prior working day** (same clock time). If that shifted moment is already in the past when the scheduler runs, the reminder fires **immediately** — still once per due date.
 
 Per-task lead override is planned for a future release.
 
@@ -798,9 +807,9 @@ Global **ADMIN** sees an extra section on **Settings → Security** for **local*
 
 Members still use the same page to change their own password and manage 2FA. A strength indicator appears when typing a new password.
 
-### TaskHub server (v1.43, admin)
+### ProjectHub server (v1.43, admin)
 
-**Settings → TaskHub** (global ADMIN):
+**Settings → ProjectHub** (global ADMIN):
 
 - Set the **public port** and whether **HTTPS** is enabled.
 - Upload **certificate**, **private key**, and optional **chain** for Caddy.
@@ -810,7 +819,7 @@ After saving cert or port changes, restart the Caddy container so it picks up th
 
 ### Directories (LDAP)
 
-Bind TaskHub to one or more LDAP servers so users log in with their LDAP credentials.
+Bind ProjectHub to one or more LDAP servers so users log in with their LDAP credentials.
 
 **To add an LDAP directory**:
 
@@ -829,13 +838,13 @@ Bind TaskHub to one or more LDAP servers so users log in with their LDAP credent
 
 **Logging in (v1.43+):** users can enter either their **email** or their **LDAP username** (e.g. `sAMAccountName`) in the email field. Profile fields sync from LDAP on each successful login. The admin Directories panel shows auth source and sync status per imported user.
 
-**Group → role mappings**: after creating the directory, you can map LDAP groups to TaskHub roles (global ADMIN/MEMBER, or team MEMBER/MANAGER). On every successful LDAP login, group membership determines roles. Dropping out of a mapped group revokes the corresponding access on the next login.
+**Group → role mappings**: after creating the directory, you can map LDAP groups to ProjectHub roles (global ADMIN/MEMBER, or team MEMBER/MANAGER). On every successful LDAP login, group membership determines roles. Dropping out of a mapped group revokes the corresponding access on the next login.
 
 **Important**: the bind password is encrypted at rest with the server's `MASTER_KEY`. Back up the key alongside the database — losing it makes every LDAP directory unusable.
 
 ### SCIM provisioning
 
-Each Directory row can also expose a SCIM 2.0 endpoint so an IdP (Okta, Azure AD, JumpCloud) pushes user state into TaskHub.
+Each Directory row can also expose a SCIM 2.0 endpoint so an IdP (Okta, Azure AD, JumpCloud) pushes user state into ProjectHub.
 
 **To enable SCIM**:
 
@@ -843,7 +852,7 @@ Each Directory row can also expose a SCIM 2.0 endpoint so an IdP (Okta, Azure AD
 2. Under **SCIM 2.0**, click **Generate token**.
 3. **Copy the token** (shown once).
 4. Configure your IdP:
-   - **Base URL**: `https://taskhub.example.com/api/scim/v2`
+   - **Base URL**: `https://projecthub.example.com/api/scim/v2`
    - **Bearer token**: the value you just copied.
 
 The IdP can now push Users + Groups. SCIM PATCH `active: false` deprovisions the user — they're soft-disabled, all refresh tokens are revoked, and they can no longer log in. PATCH `active: true` re-enables.
@@ -886,29 +895,29 @@ Today's vocabulary covers task + comment events. As LDAP / SCIM / 2FA / webhook 
 
 ---
 
-## Installing TaskHub as an app (PWA)
+## Installing ProjectHub as an app (PWA)
 
-TaskHub ships as a **Progressive Web App (PWA)**. On a secure origin you can install it like a native app — it opens in its own window with the TaskHub icon and indigo theme bar.
+ProjectHub ships as a **Progressive Web App (PWA)**. On a secure origin you can install it like a native app — it opens in its own window with the ProjectHub icon and indigo theme bar.
 
-**HTTPS required.** Browsers only offer install on **HTTPS** (or `localhost` during development). If your instance runs on plain HTTP (some internal deployments), TaskHub still works normally in a browser tab — install simply won't be offered. That is expected, not a bug.
+**HTTPS required.** Browsers only offer install on **HTTPS** (or `localhost` during development). If your instance runs on plain HTTP (some internal deployments), ProjectHub still works normally in a browser tab — install simply won't be offered. That is expected, not a bug.
 
 ### Desktop (Chrome / Edge)
 
-1. Sign in at your TaskHub URL (must be `https://…`).
-2. Look for the **install** icon in the address bar (⊕ or computer-with-arrow), or open the browser menu → **Install TaskHub** / **Apps → Install this site as an app**.
-3. Confirm. TaskHub opens in a standalone window without browser tabs.
+1. Sign in at your ProjectHub URL (must be `https://…`).
+2. Look for the **install** icon in the address bar (⊕ or computer-with-arrow), or open the browser menu → **Install ProjectHub** / **Apps → Install this site as an app**.
+3. Confirm. ProjectHub opens in a standalone window without browser tabs.
 
 ### Android (Chrome)
 
-1. Open TaskHub over **HTTPS** and sign in.
+1. Open ProjectHub over **HTTPS** and sign in.
 2. Tap the browser menu → **Install app** or **Add to Home screen**.
-3. The home-screen icon uses the TaskHub brand mark (maskable on Android so it isn't cropped).
+3. The home-screen icon uses the ProjectHub brand mark (maskable on Android so it isn't cropped).
 
 ### iOS (Safari)
 
-1. Open TaskHub over **HTTPS** in Safari and sign in.
+1. Open ProjectHub over **HTTPS** in Safari and sign in.
 2. Tap **Share** → **Add to Home Screen**.
-3. Confirm the name **TaskHub**. The icon comes from the apple-touch-icon asset.
+3. Confirm the name **ProjectHub**. The icon comes from the apple-touch-icon asset.
 
 **What the PWA caches.** Only the static app shell (HTML, JS, CSS, fonts, icons) is cached for faster launch. **Task and comment data is never cached** — every `/api/*` request goes to the server so you always see live data. There is no offline sync in v1.
 
@@ -934,7 +943,7 @@ After a server upgrade, the app updates automatically on the next visit (no manu
 
 **"The bell isn't updating in real time"** — the WebSocket connects on page load. If you've left the tab open across a server restart, the connection drops; refreshing reconnects.
 
-**"I don't see Install TaskHub"** — install is only offered on **HTTPS** (or `localhost`). Plain HTTP instances work as a normal website; ask your operator for an HTTPS URL if you want the standalone app.
+**"I don't see Install ProjectHub"** — install is only offered on **HTTPS** (or `localhost`). Plain HTTP instances work as a normal website; ask your operator for an HTTPS URL if you want the standalone app.
 
 ---
 
