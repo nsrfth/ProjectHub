@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.5.9** (2026-06-30)
+Version **v2.5.10** (2026-06-30)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
