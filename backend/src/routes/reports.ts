@@ -19,6 +19,8 @@ import {
   workloadResponse,
   workloadDetailQuery,
   workloadDetailResponse,
+  workloadDrillQuery,
+  workloadDrillResponse,
   budgetReportResponse,
 } from '../schemas/reports.js';
 
@@ -141,6 +143,18 @@ export async function reportsRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.budgetReport,
+  });
+
+  r.get('/workload/tasks', {
+    schema: {
+      tags: ['reports'],
+      summary: 'Task-level drill-down for a workload cell (assignee + status or due-bucket)',
+      params: z.object({ teamId: z.string() }),
+      querystring: workloadDrillQuery,
+      response: { 200: workloadDrillResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.workloadTaskDrill,
   });
 
   // ── CSV exports ───────────────────────────────────────────────────────

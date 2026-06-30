@@ -10,6 +10,8 @@ import {
   aggregateWorkloadDetail,
   aggregateWorkloadList,
   buildWorkloadTaskWhere,
+  getDueWindowBounds,
+  OPEN_WORKLOAD_STATUSES,
   type WorkloadDetailRow,
   type WorkloadListRow,
   type WorkloadWindow,
@@ -31,6 +33,25 @@ export interface WorkloadDetailOptions {
   projectId?: string;
   window?: WorkloadWindow;
   weighted?: boolean;
+}
+
+export type WorkloadDueBucket = 'overdue' | 'this_week' | 'next_week' | 'later' | 'no_due';
+
+export interface WorkloadDrillOptions {
+  assigneeId?: string;
+  status?: string;
+  dueBucket?: WorkloadDueBucket;
+  projectId?: string;
+}
+
+export interface WorkloadDrillRow {
+  id: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate: Date | null;
 }
 
 export type { WorkloadDetailRow };
@@ -386,6 +407,63 @@ export class ReportsService {
       projectName: a.task?.project.name ?? null,
       meta: (a.meta as Record<string, unknown>) ?? {},
       createdAt: a.createdAt,
+    }));
+  }
+
+  // v1.90: task-level drill-down for a single workload cell. Returns the actual
+  // tasks behind a count so managers can act on over-allocation directly.
+  async workloadTaskDrill(
+    teamId: string,
+    opts: WorkloadDrillOptions = {},
+  ): Promise<WorkloadDrillRow[]> {
+    const where = buildWorkloadTaskWhere(teamId, { projectId: opts.projectId });
+
+    if (opts.assigneeId === '__unassigned__') {
+      where.assigneeId = null;
+    } else if (opts.assigneeId) {
+      where.assigneeId = opts.assigneeId;
+    }
+
+    if (opts.status) {
+      where.status = opts.status as TaskStatus;
+    }
+
+    if (opts.dueBucket) {
+      const { todayStart, thisWeekEnd, nextWeekEnd } = getDueWindowBounds();
+      switch (opts.dueBucket) {
+        case 'overdue':
+          where.dueDate = { lt: todayStart, not: null };
+          break;
+        case 'this_week':
+          where.dueDate = { gte: todayStart, lt: thisWeekEnd };
+          break;
+        case 'next_week':
+          where.dueDate = { gte: thisWeekEnd, lt: nextWeekEnd };
+          break;
+        case 'later':
+          where.dueDate = { gte: nextWeekEnd };
+          break;
+        case 'no_due':
+          where.dueDate = null;
+          break;
+      }
+    }
+
+    const rows = await prisma.task.findMany({
+      where,
+      include: { project: { select: { id: true, name: true } } },
+      orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+      take: 100,
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      projectId: r.project.id,
+      projectName: r.project.name,
+      status: r.status,
+      priority: r.priority,
+      dueDate: r.dueDate,
     }));
   }
 

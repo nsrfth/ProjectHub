@@ -6,6 +6,7 @@ import type {
   TimelinessQuery,
   UpcomingTasksQuery,
   WorkloadDetailQuery,
+  WorkloadDrillQuery,
 } from '../schemas/reports.js';
 import { Errors } from '../lib/errors.js';
 import { toCsv } from '../lib/csv.js';
@@ -107,6 +108,25 @@ export class ReportsController {
     const rows = await this.svc.listTeamActivity(req.params.teamId, req.query.limit);
     return reply.send({
       items: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
+    });
+  };
+
+  workloadTaskDrill = async (
+    req: FastifyRequest<{ Params: TeamParams; Querystring: WorkloadDrillQuery }>,
+    reply: FastifyReply,
+  ) => {
+    const { assigneeId, status, dueBucket, projectId } = req.query;
+    const rows = await this.svc.workloadTaskDrill(req.params.teamId, {
+      assigneeId,
+      status,
+      dueBucket,
+      projectId,
+    });
+    return reply.send({
+      items: rows.map((r) => ({
+        ...r,
+        dueDate: r.dueDate ? r.dueDate.toISOString() : null,
+      })),
     });
   };
 

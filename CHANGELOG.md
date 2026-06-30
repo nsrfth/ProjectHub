@@ -13,6 +13,38 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.12] — 2026-06-30
+
+**Workload page: status breakdown columns + click-through task drill-down.**
+- Added TODO / In Progress / Review / Pending Approval columns to the workload table; data was
+  already computed by the backend (and was simply not exposed via the schema — `PENDING_APPROVAL`
+  was stripped). Fixed the Zod schema and wired the four columns into the table.
+- New `GET /teams/:teamId/reports/workload/tasks` endpoint returns up to 100 tasks filtered by
+  assignee + status or due-date bucket, enabling cell-level drill-through without leaving the page.
+- Clicking any numeric cell (status, bucket, or total) opens a slide-over panel listing the actual
+  tasks with project name, priority, status, and due date. Tasks link to their detail page.
+- New `SlideOver` component (`features/ui/SlideOver.tsx`) reusable for future panel use-cases.
+- Team selector added to Workload page (v2.5.11) so users can switch teams inline.
+
+## [2.5.11] — 2026-06-30
+
+**Workload page: team selector dropdown.**
+Added a team selector as the first filter control on the Workload page so users can view any
+team's workload without changing their active team elsewhere in the app.
+
+## [2.5.10] — 2026-06-30
+
+**Fix: Planner Charts workload bars were inflating counts by including DONE tasks.**
+The ≤20-project code path in `PlannerChartsPage` passed all tasks (including DONE) to
+`memberBarFromTasks`. Fixed by pre-filtering to open statuses before aggregation.
+
+## [2.5.9] — 2026-06-29
+
+**Dashboard documentation update and user manual rewrite for v1.88 features.**
+Both `USER_MANUAL.md` and `USER_MANUAL.fa.md` updated to accurately describe the current
+Dashboard: KPI drill-down modal, 7-day moving average, PENDING_APPROVAL status, stacked workload
+bars, priority badges on upcoming deadlines, and 8-event activity feed.
+
 ## [2.5.8] — 2026-06-28
 
 **Rename: application rebranded from TaskHub to ProjectHub.**

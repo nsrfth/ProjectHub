@@ -920,6 +920,12 @@
   "workload.table.member": "عضو",
   "workload.table.total": "تسک باز",
   "workload.table.weighted": "بار وزن‌دار",
+  "workload.status.todo": "در صف",
+  "workload.status.in_progress": "در جریان",
+  "workload.status.review": "بررسی",
+  "workload.status.pending_approval": "در انتظار تأیید",
+  "workload.drill.empty": "تسکی با این فیلتر یافت نشد.",
+  "workload.drill.loading": "در حال بارگذاری تسک‌ها…",
 
   "settings.nav.forms": "فرم‌های ورودی",
   "settings.nav.formsDesc": "ساخت فرم برای ایجاد خودکار تسک در یک پروژه",

@@ -13,9 +13,14 @@ import { useTeams } from '@/features/teams/TeamsContext';
 import { listProjects } from '@/features/projects/api';
 import {
   fetchWorkloadDetail,
+  fetchWorkloadDrill,
   type WorkloadDetailRow,
+  type WorkloadDrillParams,
+  type WorkloadDueBucket,
   type WorkloadWindow,
 } from '@/features/reports/api';
+import SlideOver from '@/features/ui/SlideOver';
+import WorkloadTaskList from '@/features/reports/WorkloadTaskList';
 import { useT } from '@/lib/i18n';
 
 const BUCKET_KEYS = ['overdue', 'this_week', 'next_week', 'later', 'no_due'] as const;
@@ -27,7 +32,15 @@ const BUCKET_COLORS: Record<(typeof BUCKET_KEYS)[number], string> = {
   no_due: '#64748b',
 };
 
+const STATUS_KEYS = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL'] as const;
+type OpenStatus = (typeof STATUS_KEYS)[number];
+
 type SortKey = 'name' | 'total' | 'overdue';
+
+type DrillTarget =
+  | { kind: 'status'; userId: string | null; memberName: string | null; status: OpenStatus }
+  | { kind: 'bucket'; userId: string | null; memberName: string | null; bucket: (typeof BUCKET_KEYS)[number] }
+  | { kind: 'all'; userId: string | null; memberName: string | null };
 
 export function isOverAllocated(
   row: WorkloadDetailRow,
@@ -49,6 +62,7 @@ export default function WorkloadPage(): JSX.Element {
   const [threshold, setThreshold] = useState(5);
   const [sortKey, setSortKey] = useState<SortKey>('total');
   const [sortAsc, setSortAsc] = useState(false);
+  const [drill, setDrill] = useState<DrillTarget | null>(null);
 
   const teamId = selectedTeamId || currentTeam?.id;
 
@@ -67,6 +81,23 @@ export default function WorkloadPage(): JSX.Element {
         weighted,
       }),
     enabled: !!teamId,
+  });
+
+  const drillParams = useMemo((): WorkloadDrillParams | null => {
+    if (!drill) return null;
+    const base: WorkloadDrillParams = {
+      assigneeId: drill.userId ?? '__unassigned__',
+      projectId: projectId || undefined,
+    };
+    if (drill.kind === 'status') return { ...base, status: drill.status };
+    if (drill.kind === 'bucket') return { ...base, dueBucket: drill.bucket as WorkloadDueBucket };
+    return base;
+  }, [drill, projectId]);
+
+  const { data: drillData, isLoading: drillLoading } = useQuery({
+    queryKey: ['workload-drill', teamId, drillParams],
+    queryFn: () => fetchWorkloadDrill(teamId!, drillParams!),
+    enabled: drill !== null && !!teamId && drillParams !== null,
   });
 
   const rows = useMemo(() => {
@@ -106,6 +137,22 @@ export default function WorkloadPage(): JSX.Element {
       setSortKey(key);
       setSortAsc(false);
     }
+  }
+
+  function openDrill(target: DrillTarget) {
+    setDrill(target);
+  }
+
+  function drillTitle(): string {
+    if (!drill) return '';
+    const name = drill.memberName ?? t('workload.unassigned');
+    if (drill.kind === 'status') {
+      return `${name} — ${t(`workload.status.${drill.status.toLowerCase()}`)}`;
+    }
+    if (drill.kind === 'bucket') {
+      return `${name} — ${t(`workload.bucket.${drill.bucket}`)}`;
+    }
+    return `${name} — ${t('workload.table.total')}`;
   }
 
   if (!currentTeam) {
@@ -235,6 +282,11 @@ export default function WorkloadPage(): JSX.Element {
                       {t(`workload.bucket.${key}`)}
                     </th>
                   ))}
+                  {STATUS_KEYS.map((s) => (
+                    <th key={s} className="p-3 text-end hidden lg:table-cell text-xs font-normal">
+                      {t(`workload.status.${s.toLowerCase()}`)}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -257,11 +309,40 @@ export default function WorkloadPage(): JSX.Element {
                           </span>
                         )}
                       </td>
-                      <td className="p-3 text-end tabular-nums font-medium">{displayTotal}</td>
-                      <td className="p-3 text-end tabular-nums">{r.byDueBucket.overdue}</td>
+                      <td className="p-3 text-end tabular-nums font-medium">
+                        <button
+                          className="hover:underline hover:text-primary"
+                          onClick={() => openDrill({ kind: 'all', userId: r.userId, memberName: r.name })}
+                        >
+                          {displayTotal}
+                        </button>
+                      </td>
+                      <td className="p-3 text-end tabular-nums">
+                        <button
+                          className="hover:underline hover:text-primary"
+                          onClick={() => openDrill({ kind: 'bucket', userId: r.userId, memberName: r.name, bucket: 'overdue' })}
+                        >
+                          {r.byDueBucket.overdue}
+                        </button>
+                      </td>
                       {BUCKET_KEYS.filter((k) => k !== 'overdue').map((key) => (
                         <td key={key} className="p-3 text-end tabular-nums hidden md:table-cell">
-                          {r.byDueBucket[key]}
+                          <button
+                            className="hover:underline hover:text-primary"
+                            onClick={() => openDrill({ kind: 'bucket', userId: r.userId, memberName: r.name, bucket: key })}
+                          >
+                            {r.byDueBucket[key]}
+                          </button>
+                        </td>
+                      ))}
+                      {STATUS_KEYS.map((s) => (
+                        <td key={s} className="p-3 text-end tabular-nums hidden lg:table-cell">
+                          <button
+                            className="hover:underline hover:text-primary"
+                            onClick={() => openDrill({ kind: 'status', userId: r.userId, memberName: r.name, status: s })}
+                          >
+                            {r.openByStatus[s]}
+                          </button>
                         </td>
                       ))}
                     </tr>
@@ -271,6 +352,12 @@ export default function WorkloadPage(): JSX.Element {
             </table>
           </section>
         </>
+      )}
+
+      {drill && (
+        <SlideOver title={drillTitle()} onClose={() => setDrill(null)}>
+          <WorkloadTaskList tasks={drillData?.items ?? []} isLoading={drillLoading} />
+        </SlideOver>
       )}
     </div>
   );

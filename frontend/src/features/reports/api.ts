@@ -43,7 +43,7 @@ export interface WorkloadDueBucketCounts {
 export interface WorkloadDetailRow {
   userId: string | null;
   name: string | null;
-  openByStatus: { TODO: number; IN_PROGRESS: number; REVIEW: number };
+  openByStatus: { TODO: number; IN_PROGRESS: number; REVIEW: number; PENDING_APPROVAL: number };
   byDueBucket: WorkloadDueBucketCounts;
   total: number;
   weightedTotal: number;
@@ -205,6 +205,36 @@ export async function fetchBudgetReport(teamId: string): Promise<BudgetReport> {
 // Bearer header — fetch via axios with responseType=blob, then trigger a
 // download via a temporary object URL. Filename comes from the
 // Content-Disposition header when present (falls back to the supplied default).
+export interface WorkloadDrillRow {
+  id: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  status: 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'PENDING_APPROVAL';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  dueDate: string | null;
+}
+
+export type WorkloadDueBucket = 'overdue' | 'this_week' | 'next_week' | 'later' | 'no_due';
+
+export interface WorkloadDrillParams {
+  assigneeId?: string;
+  status?: string;
+  dueBucket?: WorkloadDueBucket;
+  projectId?: string;
+}
+
+export async function fetchWorkloadDrill(
+  teamId: string,
+  params: WorkloadDrillParams,
+): Promise<{ items: WorkloadDrillRow[] }> {
+  return (
+    await api.get<{ items: WorkloadDrillRow[] }>(`/teams/${teamId}/reports/workload/tasks`, {
+      params,
+    })
+  ).data;
+}
+
 export async function downloadReportCsv(
   teamId: string,
   report: 'done' | 'workload' | 'overdue' | 'timeliness' | 'budget',

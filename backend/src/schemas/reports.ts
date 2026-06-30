@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { taskStatusEnum } from './tasks.js';
 
 // "Tasks done in the last N days" query. Clients always pass a window in days
 // rather than an absolute since/until so the server can clip pathological
@@ -64,6 +65,7 @@ export const workloadDetailRow = z.object({
     TODO: z.number().int().nonnegative(),
     IN_PROGRESS: z.number().int().nonnegative(),
     REVIEW: z.number().int().nonnegative(),
+    PENDING_APPROVAL: z.number().int().nonnegative(),
   }),
   byDueBucket: workloadDueBucketCounts,
   total: z.number().int().nonnegative(),
@@ -244,3 +246,27 @@ export type DoneTasksQuery = z.infer<typeof doneTasksQuery>;
 export type TimelinessQuery = z.infer<typeof timelinessQuery>;
 export type UpcomingTasksQuery = z.infer<typeof upcomingTasksQuery>;
 export type TeamActivityQuery = z.infer<typeof teamActivityQuery>;
+
+// v1.90: workload drill-down — task-level detail for a single workload cell.
+// Either status OR dueBucket can be set to scope results; assigneeId filters
+// by member ('__unassigned__' returns tasks with no assignee).
+export const workloadDrillQuery = z.object({
+  assigneeId: z.string().optional(),
+  status: taskStatusEnum.optional(),
+  dueBucket: z.enum(['overdue', 'this_week', 'next_week', 'later', 'no_due']).optional(),
+  projectId: z.string().optional(),
+});
+
+export const workloadDrillRow = z.object({
+  id: z.string(),
+  title: z.string(),
+  projectId: z.string(),
+  projectName: z.string(),
+  status: taskStatusEnum,
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
+  dueDate: z.string().nullable(),
+});
+
+export const workloadDrillResponse = z.object({ items: z.array(workloadDrillRow) });
+
+export type WorkloadDrillQuery = z.infer<typeof workloadDrillQuery>;

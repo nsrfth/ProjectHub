@@ -920,6 +920,12 @@
   "workload.table.member": "Member",
   "workload.table.total": "Open tasks",
   "workload.table.weighted": "Weighted load",
+  "workload.status.todo": "To Do",
+  "workload.status.in_progress": "In Progress",
+  "workload.status.review": "Review",
+  "workload.status.pending_approval": "Pending",
+  "workload.drill.empty": "No tasks match this filter.",
+  "workload.drill.loading": "Loading tasks…",
 
   "settings.nav.forms": "Intake forms",
   "settings.nav.formsDesc": "Build forms that create tasks in a project",
