@@ -8,10 +8,12 @@ RUN apk add --no-cache openssl
 
 # Install deps using package manifests first (better layer caching).
 COPY package.json package-lock.json* ./
-RUN npm ci
+# NODE_ENV=development ensures devDeps (prisma CLI) are installed even when
+# the host .env passes NODE_ENV=production into the build context.
+RUN NODE_ENV=development npm ci
 
 COPY prisma ./prisma
-RUN npx prisma@5 generate
+RUN ./node_modules/.bin/prisma generate
 
 COPY tsconfig.json ./
 COPY scripts/copy-data.mjs scripts/generate-ir-holidays.mjs ./scripts/
