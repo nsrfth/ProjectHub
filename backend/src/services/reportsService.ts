@@ -202,15 +202,15 @@ export class ReportsService {
         status: true,
         priority: true,
         dueDate: true,
-        assignee: { select: { id: true, name: true } },
+        responsible: { select: { id: true, name: true } },
       },
     });
     return rows.map((r) => ({
       status: r.status,
       priority: r.priority,
       dueDate: r.dueDate,
-      assigneeId: r.assignee?.id ?? null,
-      assigneeName: r.assignee?.name ?? null,
+      assigneeId: r.responsible?.id ?? null,
+      assigneeName: r.responsible?.name ?? null,
     }));
   }
 
@@ -418,10 +418,12 @@ export class ReportsService {
   ): Promise<WorkloadDrillRow[]> {
     const where = buildWorkloadTaskWhere(teamId, { projectId: opts.projectId });
 
+    // Workload groups by responsibleId (the "Responsible" RACI field shown in the UI).
+    // assigneeId is almost never set; filtering by it would return nothing.
     if (opts.assigneeId === '__unassigned__') {
-      where.assigneeId = null;
+      where.responsibleId = null;
     } else if (opts.assigneeId) {
-      where.assigneeId = opts.assigneeId;
+      where.responsibleId = opts.assigneeId;
     }
 
     if (opts.status) {
