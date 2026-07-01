@@ -209,17 +209,12 @@ export class ProjectsExportService {
       ]);
 
       // ── Tasks + Subtasks ──────────────────────────────────────────────────
+      // budgetCurrency lives on the project, not the task; include relations for names.
       const tasks = await prisma.task.findMany({
         where: { teamId, projectId, deletedAt: null },
-        select: {
-          id: true, title: true, status: true, priority: true,
-          responsibleId: true, responsible: { select: { name: true } },
-          assigneeId: true, assignee: { select: { name: true } },
-          startDate: true, dueDate: true, plannedDate: true, completedAt: true,
-          baselineStart: true, baselineEnd: true, actualStart: true, actualEnd: true,
-          percentComplete: true, isMilestone: true, parentId: true, wbsDepth: true,
-          plannedBudget: true, actualSpent: true, budgetCurrency: true,
-          createdAt: true,
+        include: {
+          responsible: { select: { name: true } },
+          assignee: { select: { name: true } },
         },
         orderBy: [{ status: 'asc' }, { position: 'asc' }],
       });
@@ -235,15 +230,15 @@ export class ProjectsExportService {
           t.responsible?.name ?? null,
           t.assigneeId ?? null,
           t.assignee?.name ?? null,
-          null, null, null, null, null, null, null, null, // date placeholders
+          null, null, null, null, null, null, null, null, // date placeholders cols 10-17
           t.percentComplete,
           t.isMilestone,
           t.parentId ?? null,
           t.wbsDepth,
           t.plannedBudget !== null ? t.plannedBudget.toString() : null,
           t.actualSpent !== null ? t.actualSpent.toString() : null,
-          t.budgetCurrency,
-          null, // created_at placeholder
+          project.budgetCurrency, // tasks inherit currency from project
+          null, // created_at placeholder col 25
         ]);
         dateCell(sh.tasks, r, 10, t.startDate);
         dateCell(sh.tasks, r, 11, t.dueDate);
@@ -253,7 +248,7 @@ export class ProjectsExportService {
         dateCell(sh.tasks, r, 15, t.baselineEnd);
         dateCell(sh.tasks, r, 16, t.actualStart);
         dateCell(sh.tasks, r, 17, t.actualEnd);
-        dateCell(sh.tasks, r, 24, t.createdAt);
+        dateCell(sh.tasks, r, 25, t.createdAt); // col 25 = created_at
       }
 
       const subtasks = await prisma.subtask.findMany({

@@ -24,9 +24,8 @@ export async function projectsExportRoutes(app: FastifyInstance): Promise<void> 
     handler: async (req, reply) => {
       const { teamId } = req.params as { teamId: string };
       const { projectIds } = req.body as { projectIds: string[] };
-      const caller = req.user as { id: string; globalRole: 'ADMIN' | 'MEMBER' };
 
-      const buf = await svc.buildWorkbook(teamId, caller.id, caller.globalRole, projectIds);
+      const buf = await svc.buildWorkbook(teamId, req.user.sub, req.user.globalRole, projectIds);
 
       return reply
         .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
