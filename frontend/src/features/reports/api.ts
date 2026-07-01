@@ -50,10 +50,25 @@ export interface WorkloadDetailRow {
 }
 
 export interface WorkloadDetailReport {
+  loadBy: 'bucket' | 'status';
   window: WorkloadWindow;
   weighted: boolean;
   projectId: string | null;
   items: WorkloadDetailRow[];
+}
+
+export interface WorkloadSubtaskDetailRow {
+  userId: string | null;
+  name: string | null;
+  openSubtasks: number;
+  doneSubtasks: number;
+  total: number;
+}
+
+export interface WorkloadSubtaskDetailReport {
+  loadBy: 'subtasks';
+  projectId: string | null;
+  items: WorkloadSubtaskDetailRow[];
 }
 
 export async function fetchWorkloadDetail(
@@ -71,6 +86,17 @@ export async function fetchWorkloadDetail(
         window: params?.window ?? 'all',
         weighted: params?.weighted ? 'true' : 'false',
       },
+    })
+  ).data;
+}
+
+export async function fetchWorkloadSubtaskDetail(
+  teamId: string,
+  params?: { projectId?: string },
+): Promise<WorkloadSubtaskDetailReport> {
+  return (
+    await api.get<WorkloadSubtaskDetailReport>(`/teams/${teamId}/reports/workload/detail`, {
+      params: { projectId: params?.projectId, loadBy: 'subtasks' },
     })
   ).data;
 }

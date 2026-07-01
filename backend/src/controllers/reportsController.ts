@@ -49,13 +49,20 @@ export class ReportsController {
     req: FastifyRequest<{ Params: TeamParams; Querystring: WorkloadDetailQuery }>,
     reply: FastifyReply,
   ) => {
-    const { projectId, window, weighted } = req.query;
+    const { projectId, window, weighted, loadBy } = req.query;
+
+    if (loadBy === 'subtasks') {
+      const items = await this.svc.workloadSubtaskDetail(req.params.teamId, { projectId });
+      return reply.send({ loadBy: 'subtasks', projectId: projectId ?? null, items });
+    }
+
     const items = await this.svc.workloadDetail(req.params.teamId, {
       projectId,
       window,
       weighted,
     });
     return reply.send({
+      loadBy: loadBy ?? 'bucket',
       window: window ?? 'all',
       weighted: weighted ?? false,
       projectId: projectId ?? null,

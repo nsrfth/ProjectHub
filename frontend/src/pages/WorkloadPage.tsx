@@ -14,9 +14,11 @@ import { listProjects } from '@/features/projects/api';
 import {
   fetchWorkloadDetail,
   fetchWorkloadDrill,
+  fetchWorkloadSubtaskDetail,
   type WorkloadDetailRow,
   type WorkloadDrillParams,
   type WorkloadDueBucket,
+  type WorkloadSubtaskDetailRow,
   type WorkloadWindow,
 } from '@/features/reports/api';
 import SlideOver from '@/features/ui/SlideOver';
@@ -42,7 +44,13 @@ const STATUS_COLORS: Record<OpenStatus, string> = {
   PENDING_APPROVAL: '#a855f7',
 };
 
-type LoadBy = 'bucket' | 'status';
+type LoadBy = 'bucket' | 'status' | 'subtasks';
+
+interface MergedSubtaskRow extends WorkloadSubtaskDetailRow {
+  _teamIds: string[];
+}
+
+const SUBTASK_COLORS = { open: '#3b82f6', done: '#22c55e' } as const;
 type SortKey = 'name' | 'total' | 'overdue';
 
 // WorkloadDetailRow extended to track which teams contributed to this row
@@ -99,7 +107,7 @@ export default function WorkloadPage(): JSX.Element {
   });
 
   const workloadQueries = useQueries({
-    queries: teamIdsToFetch.map((tid) => ({
+    queries: loadBy !== 'subtasks' ? teamIdsToFetch.map((tid) => ({
       queryKey: ['workload-detail', tid, isAllTeams ? '' : projectId, window, weighted],
       queryFn: () =>
         fetchWorkloadDetail(tid, {
@@ -107,10 +115,22 @@ export default function WorkloadPage(): JSX.Element {
           window,
           weighted,
         }),
-    })),
+    })) : [],
   });
 
-  const isLoading = workloadQueries.some((q) => q.isLoading);
+  const subtaskWorkloadQueries = useQueries({
+    queries: loadBy === 'subtasks' ? teamIdsToFetch.map((tid) => ({
+      queryKey: ['workload-subtask-detail', tid, isAllTeams ? '' : projectId],
+      queryFn: () =>
+        fetchWorkloadSubtaskDetail(tid, {
+          projectId: isAllTeams ? undefined : (projectId || undefined),
+        }),
+    })) : [],
+  });
+
+  const isLoading = loadBy === 'subtasks'
+    ? subtaskWorkloadQueries.some((q) => q.isLoading)
+    : workloadQueries.some((q) => q.isLoading);
 
   // Merge results from all team queries by userId
   const rows: MergedRow[] = useMemo(() => {
@@ -162,7 +182,41 @@ export default function WorkloadPage(): JSX.Element {
     return items;
   }, [workloadQueries, teamIdsToFetch, sortKey, sortAsc, weighted]);
 
+  const subtaskRows: MergedSubtaskRow[] = useMemo(() => {
+    const merged = new Map<string, MergedSubtaskRow>();
+    teamIdsToFetch.forEach((tid, i) => {
+      const items = subtaskWorkloadQueries[i]?.data?.items ?? [];
+      for (const item of items) {
+        const key = item.userId ?? '__unassigned__';
+        if (!merged.has(key)) {
+          merged.set(key, { ...item, _teamIds: [tid] });
+        } else {
+          const m = merged.get(key)!;
+          m.openSubtasks += item.openSubtasks;
+          m.doneSubtasks += item.doneSubtasks;
+          m.total += item.total;
+          m._teamIds.push(tid);
+        }
+      }
+    });
+    const items = [...merged.values()];
+    items.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'name') cmp = (a.name ?? '').localeCompare(b.name ?? '');
+      else cmp = a.total - b.total;
+      return sortAsc ? cmp : -cmp;
+    });
+    return items;
+  }, [subtaskWorkloadQueries, teamIdsToFetch, sortKey, sortAsc]);
+
   const chartData = useMemo(() => {
+    if (loadBy === 'subtasks') {
+      return subtaskRows.map((r) => ({
+        name: r.name ?? t('workload.unassigned'),
+        open: r.openSubtasks,
+        done: r.doneSubtasks,
+      }));
+    }
     if (loadBy === 'status') {
       return rows.map((r) => ({
         name: r.name ?? t('workload.unassigned'),
@@ -180,7 +234,7 @@ export default function WorkloadPage(): JSX.Element {
       later: r.byDueBucket.later,
       no_due: r.byDueBucket.no_due,
     }));
-  }, [rows, t, loadBy]);
+  }, [rows, subtaskRows, t, loadBy]);
 
   const drillParams = useMemo((): WorkloadDrillParams | null => {
     if (!drill) return null;
@@ -219,7 +273,7 @@ export default function WorkloadPage(): JSX.Element {
     return `${name} — ${t('workload.table.total')}`;
   }
 
-  const hasData = !isLoading && rows.length > 0;
+  const hasData = !isLoading && (loadBy === 'subtasks' ? subtaskRows.length > 0 : rows.length > 0);
 
   if (!currentTeam) {
     return (
@@ -277,20 +331,6 @@ export default function WorkloadPage(): JSX.Element {
           </label>
         )}
 
-        <label className="text-xs block">
-          {t('workload.filter.window')}
-          <select
-            className="mt-1 block rounded border px-2 py-1.5 text-sm dark:bg-slate-900 min-w-[140px]"
-            value={window}
-            onChange={(e) => setWindow(e.target.value as WorkloadWindow)}
-          >
-            <option value="all">{t('workload.window.all')}</option>
-            <option value="overdue">{t('workload.window.overdue')}</option>
-            <option value="this_week">{t('workload.window.this_week')}</option>
-            <option value="next_week">{t('workload.window.next_week')}</option>
-          </select>
-        </label>
-
         {/* Load by */}
         <label className="text-xs block">
           {t('workload.loadBy')}
@@ -301,13 +341,33 @@ export default function WorkloadPage(): JSX.Element {
           >
             <option value="bucket">{t('workload.loadBy.bucket')}</option>
             <option value="status">{t('workload.loadBy.status')}</option>
+            <option value="subtasks">{t('workload.loadBy.subtasks')}</option>
           </select>
         </label>
 
-        <label className="flex items-center gap-2 text-sm pb-1">
-          <input type="checkbox" checked={weighted} onChange={(e) => setWeighted(e.target.checked)} />
-          {t('workload.weighted')}
-        </label>
+        {/* window + weighted only apply to task-based modes */}
+        {loadBy !== 'subtasks' && (
+          <>
+            <label className="text-xs block">
+              {t('workload.filter.window')}
+              <select
+                className="mt-1 block rounded border px-2 py-1.5 text-sm dark:bg-slate-900 min-w-[140px]"
+                value={window}
+                onChange={(e) => setWindow(e.target.value as WorkloadWindow)}
+              >
+                <option value="all">{t('workload.window.all')}</option>
+                <option value="overdue">{t('workload.window.overdue')}</option>
+                <option value="this_week">{t('workload.window.this_week')}</option>
+                <option value="next_week">{t('workload.window.next_week')}</option>
+              </select>
+            </label>
+
+            <label className="flex items-center gap-2 text-sm pb-1">
+              <input type="checkbox" checked={weighted} onChange={(e) => setWeighted(e.target.checked)} />
+              {t('workload.weighted')}
+            </label>
+          </>
+        )}
 
         <label className="text-xs block">
           {t('workload.threshold')}
@@ -323,7 +383,7 @@ export default function WorkloadPage(): JSX.Element {
 
       {isLoading && <p className="text-sm text-slate-500">{t('workload.loading')}</p>}
 
-      {!isLoading && rows.length === 0 && (
+      {!isLoading && !hasData && (
         <p className="text-sm text-slate-500 italic">{t('workload.empty')}</p>
       )}
 
@@ -331,16 +391,28 @@ export default function WorkloadPage(): JSX.Element {
         <>
           <section className="bg-surface rounded-lg shadow p-4">
             <h2 className="text-sm font-semibold mb-4">
-              {loadBy === 'status' ? t('workload.chartTitle.status') : t('workload.chartTitle')}
+              {loadBy === 'subtasks'
+                ? t('workload.chartTitle.subtasks')
+                : loadBy === 'status'
+                  ? t('workload.chartTitle.status')
+                  : t('workload.chartTitle')}
             </h2>
             <div dir="ltr">
-              <ResponsiveContainer width="100%" height={Math.max(280, rows.length * 36)}>
+              <ResponsiveContainer
+                width="100%"
+                height={Math.max(280, (loadBy === 'subtasks' ? subtaskRows : rows).length * 36)}
+              >
                 <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 16 }}>
                   <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
                   <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10 }} />
                   <Tooltip />
                   <Legend />
-                  {loadBy === 'status'
+                  {loadBy === 'subtasks' ? (
+                    <>
+                      <Bar dataKey="open" stackId="sub" fill={SUBTASK_COLORS.open} name={t('workload.table.openSubtasks')} />
+                      <Bar dataKey="done" stackId="sub" fill={SUBTASK_COLORS.done} name={t('workload.table.doneSubtasks')} />
+                    </>
+                  ) : loadBy === 'status'
                     ? STATUS_KEYS.map((key) => (
                         <Bar
                           key={key}
@@ -365,88 +437,119 @@ export default function WorkloadPage(): JSX.Element {
           </section>
 
           <section className="bg-surface rounded-lg shadow overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-start text-slate-500 border-b border-border">
-                  <th className="p-3 cursor-pointer" onClick={() => toggleSort('name')}>
-                    {t('workload.table.member')}
-                  </th>
-                  <th className="p-3 cursor-pointer text-end" onClick={() => toggleSort('total')}>
-                    {weighted ? t('workload.table.weighted') : t('workload.table.total')}
-                  </th>
-                  <th className="p-3 cursor-pointer text-end" onClick={() => toggleSort('overdue')}>
-                    {t('workload.bucket.overdue')}
-                  </th>
-                  {BUCKET_KEYS.filter((k) => k !== 'overdue').map((key) => (
-                    <th key={key} className="p-3 text-end hidden md:table-cell">
-                      {t(`workload.bucket.${key}`)}
+            {loadBy === 'subtasks' ? (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-start text-slate-500 border-b border-border">
+                    <th className="p-3 cursor-pointer" onClick={() => toggleSort('name')}>
+                      {t('workload.table.member')}
                     </th>
-                  ))}
-                  {STATUS_KEYS.map((s) => (
-                    <th key={s} className="p-3 text-end hidden lg:table-cell text-xs font-normal">
-                      {t(`workload.status.${s.toLowerCase()}`)}
+                    <th className="p-3 text-end">{t('workload.table.openSubtasks')}</th>
+                    <th className="p-3 text-end">{t('workload.table.doneSubtasks')}</th>
+                    <th className="p-3 cursor-pointer text-end" onClick={() => toggleSort('total')}>
+                      {t('workload.table.total')}
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const over = isOverAllocated(r, threshold, weighted);
-                  const displayTotal = weighted ? r.weightedTotal : r.total;
-                  return (
-                    <tr
-                      key={r.userId ?? '__unassigned__'}
-                      className={['border-b border-border', over ? 'bg-danger/10' : ''].join(' ')}
-                    >
-                      <td className="p-3">
-                        {r.name ?? t('workload.unassigned')}
-                        {over && (
-                          <span className="ms-2 text-xs text-danger">
-                            {t('workload.overAllocated')}
-                          </span>
-                        )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {subtaskRows.map((r) => (
+                    <tr key={r.userId ?? '__unassigned__'} className="border-b border-border">
+                      <td className="p-3">{r.name ?? t('workload.unassigned')}</td>
+                      <td className="p-3 text-end tabular-nums" style={{ color: SUBTASK_COLORS.open }}>
+                        {r.openSubtasks}
                       </td>
-                      <td className="p-3 text-end tabular-nums font-medium">
-                        <button
-                          className="hover:underline hover:text-primary"
-                          onClick={() => setDrill({ kind: 'all', userId: r.userId, memberName: r.name, teamIds: r._teamIds })}
-                        >
-                          {displayTotal}
-                        </button>
+                      <td className="p-3 text-end tabular-nums" style={{ color: SUBTASK_COLORS.done }}>
+                        {r.doneSubtasks}
                       </td>
-                      <td className="p-3 text-end tabular-nums">
-                        <button
-                          className="hover:underline hover:text-primary"
-                          onClick={() => setDrill({ kind: 'bucket', userId: r.userId, memberName: r.name, teamIds: r._teamIds, bucket: 'overdue' })}
-                        >
-                          {r.byDueBucket.overdue}
-                        </button>
-                      </td>
-                      {BUCKET_KEYS.filter((k) => k !== 'overdue').map((key) => (
-                        <td key={key} className="p-3 text-end tabular-nums hidden md:table-cell">
-                          <button
-                            className="hover:underline hover:text-primary"
-                            onClick={() => setDrill({ kind: 'bucket', userId: r.userId, memberName: r.name, teamIds: r._teamIds, bucket: key })}
-                          >
-                            {r.byDueBucket[key]}
-                          </button>
-                        </td>
-                      ))}
-                      {STATUS_KEYS.map((s) => (
-                        <td key={s} className="p-3 text-end tabular-nums hidden lg:table-cell">
-                          <button
-                            className="hover:underline hover:text-primary"
-                            onClick={() => setDrill({ kind: 'status', userId: r.userId, memberName: r.name, teamIds: r._teamIds, status: s })}
-                          >
-                            {r.openByStatus[s]}
-                          </button>
-                        </td>
-                      ))}
+                      <td className="p-3 text-end tabular-nums font-medium">{r.total}</td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-start text-slate-500 border-b border-border">
+                    <th className="p-3 cursor-pointer" onClick={() => toggleSort('name')}>
+                      {t('workload.table.member')}
+                    </th>
+                    <th className="p-3 cursor-pointer text-end" onClick={() => toggleSort('total')}>
+                      {weighted ? t('workload.table.weighted') : t('workload.table.total')}
+                    </th>
+                    <th className="p-3 cursor-pointer text-end" onClick={() => toggleSort('overdue')}>
+                      {t('workload.bucket.overdue')}
+                    </th>
+                    {BUCKET_KEYS.filter((k) => k !== 'overdue').map((key) => (
+                      <th key={key} className="p-3 text-end hidden md:table-cell">
+                        {t(`workload.bucket.${key}`)}
+                      </th>
+                    ))}
+                    {STATUS_KEYS.map((s) => (
+                      <th key={s} className="p-3 text-end hidden lg:table-cell text-xs font-normal">
+                        {t(`workload.status.${s.toLowerCase()}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const over = isOverAllocated(r, threshold, weighted);
+                    const displayTotal = weighted ? r.weightedTotal : r.total;
+                    return (
+                      <tr
+                        key={r.userId ?? '__unassigned__'}
+                        className={['border-b border-border', over ? 'bg-danger/10' : ''].join(' ')}
+                      >
+                        <td className="p-3">
+                          {r.name ?? t('workload.unassigned')}
+                          {over && (
+                            <span className="ms-2 text-xs text-danger">
+                              {t('workload.overAllocated')}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-end tabular-nums font-medium">
+                          <button
+                            className="hover:underline hover:text-primary"
+                            onClick={() => setDrill({ kind: 'all', userId: r.userId, memberName: r.name, teamIds: r._teamIds })}
+                          >
+                            {displayTotal}
+                          </button>
+                        </td>
+                        <td className="p-3 text-end tabular-nums">
+                          <button
+                            className="hover:underline hover:text-primary"
+                            onClick={() => setDrill({ kind: 'bucket', userId: r.userId, memberName: r.name, teamIds: r._teamIds, bucket: 'overdue' })}
+                          >
+                            {r.byDueBucket.overdue}
+                          </button>
+                        </td>
+                        {BUCKET_KEYS.filter((k) => k !== 'overdue').map((key) => (
+                          <td key={key} className="p-3 text-end tabular-nums hidden md:table-cell">
+                            <button
+                              className="hover:underline hover:text-primary"
+                              onClick={() => setDrill({ kind: 'bucket', userId: r.userId, memberName: r.name, teamIds: r._teamIds, bucket: key })}
+                            >
+                              {r.byDueBucket[key]}
+                            </button>
+                          </td>
+                        ))}
+                        {STATUS_KEYS.map((s) => (
+                          <td key={s} className="p-3 text-end tabular-nums hidden lg:table-cell">
+                            <button
+                              className="hover:underline hover:text-primary"
+                              onClick={() => setDrill({ kind: 'status', userId: r.userId, memberName: r.name, teamIds: r._teamIds, status: s })}
+                            >
+                              {r.openByStatus[s]}
+                            </button>
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </section>
         </>
       )}

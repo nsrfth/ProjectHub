@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2.5.12 (unified — frontend, backend, and manual share one number) (2026-06-30)
+**Version:** v2.5.15 (unified — frontend, backend, and manual share one number) (2026-07-01)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is

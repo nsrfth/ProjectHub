@@ -1,4 +1,4 @@
-import type { Prisma, TaskPriority, TaskStatus } from '@prisma/client';
+import type { Prisma, SubtaskStatus, TaskPriority, TaskStatus } from '@prisma/client';
 
 export const OPEN_WORKLOAD_STATUSES: TaskStatus[] = [
   'TODO',
@@ -111,6 +111,42 @@ export interface WorkloadDetailRow {
   byDueBucket: WorkloadDueBucketCounts;
   total: number;
   weightedTotal: number;
+}
+
+// v2.5.15: subtask-mode aggregation. Groups by responsibleId — same
+// convention as the existing task workload (assigneeId is rarely populated).
+// open = NOT_STARTED | IN_PROGRESS | WAITING | DEFERRED; done = DONE.
+export interface WorkloadSubtaskSlice {
+  status: SubtaskStatus;
+  responsibleId: string | null;
+  responsibleName: string | null;
+}
+
+export interface WorkloadSubtaskRow {
+  userId: string | null;
+  name: string | null;
+  openSubtasks: number;
+  doneSubtasks: number;
+  total: number;
+}
+
+export function aggregateSubtaskWorkload(subtasks: WorkloadSubtaskSlice[]): WorkloadSubtaskRow[] {
+  const buckets = new Map<string, WorkloadSubtaskRow>();
+  for (const s of subtasks) {
+    const key = s.responsibleId ?? '__unassigned__';
+    let b = buckets.get(key);
+    if (!b) {
+      b = { userId: s.responsibleId, name: s.responsibleName, openSubtasks: 0, doneSubtasks: 0, total: 0 };
+      buckets.set(key, b);
+    }
+    b.total += 1;
+    if (s.status === 'DONE') {
+      b.doneSubtasks += 1;
+    } else {
+      b.openSubtasks += 1;
+    }
+  }
+  return [...buckets.values()].sort((a, b) => b.total - a.total);
 }
 
 export function aggregateWorkloadList(tasks: WorkloadTaskSlice[]): WorkloadListRow[] {

@@ -373,3 +373,107 @@ describe('GET /api/teams/:teamId/reports/workload/detail', () => {
     expect(forbidden.statusCode).toBe(403);
   });
 });
+
+describe('GET /api/teams/:teamId/reports/workload/detail?loadBy=subtasks', () => {
+  it('counts open vs done subtasks per responsible member', async () => {
+    const { owner, member, teamId, projectA } = await setup();
+
+    const task = await prisma.task.create({
+      data: { teamId, projectId: projectA.id, title: 'Parent', status: 'IN_PROGRESS' },
+    });
+
+    await prisma.subtask.createMany({
+      data: [
+        { taskId: task.id, title: 'S1', status: 'NOT_STARTED', responsibleId: member.userId },
+        { taskId: task.id, title: 'S2', status: 'IN_PROGRESS', responsibleId: member.userId },
+        { taskId: task.id, title: 'S3', status: 'DONE', responsibleId: member.userId },
+        { taskId: task.id, title: 'S4', status: 'DONE', responsibleId: owner.userId },
+      ],
+    });
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${teamId}/reports/workload/detail?loadBy=subtasks`,
+      headers: { authorization: `Bearer ${owner.token}` },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json() as {
+      loadBy: string;
+      items: { userId: string | null; openSubtasks: number; doneSubtasks: number; total: number }[];
+    };
+    expect(body.loadBy).toBe('subtasks');
+
+    const memberRow = body.items.find((r) => r.userId === member.userId);
+    expect(memberRow).toMatchObject({ openSubtasks: 2, doneSubtasks: 1, total: 3 });
+
+    const ownerRow = body.items.find((r) => r.userId === owner.userId);
+    expect(ownerRow).toMatchObject({ openSubtasks: 0, doneSubtasks: 1, total: 1 });
+  });
+
+  it('projectId filter scopes to that project only', async () => {
+    const { owner, member, teamId, projectA, projectB } = await setup();
+
+    const taskA = await prisma.task.create({
+      data: { teamId, projectId: projectA.id, title: 'In A', status: 'TODO' },
+    });
+    const taskB = await prisma.task.create({
+      data: { teamId, projectId: projectB.id, title: 'In B', status: 'TODO' },
+    });
+
+    await prisma.subtask.create({
+      data: { taskId: taskA.id, title: 'Sub A', status: 'NOT_STARTED', responsibleId: member.userId },
+    });
+    await prisma.subtask.create({
+      data: { taskId: taskB.id, title: 'Sub B', status: 'NOT_STARTED', responsibleId: member.userId },
+    });
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${teamId}/reports/workload/detail?loadBy=subtasks&projectId=${projectA.id}`,
+      headers: { authorization: `Bearer ${owner.token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { items: { total: number }[] };
+    expect(body.items.reduce((s, r) => s + r.total, 0)).toBe(1);
+  });
+
+  it('excludes subtasks whose parent task is soft-deleted', async () => {
+    const { owner, member, teamId, projectA } = await setup();
+
+    const task = await prisma.task.create({
+      data: { teamId, projectId: projectA.id, title: 'Deleted parent', status: 'TODO', deletedAt: new Date() },
+    });
+    await prisma.subtask.create({
+      data: { taskId: task.id, title: 'Sub', status: 'NOT_STARTED', responsibleId: member.userId },
+    });
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${teamId}/reports/workload/detail?loadBy=subtasks`,
+      headers: { authorization: `Bearer ${owner.token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { items: unknown[] }).items).toHaveLength(0);
+  });
+
+  it('cross-team isolation holds for subtask mode', async () => {
+    const a = await setupWithSlug('wl-sub-a', 'MEMBER');
+    const b = await setupWithSlug('wl-sub-b', 'MEMBER');
+
+    const taskB = await prisma.task.create({
+      data: { teamId: b.teamId, projectId: b.projectA.id, title: 'B task', status: 'TODO' },
+    });
+    await prisma.subtask.create({
+      data: { taskId: taskB.id, title: 'B sub', status: 'NOT_STARTED', responsibleId: b.member.userId },
+    });
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${a.teamId}/reports/workload/detail?loadBy=subtasks`,
+      headers: { authorization: `Bearer ${a.owner.token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { items: unknown[] }).items).toHaveLength(0);
+  });
+});

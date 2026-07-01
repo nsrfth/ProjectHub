@@ -7,6 +7,7 @@ import {
   type BudgetCurrencyRollup,
 } from '../lib/budgetReportMath.js';
 import {
+  aggregateSubtaskWorkload,
   aggregateWorkloadDetail,
   aggregateWorkloadList,
   buildWorkloadTaskWhere,
@@ -14,6 +15,7 @@ import {
   OPEN_WORKLOAD_STATUSES,
   type WorkloadDetailRow,
   type WorkloadListRow,
+  type WorkloadSubtaskRow,
   type WorkloadWindow,
 } from '../lib/workloadAggregation.js';
 
@@ -54,7 +56,7 @@ export interface WorkloadDrillRow {
   dueDate: Date | null;
 }
 
-export type { WorkloadDetailRow };
+export type { WorkloadDetailRow, WorkloadSubtaskRow };
 
 export interface OverdueTaskRow {
   taskId: string;
@@ -190,6 +192,41 @@ export class ReportsService {
       window: opts.window,
     });
     return aggregateWorkloadDetail(tasks, opts.weighted ?? false);
+  }
+
+  // v2.5.15: subtask-mode workload. Scoped to teamId via the parent task
+  // (Subtask has no direct teamId column). Soft-deleted parent tasks are
+  // excluded via task.deletedAt = null.
+  async workloadSubtaskDetail(
+    teamId: string,
+    opts: { projectId?: string } = {},
+  ): Promise<WorkloadSubtaskRow[]> {
+    const subtasks = await this.fetchOpenWorkloadSubtasks(teamId, opts);
+    return aggregateSubtaskWorkload(subtasks);
+  }
+
+  private async fetchOpenWorkloadSubtasks(
+    teamId: string,
+    opts: { projectId?: string } = {},
+  ) {
+    const rows = await prisma.subtask.findMany({
+      where: {
+        task: {
+          teamId,
+          deletedAt: null,
+          ...(opts.projectId ? { projectId: opts.projectId } : {}),
+        },
+      },
+      select: {
+        status: true,
+        responsible: { select: { id: true, name: true } },
+      },
+    });
+    return rows.map((r) => ({
+      status: r.status,
+      responsibleId: r.responsible?.id ?? null,
+      responsibleName: r.responsible?.name ?? null,
+    }));
   }
 
   private async fetchOpenWorkloadTasks(

@@ -13,6 +13,21 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.15] — 2026-07-01
+
+**Workload page: "Load by: Subtasks" mode.**
+- Added a third option to the Workload page's "Load by" selector — **Subtasks** — that switches
+  the chart and table from task-based due-bucket/status breakdown to **open vs. done subtask counts
+  per responsible team member**.
+- New `GET /teams/:teamId/reports/workload/detail?loadBy=subtasks` endpoint aggregates all
+  subtasks (grouped by `responsibleId`) within the team, respecting the `projectId` filter and
+  excluding soft-deleted parent tasks. Window and weighted filters are not applicable and are
+  hidden in the UI when this mode is active.
+- Backend: new `workloadSubtaskDetail` service method, `aggregateSubtaskWorkload` aggregation
+  helper, `workloadSubtaskDetailRow` Zod schema, and discriminated-union response schema.
+- Frontend: Open subtasks shown in blue, done in green; no drill-through (no task-level list
+  exists for subtasks in this view).
+
 ## [2.5.12] — 2026-06-30
 
 **Workload page: status breakdown columns + click-through task drill-down.**

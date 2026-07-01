@@ -48,6 +48,7 @@ export const workloadDetailQuery = z.object({
     .optional()
     .transform((v) => v === true || v === 'true')
     .default(false),
+  loadBy: z.enum(['bucket', 'status', 'subtasks']).optional().default('bucket'),
 });
 
 export const workloadDueBucketCounts = z.object({
@@ -72,12 +73,34 @@ export const workloadDetailRow = z.object({
   weightedTotal: z.number().nonnegative(),
 });
 
-export const workloadDetailResponse = z.object({
+// v2.5.15: subtask-mode row — open/done counts per responsible, no
+// due-bucket or priority since Subtask has neither dueDate nor priority.
+export const workloadSubtaskDetailRow = z.object({
+  userId: z.string().nullable(),
+  name: z.string().nullable(),
+  openSubtasks: z.number().int().nonnegative(),
+  doneSubtasks: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+
+const workloadDetailResponseTask = z.object({
+  loadBy: z.enum(['bucket', 'status']),
   window: z.enum(['all', 'overdue', 'this_week', 'next_week']),
   weighted: z.boolean(),
   projectId: z.string().nullable(),
   items: z.array(workloadDetailRow),
 });
+
+const workloadDetailResponseSubtask = z.object({
+  loadBy: z.literal('subtasks'),
+  projectId: z.string().nullable(),
+  items: z.array(workloadSubtaskDetailRow),
+});
+
+export const workloadDetailResponse = z.union([
+  workloadDetailResponseTask,
+  workloadDetailResponseSubtask,
+]);
 
 export type WorkloadDetailQuery = z.infer<typeof workloadDetailQuery>;
 
