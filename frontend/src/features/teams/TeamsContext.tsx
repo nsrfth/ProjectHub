@@ -6,6 +6,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 interface TeamsState {
   teams: Team[];
   loading: boolean;
+  isError: boolean;
   currentTeam: Team | null;
   currentTeamId: string | null;
   setCurrentTeamId: (id: string | null) => void;
@@ -26,7 +27,7 @@ export function TeamsProvider({ children }: { children: ReactNode }): JSX.Elemen
   // payload slipping through a token-refresh race, or a mid-update
   // service-worker response) would make `teams.find(...)` below throw and
   // white-screen the entire app. Coerce to an array unconditionally.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['teams', 'mine'],
     queryFn: listMyTeams,
     enabled: !!user,
@@ -67,6 +68,7 @@ export function TeamsProvider({ children }: { children: ReactNode }): JSX.Elemen
     () => ({
       teams,
       loading: isLoading,
+      isError,
       currentTeam,
       currentTeamId,
       setCurrentTeamId,
@@ -74,7 +76,7 @@ export function TeamsProvider({ children }: { children: ReactNode }): JSX.Elemen
         await qc.invalidateQueries({ queryKey: ['teams'] });
       },
     }),
-    [teams, isLoading, currentTeam, currentTeamId, qc],
+    [teams, isLoading, isError, currentTeam, currentTeamId, qc],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -13,6 +13,15 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.18] — 2026-07-01
+
+**Fix: Dashboard shows a proper error banner when the teams API call fails.**
+Previously, any failure of `GET /api/teams` (network error, unexpected 4xx/5xx) was silently
+collapsed into an empty state ("Join a team to see your dashboard"), making it impossible to
+distinguish a genuine lack of team membership from an API failure. The `TeamsContext` now exposes
+`isError`, and the Dashboard renders a red error banner with a "Retry" button when the fetch
+fails. Also added `common.retry` i18n key (EN + FA).
+
 ## [2.5.17] — 2026-07-01
 
 **Feat: Export to Excel for Projects page.**

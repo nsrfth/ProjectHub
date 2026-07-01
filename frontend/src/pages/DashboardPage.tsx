@@ -89,7 +89,7 @@ function filterDrill(rows: DrillRow[], kind: DrillKind): DrillRow[] {
 
 export default function DashboardPage(): JSX.Element {
   const { user } = useAuth();
-  const { teams, loading: teamsLoading } = useTeams();
+  const { teams, loading: teamsLoading, isError: teamsError } = useTeams();
   const t = useT();
   const [period, setPeriod] = useState<Period>('week');
 
@@ -217,7 +217,20 @@ export default function DashboardPage(): JSX.Element {
         <PeriodTabs value={period} onChange={setPeriod} />
       </div>
 
-      {!hasTeams && !teamsLoading && (
+      {teamsError && !teamsLoading && (
+        <div className="bg-danger/10 border border-danger/30 rounded-lg p-6 text-sm text-danger">
+          {t('dashboard.teamsLoadError')}{' '}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => window.location.reload()}
+          >
+            {t('common.retry')}
+          </button>
+        </div>
+      )}
+
+      {!hasTeams && !teamsLoading && !teamsError && (
         <div className="bg-surface border border-border rounded-lg p-6 text-sm text-text">
           {t('dashboard.selectTeamHint')}{' '}
           <Link to="/teams" className="text-primary underline">
