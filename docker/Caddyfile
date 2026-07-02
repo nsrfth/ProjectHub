@@ -1,17 +1,21 @@
 # SITE_HOST examples:
-#   "taskhub.example.com"   -> custom cert (see tls directive below)
-#   ":80"                   -> local HTTP only (dev / LAN)
+#   "taskhub.example.com"   -> custom cert (set TLS_DIRECTIVE, see below)
+#   ":80"                   -> local HTTP only (dev / LAN), TLS_DIRECTIVE empty
 #
-# This server uses a wildcard cert provisioned externally (*.modalalco.com).
+# Production uses a wildcard cert provisioned externally (*.modalalco.com).
 # The cert files are bind-mounted from the host into caddy_custom_certs at
-# /etc/caddy/custom/. ACME/Let's Encrypt is NOT used here.
+# /etc/caddy/custom/. ACME/Let's Encrypt is NOT used there.
 
 {$SITE_HOST} {
     encode zstd gzip
 
-    # Custom wildcard cert. Remove this line and add a global email block
-    # to switch back to automatic ACME.
-    tls /etc/caddy/custom/fullchain.pem /etc/caddy/custom/private.key
+    # TLS is environment-driven so one Caddyfile serves both localhost and
+    # production. TLS_DIRECTIVE is substituted textually at load time:
+    #   - production: TLS_DIRECTIVE="tls /etc/caddy/custom/fullchain.pem /etc/caddy/custom/private.key"
+    #   - localhost (SITE_HOST=:80): TLS_DIRECTIVE="" — plain HTTP, no cert.
+    # A stray tls directive on an HTTP (:80) listener is a hard config error,
+    # which is exactly why this can't be hardcoded.
+    {$TLS_DIRECTIVE}
 
     # Security headers. HSTS is only meaningful on HTTPS but harmless on :80.
     header {

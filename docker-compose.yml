@@ -114,6 +114,9 @@ services:
     environment:
       SITE_HOST: ${SITE_HOST}
       ACME_EMAIL: ${ACME_EMAIL}
+      # Textually substituted into the Caddyfile. Empty for local HTTP (:80);
+      # on prod set to: tls /etc/caddy/custom/fullchain.pem /etc/caddy/custom/private.key
+      TLS_DIRECTIVE: ${TLS_DIRECTIVE:-}
     ports:
       - "80:80"
       - "443:443"
