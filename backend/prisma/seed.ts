@@ -170,13 +170,18 @@ async function main(): Promise<void> {
       { name: 'feature', color: '#2563eb' },
       { name: 'docs', color: '#16a34a' },
       { name: 'infra', color: '#7c3aed' },
-    ].map((l) =>
-      prisma.label.upsert({
-        where: { teamId_name: { teamId: team.id, name: l.name } },
-        update: { color: l.color },
-        create: { teamId: team.id, name: l.name, color: l.color },
-      }),
-    ),
+    ].map(async (l) => {
+      // Label has no @@unique([teamId, name]) — team/global uniqueness is
+      // enforced by PARTIAL indexes the client can't express as a compound
+      // unique, so upsert-by-compound-key isn't available. Emulate it.
+      const existing = await prisma.label.findFirst({
+        where: { teamId: team.id, name: l.name },
+      });
+      if (existing) {
+        return prisma.label.update({ where: { id: existing.id }, data: { color: l.color } });
+      }
+      return prisma.label.create({ data: { teamId: team.id, name: l.name, color: l.color } });
+    }),
   );
   const labelByName = new Map(labels.map((l): [string, typeof l] => [l.name, l]));
 

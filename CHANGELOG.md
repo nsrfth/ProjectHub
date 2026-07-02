@@ -13,6 +13,16 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.20] — 2026-07-02
+
+**Fix: `prisma db seed` no longer crashes on a fresh database.**
+The demo seed upserted the default labels via `where: { teamId_name: ... }`, but the `Label`
+model dropped `@@unique([teamId, name])` in v1.80 (team/global uniqueness is enforced by partial
+indexes Prisma can't express as a compound unique). On a fresh DB the seed threw
+`Unknown argument 'teamId_name'` and aborted before creating demo projects/tasks. Replaced the
+compound-key upsert with a findFirst-then-create/update emulation. Surfaced while bootstrapping a
+new self-hosted install.
+
 ## [2.5.19] — 2026-07-01
 
 **Fix: Projects Excel export — perf + error handling (from code review).**
