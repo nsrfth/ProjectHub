@@ -13,6 +13,17 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.19] — 2026-07-01
+
+**Fix: Projects Excel export — perf + error handling (from code review).**
+- Module gating now resolves the effective profile config **once per project** instead of calling
+  `isModuleEnabled` nine times (each of which recomputed the whole config), cutting ~27 redundant
+  DB round-trips per project on large exports.
+- Baseline entry counts are fetched with a single `groupBy` per project instead of one `count()`
+  query per baseline row (N+1).
+- The Projects-page "Export to Excel" button now surfaces failures via an alert
+  (`projects.export.error`, EN + FA) instead of silently swallowing the error.
+
 ## [2.5.18] — 2026-07-01
 
 **Fix: Dashboard shows a proper error banner when the teams API call fails.**

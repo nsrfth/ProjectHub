@@ -1100,6 +1100,7 @@
   "projects.export.button": "Export to Excel",
   "projects.export.generating": "Generating…",
   "projects.export.tooManyProjects": "Too many projects (max {cap})",
+  "projects.export.error": "Could not export projects. Please try again.",
 
   "common.save": "Save",
   "common.cancel": "Cancel",

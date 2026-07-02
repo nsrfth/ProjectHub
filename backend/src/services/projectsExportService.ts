@@ -193,20 +193,18 @@ export class ProjectsExportService {
       }
 
       // ── Module gates ──────────────────────────────────────────────────────
-      const [
-        hasCost, hasTimesheets, hasResources, hasEvm,
-        hasRisk, hasChangeControl, hasProcurement, hasQuality, hasBaselines,
-      ] = await Promise.all([
-        profiles.isModuleEnabled(teamId, projectId, 'cost_control'),
-        profiles.isModuleEnabled(teamId, projectId, 'timesheets'),
-        profiles.isModuleEnabled(teamId, projectId, 'resource_mgmt'),
-        profiles.isModuleEnabled(teamId, projectId, 'evm'),
-        profiles.isModuleEnabled(teamId, projectId, 'risk'),
-        profiles.isModuleEnabled(teamId, projectId, 'change_control'),
-        profiles.isModuleEnabled(teamId, projectId, 'procurement'),
-        profiles.isModuleEnabled(teamId, projectId, 'quality'),
-        profiles.isModuleEnabled(teamId, projectId, 'baselines'),
-      ]);
+      // Resolve the effective profile config once; reading each flag off it
+      // avoids recomputing (and re-querying) the same config nine times.
+      const cfg = await profiles.getEffectiveConfig(teamId, projectId);
+      const hasCost = cfg.modules.cost_control?.enabled ?? false;
+      const hasTimesheets = cfg.modules.timesheets?.enabled ?? false;
+      const hasResources = cfg.modules.resource_mgmt?.enabled ?? false;
+      const hasEvm = cfg.modules.evm?.enabled ?? false;
+      const hasRisk = cfg.modules.risk?.enabled ?? false;
+      const hasChangeControl = cfg.modules.change_control?.enabled ?? false;
+      const hasProcurement = cfg.modules.procurement?.enabled ?? false;
+      const hasQuality = cfg.modules.quality?.enabled ?? false;
+      const hasBaselines = cfg.modules.baselines?.enabled ?? false;
 
       // ── Tasks + Subtasks ──────────────────────────────────────────────────
       // budgetCurrency lives on the project, not the task; include relations for names.
@@ -509,13 +507,19 @@ export class ProjectsExportService {
           where: { teamId, projectId },
           orderBy: { capturedAt: 'desc' },
         });
+        // Count entries for all baselines in one groupBy rather than per-row.
+        const counts = await prisma.baselineEntry.groupBy({
+          by: ['baselineId'],
+          where: { baselineId: { in: bls.map((b) => b.id) } },
+          _count: { _all: true },
+        });
+        const countByBaseline = new Map(counts.map((c) => [c.baselineId, c._count._all]));
         for (const b of bls) {
-          const entryCount = await prisma.baselineEntry.count({ where: { baselineId: b.id } });
           const r = sh.baselines.addRow([
             projectId, b.id, b.name, b.source, b.isCurrent,
             b.capturedById ?? null,
             null,
-            entryCount,
+            countByBaseline.get(b.id) ?? 0,
           ]);
           dateCell(sh.baselines, r, 7, b.capturedAt);
         }

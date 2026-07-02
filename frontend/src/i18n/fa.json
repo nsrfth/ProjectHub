@@ -998,6 +998,7 @@
   "projects.export.button": "خروجی اکسل",
   "projects.export.generating": "در حال ساخت…",
   "projects.export.tooManyProjects": "تعداد پروژه‌ها بیش از حد مجاز است (حداکثر {cap})",
+  "projects.export.error": "خروجی‌گرفتن از پروژه‌ها ممکن نشد. لطفاً دوباره تلاش کنید.",
 
   "common.save": "ذخیره",
   "common.cancel": "انصراف",

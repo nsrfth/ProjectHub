@@ -395,6 +395,8 @@ export default function ProjectsPage(): JSX.Element {
                     currentTeam.id,
                     filteredProjects.map((p) => p.id),
                   );
+                } catch (err) {
+                  window.alert(errorMessage(err, t('projects.export.error')));
                 } finally {
                   setExportLoading(false);
                 }
