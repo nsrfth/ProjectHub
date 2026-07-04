@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.5.26** (2026-07-04)
+Version **v2.5.27** (2026-07-04)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -189,12 +189,21 @@ project code, baselines); profiles only toggle the *optional* modules on top.
 ### Portfolio / org units (v1.99)
 
 The **Portfolio** page (`/portfolio`, Managers and global ADMIN) shows the
-**org-unit tree** above teams: **Holding → Portfolio → Program**. Projects attach
-to any node; roll-up reports count every project in that node's subtree across
-all teams.
+**org-unit tree** above teams: **Holding → Company → Portfolio → Program**.
+Projects attach to any node; roll-up reports count every project in that node's
+subtree across all teams.
 
-- A seeded **Holding** root exists after migration; Managers can add Portfolio
-  and Program nodes beneath it.
+- A seeded **Holding** root exists after migration; Managers can add Company,
+  Portfolio, and Program nodes beneath it.
+- **Company (v2.5.27)** represents a legal subsidiary. It sits under a Holding
+  (or nests under another Company for sub-subsidiaries); Portfolios can then hang
+  under a Company. The recommended shape for a group with subsidiaries is
+  **Holding → Company → Portfolio → Program**. A Company is a reporting grouping
+  only — it does **not** change who can see or edit anything (Teams remain the
+  access boundary). Setting a **reporting currency** on a Company is the natural
+  place for a subsidiary's currency; cost roll-ups use it. Subsidiary names are
+  entered via the Portfolio admin UI (or the optional `SEED_ORG_COMPANIES` seed
+  file at install) — none are pre-loaded.
 - **Attach a project:** Project edit (full mode) → **Portfolio org unit** picker
   (`portfolio.attach_project`). Detached projects (`orgUnitId` null) do not appear
   in roll-ups — same as before R3.

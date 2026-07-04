@@ -1007,12 +1007,15 @@ model ProfileModuleSetting {
 }
 
 // v1.99 (PMIS R3 — portfolio / program): typed hierarchy above Team.
-// HOLDING → PORTFOLIO → PROGRAM. Projects attach to any node via
+// HOLDING → (COMPANY) → PORTFOLIO → PROGRAM. Projects attach to any node via
 // Project.orgUnitId; roll-up reports aggregate the subtree (materialized
 // `path` prefix). Teams stay the security boundary — TeamOrgUnit is an
 // optional hint for default-attachment suggestions only.
+// v2.5.27: COMPANY (legal subsidiary) added between HOLDING and PORTFOLIO —
+// reporting-only, no RBAC; see lib/orgUnitTree.ts for placement rules.
 enum OrgUnitType {
   HOLDING
+  COMPANY
   PORTFOLIO
   PROGRAM
 }

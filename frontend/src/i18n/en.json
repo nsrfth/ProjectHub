@@ -1259,6 +1259,10 @@
   "portfolio.chooseOrgUnit": "Choose org unit…",
   "portfolio.detach": "— Detach —",
   "portfolio.saved": "Saved",
+  "portfolio.type.HOLDING": "Holding",
+  "portfolio.type.COMPANY": "Company",
+  "portfolio.type.PORTFOLIO": "Portfolio",
+  "portfolio.type.PROGRAM": "Program",
 
   "risk.title": "Risk register",
   "risk.navShort": "Risks",

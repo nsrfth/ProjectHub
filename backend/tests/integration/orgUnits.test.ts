@@ -185,6 +185,77 @@ describe('Org units (PMIS R3)', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('creates COMPANY under HOLDING/COMPANY, rejects it under PORTFOLIO (400), allows PORTFOLIO under COMPANY', async () => {
+    const a = await register('a@example.com');
+    const H = { authorization: `Bearer ${a.token}` };
+    const mk = (payload: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: '/api/org-units', headers: H, payload });
+
+    // COMPANY under HOLDING → ok.
+    const co = await mk({ parentId: HOLDING_ROOT_ID, type: 'COMPANY', name: 'NIOC', code: 'NIOC' });
+    expect(co.statusCode).toBe(201);
+    const companyId = co.json().id as string;
+
+    // COMPANY under COMPANY (sub-subsidiary) → ok.
+    const sub = await mk({ parentId: companyId, type: 'COMPANY', name: 'NIOC-Sub', code: 'NSUB' });
+    expect(sub.statusCode).toBe(201);
+
+    // PORTFOLIO under the COMPANY → ok (additive parent).
+    const pf = await mk({ parentId: companyId, type: 'PORTFOLIO', name: 'Delivery', code: 'DLV' });
+    expect(pf.statusCode).toBe(201);
+
+    // COMPANY under a PORTFOLIO → 400, stable badRequest code.
+    const bad = await mk({ parentId: pf.json().id, type: 'COMPANY', name: 'Illegal', code: 'ILL' });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it('moves a PORTFOLIO under a COMPANY and rewrites descendant paths + rolls up the subtree', async () => {
+    const a = await register('a@example.com');
+    const H = { authorization: `Bearer ${a.token}` };
+    const mk = (payload: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: '/api/org-units', headers: H, payload });
+
+    const co = await mk({ parentId: HOLDING_ROOT_ID, type: 'COMPANY', name: 'Co', code: 'CO' });
+    const companyId = co.json().id as string;
+    // PORTFOLIO starts under HOLDING with a PROGRAM child.
+    const pf = await mk({ parentId: HOLDING_ROOT_ID, type: 'PORTFOLIO', name: 'PF', code: 'PF' });
+    const portfolioId = pf.json().id as string;
+    const pg = await mk({ parentId: portfolioId, type: 'PROGRAM', name: 'PG', code: 'PG' });
+    const programId = pg.json().id as string;
+
+    // Move the PORTFOLIO under the COMPANY.
+    const move = await app.inject({
+      method: 'POST',
+      url: `/api/org-units/${portfolioId}/move`,
+      headers: H,
+      payload: { newParentId: companyId },
+    });
+    expect(move.statusCode).toBe(200);
+
+    // Descendant PROGRAM path was rewritten under the company subtree.
+    const company = await prisma.orgUnit.findUnique({ where: { id: companyId } });
+    const program = await prisma.orgUnit.findUnique({ where: { id: programId } });
+    expect(program!.path.startsWith(`${company!.path}/`)).toBe(true);
+    expect(program!.path).toContain(`/${portfolioId}/`);
+
+    // Roll-up over the COMPANY subtree includes a project attached to its portfolio.
+    const teamId = await createTeam(a.token, 'co-team');
+    const projectId = await createProject(a.token, teamId, 'P');
+    await app.inject({
+      method: 'PUT',
+      url: `/api/teams/${teamId}/projects/${projectId}/org-unit`,
+      headers: H,
+      payload: { orgUnitId: portfolioId },
+    });
+    const summary = await app.inject({
+      method: 'GET',
+      url: `/api/org-units/${companyId}/reports/summary`,
+      headers: H,
+    });
+    expect(summary.statusCode).toBe(200);
+    expect(summary.json().projectCount).toBe(1);
+  });
+
   it('hides a cross-team project attach as existence-hiding 404', async () => {
     const a = await register('a@example.com');
     const b = await register('b@example.com');

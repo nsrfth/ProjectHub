@@ -15,6 +15,26 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+// v2.5.27: distinct badge colour per org-unit type (COMPANY = amber).
+const TYPE_BADGE: Record<string, string> = {
+  HOLDING: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+  COMPANY: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  PORTFOLIO: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300',
+  PROGRAM: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300',
+};
+
+function TypeBadge({ type, label }: { type: string; label: string }): JSX.Element {
+  return (
+    <span
+      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+        TYPE_BADGE[type] ?? TYPE_BADGE.HOLDING
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
 function flattenTree(nodes: OrgUnitTreeNode[], depth = 0): Array<{ node: OrgUnitTreeNode; depth: number }> {
   const out: Array<{ node: OrgUnitTreeNode; depth: number }> = [];
   for (const n of nodes) {
@@ -47,7 +67,7 @@ export default function PortfolioPage(): JSX.Element {
   const [parentId, setParentId] = useState('');
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
-  const [type, setType] = useState<'PORTFOLIO' | 'PROGRAM'>('PORTFOLIO');
+  const [type, setType] = useState<'COMPANY' | 'PORTFOLIO' | 'PROGRAM'>('PORTFOLIO');
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -117,8 +137,7 @@ export default function PortfolioPage(): JSX.Element {
                   }`}
                   style={{ paddingInlineStart: `${8 + depth * 12}px` }}
                 >
-                  {node.name}{' '}
-                  <span className="text-[10px] text-text-muted">{node.type}</span>
+                  {node.name} <TypeBadge type={node.type} label={t(`portfolio.type.${node.type}`)} />
                 </button>
               </li>
             ))}
@@ -137,15 +156,16 @@ export default function PortfolioPage(): JSX.Element {
                 <option value="">{t('portfolio.rootParent')}</option>
                 {flat.map(({ node }) => (
                   <option key={node.id} value={node.id}>
-                    {node.name} ({node.type})
+                    {node.name} ({t(`portfolio.type.${node.type}`)})
                   </option>
                 ))}
               </select>
               <select
                 value={type}
-                onChange={(e) => setType(e.target.value as 'PORTFOLIO' | 'PROGRAM')}
+                onChange={(e) => setType(e.target.value as 'COMPANY' | 'PORTFOLIO' | 'PROGRAM')}
                 className="w-full rounded border px-2 py-1 text-sm dark:bg-slate-700"
               >
+                <option value="COMPANY">COMPANY</option>
                 <option value="PORTFOLIO">PORTFOLIO</option>
                 <option value="PROGRAM">PROGRAM</option>
               </select>
@@ -183,7 +203,7 @@ export default function PortfolioPage(): JSX.Element {
             <>
               <h2 className="font-medium text-lg">{selected.name}</h2>
               <p className="text-xs text-text-muted mb-4">
-                {selected.code} · {selected.type} · {selected.projectCount}{' '}
+                {selected.code} · {t(`portfolio.type.${selected.type}`)} · {selected.projectCount}{' '}
                 {t('portfolio.projects')}
               </p>
 

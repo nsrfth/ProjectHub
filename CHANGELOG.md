@@ -13,6 +13,37 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.27] — 2026-07-04
+
+**Org units: `COMPANY` (legal subsidiary) type.** Additive `OrgUnitType` value
+between HOLDING and PORTFOLIO, for representing legal entities in the reporting
+hierarchy. Reporting-only — no new RBAC.
+
+- **Schema migration `20260716120000_orgunit_company`** — `ALTER TYPE
+  "OrgUnitType" ADD VALUE 'COMPANY'` (additive; existing rows untouched, no
+  re-parenting).
+- **Placement rules (D1 default)** in `lib/orgUnitTree.ts`: a `COMPANY` may sit
+  under a `HOLDING` **or another `COMPANY`** (sub-subsidiaries); `PORTFOLIO`'s
+  allowed parents are extended to `{HOLDING, COMPANY, PORTFOLIO}`; `PROGRAM`
+  unchanged. A `COMPANY` may **not** sit under a PORTFOLIO/PROGRAM (legal
+  entities don't live inside delivery structures). All additive — every
+  existing tree stays valid. Exhaustive 4×5 matrix unit test added.
+- **RBAC stance (D2 default):** `COMPANY` is reporting-only, exactly like every
+  other OrgUnitType. `Team` remains the sole RBAC boundary — **no** visibility
+  filtering, per-subtree permissions, or COMPANY-scoped roles were added.
+  Recorded on-record in ARCHITECTURE.md's org-unit section.
+- **Seeding (D3):** no subsidiary names hardcoded. Optional `SEED_ORG_COMPANIES`
+  env points `prisma db seed` at a JSON file (`{root, name, code, parentCode?}[]`),
+  consumed idempotently; ships `seed-org-companies.example.json`. Real
+  subsidiary list is operator-supplied at deploy time.
+- **Frontend:** COMPANY appears in the org-tree create dropdown with a distinct
+  amber badge; type labels are now i18n'd (EN + FA — COMPANY = «شرکت»).
+- **Deviations from the spec's stated current state:** the prompt asserted "two
+  HOLDING roots seeded: MDL, SBC" — the actual migration seeds a **single**
+  `orgunit_holding` root and no seed hardcodes MDL/SBC, so the `SEED_ORG_COMPANIES`
+  `root` field resolves a HOLDING by its `code` (defaults to `HOLDING`) rather
+  than assuming MDL/SBC exist.
+
 ## [2.5.26] — 2026-07-04
 
 **Correspondence (W2.2 — backend): Tier-1 features.** *(Frontend ships as a

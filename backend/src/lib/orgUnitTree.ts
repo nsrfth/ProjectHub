@@ -30,9 +30,19 @@ export function assertValidParentType(
   if (parentType === null) {
     throw Errors.badRequest(`${childType} requires a parent org unit`);
   }
+  // v2.5.27 — COMPANY (legal entity): sits under a HOLDING or nests under
+  // another COMPANY (sub-subsidiaries). Never inside a delivery structure
+  // (PORTFOLIO/PROGRAM) — legal entities don't live inside delivery trees.
+  if (childType === 'COMPANY') {
+    if (parentType !== 'HOLDING' && parentType !== 'COMPANY') {
+      throw Errors.badRequest('A COMPANY must sit under a HOLDING or another COMPANY');
+    }
+    return;
+  }
   if (childType === 'PORTFOLIO') {
-    if (parentType !== 'HOLDING' && parentType !== 'PORTFOLIO') {
-      throw Errors.badRequest('A PORTFOLIO must sit under a HOLDING or another PORTFOLIO');
+    // COMPANY added as an allowed parent (additive — every existing row stays valid).
+    if (parentType !== 'HOLDING' && parentType !== 'COMPANY' && parentType !== 'PORTFOLIO') {
+      throw Errors.badRequest('A PORTFOLIO must sit under a HOLDING, COMPANY, or another PORTFOLIO');
     }
     return;
   }

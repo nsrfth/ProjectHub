@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import argon2 from 'argon2';
 import { ensureSystemManagerOnTeam } from '../src/lib/systemUser.js';
+import { seedOrgCompanies } from './seed-org-companies.js';
 
 const prisma = new PrismaClient();
 
@@ -29,6 +30,11 @@ async function main(): Promise<void> {
   const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@taskhub.local';
   const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin';
   const memberPassword = 'demo1234';
+
+  // v2.5.27 (D3): apply operator-supplied COMPANY subsidiaries first, before
+  // the demo-data skip guard, so re-runs on a live install still reconcile the
+  // subsidiary tree. No-op unless SEED_ORG_COMPANIES points at a JSON file.
+  await seedOrgCompanies(prisma);
 
   // Idempotent: if the demo admin already exists with at least one project,
   // skip seeding so this script is safe to re-run during `prisma migrate dev`

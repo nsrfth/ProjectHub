@@ -4,7 +4,7 @@ import { currencyEnum } from './currency.js';
 // v1.99 (PMIS R3 — portfolio / program): Zod schemas for the OrgUnit tree,
 // project attach, and subtree roll-up reports.
 
-export const orgUnitTypeEnum = z.enum(['HOLDING', 'PORTFOLIO', 'PROGRAM']);
+export const orgUnitTypeEnum = z.enum(['HOLDING', 'COMPANY', 'PORTFOLIO', 'PROGRAM']);
 
 export const orgUnitResponse = z.object({
   id: z.string(),

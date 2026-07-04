@@ -1157,6 +1157,10 @@
   "portfolio.chooseOrgUnit": "انتخاب واحد…",
   "portfolio.detach": "— قطع اتصال —",
   "portfolio.saved": "ذخیره شد",
+  "portfolio.type.HOLDING": "هلدینگ",
+  "portfolio.type.COMPANY": "شرکت",
+  "portfolio.type.PORTFOLIO": "پورتفولیو",
+  "portfolio.type.PROGRAM": "برنامه",
 
   "risk.title": "ثبت ریسک",
   "risk.navShort": "ریسک‌ها",

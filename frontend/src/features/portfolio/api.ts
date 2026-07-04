@@ -3,7 +3,7 @@ import { api } from '@/lib/api';
 // v1.99 (PMIS R3 — portfolio / program): typed client for the org-unit tree,
 // project attach, and subtree roll-up reports.
 
-export type OrgUnitType = 'HOLDING' | 'PORTFOLIO' | 'PROGRAM';
+export type OrgUnitType = 'HOLDING' | 'COMPANY' | 'PORTFOLIO' | 'PROGRAM';
 
 export interface OrgUnit {
   id: string;

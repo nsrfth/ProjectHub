@@ -1,0 +1,4 @@
+[
+  { "root": "HOLDING", "name": "Example Subsidiary Co.", "code": "EXAMPLE_CO" },
+  { "root": "HOLDING", "name": "Example Sub-Subsidiary", "code": "EXAMPLE_SUB", "parentCode": "EXAMPLE_CO" }
+]
