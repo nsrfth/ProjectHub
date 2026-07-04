@@ -2,12 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { ProjectBaselinesService } from '../services/projectBaselinesService.js';
 import { ProjectBaselinesController } from '../controllers/projectBaselinesController.js';
-import { ProfilesService } from '../services/profilesService.js';
 import { requireAuth, requireTeamRoleOrGrantedProject } from '../middleware/auth.js';
 import { requireProjectAccess, requireProjectWriteAccess } from '../middleware/requireProjectAccess.js';
+import { requireModule } from '../middleware/requireModule.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { requireScope } from '../middleware/requireScope.js';
-import { AppError } from '../lib/errors.js';
 import { z } from 'zod';
 import {
   baselineCompareResponse,
@@ -21,22 +20,16 @@ import {
 export async function projectBaselinesRoutes(app: FastifyInstance): Promise<void> {
   const svc = new ProjectBaselinesService();
   const ctrl = new ProjectBaselinesController(svc);
-  const profiles = new ProfilesService();
   const r = app.withTypeProvider<ZodTypeProvider>();
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requireProjectAccess());
 
-  const requireBaselines = async (req: { params: { teamId: string; projectId: string } }) => {
-    const ok = await profiles.isModuleEnabled(req.params.teamId, req.params.projectId, 'baselines');
-    if (!ok) {
-      throw new AppError(403, 'module_disabled', 'The "baselines" module is not enabled for this project', {
-        moduleKey: 'baselines',
-      });
-    }
-  };
-
+  // W1.1: `baselines` gates only the module-specific routes (activate + compare).
+  // Capturing/listing a baseline snapshot is neutral core (ProjectBaseline landed
+  // in PMIS R1), so those stay ungated — behavior preserved; this only swaps the
+  // ad-hoc inline check for the shared requireModule middleware.
   r.get('/', {
     preHandler: requireScope('projects:read'),
     schema: {
@@ -68,7 +61,7 @@ export async function projectBaselinesRoutes(app: FastifyInstance): Promise<void
 
   r.post('/:baselineId/activate', {
     preHandler: [
-      requireBaselines,
+      requireModule('baselines'),
       requireProjectWriteAccess(),
       requirePermission('core.capture_baseline'),
       requireScope('projects:write'),
@@ -84,7 +77,7 @@ export async function projectBaselinesRoutes(app: FastifyInstance): Promise<void
   });
 
   r.get('/compare', {
-    preHandler: [requireBaselines, requireScope('projects:read')],
+    preHandler: [requireModule('baselines'), requireScope('projects:read')],
     schema: {
       tags: ['projects'],
       summary: 'Compare live task dates against a baseline (default: current)',

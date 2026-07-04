@@ -1,5 +1,5 @@
 import type { preHandlerHookHandler } from 'fastify';
-import { AppError, Errors } from '../lib/errors.js';
+import { Errors } from '../lib/errors.js';
 import type { ModuleKey } from '../lib/moduleRegistry.js';
 import { ProfilesService } from '../services/profilesService.js';
 
@@ -24,12 +24,7 @@ export function requireModule(moduleKey: ModuleKey): preHandlerHookHandler {
     }
     const enabled = await profiles.isModuleEnabled(params.teamId, params.projectId, moduleKey);
     if (!enabled) {
-      throw new AppError(
-        403,
-        'module_disabled',
-        `The "${moduleKey}" module is not enabled for this project`,
-        { moduleKey },
-      );
+      throw Errors.moduleDisabled(moduleKey);
     }
   };
 }

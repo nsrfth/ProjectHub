@@ -9,7 +9,7 @@ TaskHub — self-hosted team task management. Monorepo with `backend/` (Fastify 
 and Redis 7.
 
 **Versioning (from v2.5.0):** frontend, backend, the user manual, and `TASKHUB_VERSION` share a
-**single unified version number**, currently **2.5.5**. **Bump it on every change** (patch by
+**single unified version number**, currently **2.5.22**. **Bump it on every change** (patch by
 default) and keep all version stamps in lockstep — see the Deploy workflow section.
 
 The deep design docs are worth reading before non-trivial work:
@@ -139,5 +139,5 @@ cd ~/taskhub && git pull && docker compose up -d --build
 ```
 Frontend and backend must **both** be rebuilt when their code changes — rebuilding one alone can
 leave the app broken. When shipping a release, bump the version in `CHANGELOG.md`,
-`ARCHITECTURE.md`, both `USER_MANUAL*.md`, `frontend/package.json`, `backend/package.json`, and
-`TASKHUB_VERSION` in the server `.env`.
+`ARCHITECTURE.md`, both `USER_MANUAL*.md`, `frontend/package.json`, `backend/package.json`,
+this `CLAUDE.md` (the stamp near the top), and `TASKHUB_VERSION` in the server `.env`.

@@ -1,6 +1,6 @@
 import { type Currency, type TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
-import { AppError, Errors } from '../lib/errors.js';
+import { Errors } from '../lib/errors.js';
 import { formatMinor } from '../lib/money.js';
 import { convertMinor } from '../lib/fx.js';
 import { logActivity } from './activityLogger.js';
@@ -237,11 +237,7 @@ export class TimesheetsService {
     // Profile module gate (timesheets routes are team-scoped, so requireModule —
     // which needs :projectId on the path — can't run; enforce per-entry here).
     const enabled = await this.profiles.isModuleEnabled(teamId, body.projectId, 'timesheets');
-    if (!enabled) {
-      throw new AppError(403, 'module_disabled', 'The "timesheets" module is not enabled for this project', {
-        moduleKey: 'timesheets',
-      });
-    }
+    if (!enabled) throw Errors.moduleDisabled('timesheets');
     const date = asDate(body.date);
     if (body.taskId) {
       const t = await prisma.task.findFirst({

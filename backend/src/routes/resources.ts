@@ -6,6 +6,7 @@ import { ResourceController } from '../controllers/resourceController.js';
 import { requireAuth, requireTeamRole, requireTeamRoleOrGrantedProject } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { requireProjectAccess, requireProjectWriteAccess } from '../middleware/requireProjectAccess.js';
+import { requireModule } from '../middleware/requireModule.js';
 import {
   assignmentResponse,
   createAssignmentBody,
@@ -170,6 +171,10 @@ export async function taskAssignmentRoutes(app: FastifyInstance): Promise<void> 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requireProjectAccess());
+  // W1.1: project-scoped assignment routes gate under `resource_mgmt`. The
+  // team-scoped resource/skill catalog + assignment-by-id routes can't use this
+  // middleware (no :projectId in the path) and stay permission-gated.
+  r.addHook('preHandler', requireModule('resource_mgmt'));
 
   r.get('/', {
     schema: {

@@ -11,7 +11,44 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
-and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
+`CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
+
+## [2.5.22] — 2026-07-04
+
+**Security (W1.1): route-level module gating audit + one real gap closed.**
+Audited every project-scoped route for profile-module gating and standardized on the
+shared `requireModule(key)` preHandler. What changed:
+
+- **New gate:** the project-scoped resource-assignment routes
+  (`GET/POST /teams/:teamId/projects/:projectId/tasks/:taskId/assignments`, `routes/resources.ts`)
+  are now gated behind `resource_mgmt`; they were reachable with the module disabled.
+- **Refactor (no behavior change):** the ad-hoc inline `module_disabled` throws in
+  `routes/gantt.ts`, `routes/projectBaselines.ts` (activate + compare) and
+  `services/timesheetsService.ts` now use a new `Errors.moduleDisabled(key)` helper.
+
+Ownership map (route file → module):
+
+| Route group | Module | Note |
+|---|---|---|
+| cost / evm / lifecycle / profiles | cost_control / evm / … | already gated |
+| gantt (report + variance) | cpm_schedule / baselines | conditional gate, now via helper |
+| projectBaselines activate/compare | baselines | gated; list/capture are **neutral core** (R1), left open |
+| resources → task assignments | resource_mgmt | **newly gated** |
+| resources catalog/skills, timesheets | — | team-scoped (no `:projectId`), stay service/permission-gated |
+| wbs | — | **neutral core** per `lib/moduleRegistry.ts`, intentionally ungated |
+
+**Decisions surfaced (contradicting the wave spec's defaults, per its "surface don't guess" rule):**
+the code already uses the stable lowercase `module_disabled` code (the frontend `ModuleDisabledBanner`
+matches on it), so it was **kept**, not renamed to `MODULE_DISABLED`; **WBS** is documented neutral
+core in the module registry, so it was **not** gated under `cpm_schedule`; **timesheets** is inherently
+team-scoped (projectId lives in the request body) so it can't take the path-based middleware and stays
+service-gated. Failure semantics unchanged: 403 `module_disabled` (not 404 — these are team-visible
+projects, not secrets). New integration test `moduleGatingResources.test.ts` (disabled → 403; enabled →
+happy path; cross-team → opaque 404). Verified with a baseline diff: the full suite's pass/fail set is
+identical with and without this change (zero regressions).
+
+**Docs:** corrected the stale `CLAUDE.md` version stamp (was v2.5.5) and added `CLAUDE.md` itself to
+the version-lockstep list in both `CLAUDE.md` and this changelog's header note.
 
 ## [2.5.21] — 2026-07-03
 

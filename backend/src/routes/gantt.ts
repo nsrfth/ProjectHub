@@ -7,7 +7,7 @@ import { ProjectBaselinesService } from '../services/projectBaselinesService.js'
 import { requireAuth, requireTeamRoleOrGrantedProject } from '../middleware/auth.js';
 import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
-import { AppError, Errors } from '../lib/errors.js';
+import { Errors } from '../lib/errors.js';
 
 const ganttSubtaskRow = z.object({
   id: z.string(),
@@ -115,19 +115,11 @@ export async function ganttRoutes(app: FastifyInstance): Promise<void> {
       const include = parseInclude(query.include);
       if (include.criticalPath) {
         const ok = await profiles.isModuleEnabled(params.teamId, params.projectId, 'cpm_schedule');
-        if (!ok) {
-          throw new AppError(403, 'module_disabled', 'The "cpm_schedule" module is not enabled for this project', {
-            moduleKey: 'cpm_schedule',
-          });
-        }
+        if (!ok) throw Errors.moduleDisabled('cpm_schedule');
       }
       if (include.baseline) {
         const ok = await profiles.isModuleEnabled(params.teamId, params.projectId, 'baselines');
-        if (!ok) {
-          throw new AppError(403, 'module_disabled', 'The "baselines" module is not enabled for this project', {
-            moduleKey: 'baselines',
-          });
-        }
+        if (!ok) throw Errors.moduleDisabled('baselines');
       }
       const report = await svc.forProject(params.teamId, params.projectId, include);
       return reply.send(report);
@@ -180,11 +172,7 @@ export async function scheduleVarianceRoutes(app: FastifyInstance): Promise<void
       const query = req.query as { baselineId?: string };
       if (!req.user) throw Errors.unauthorized();
       const ok = await profiles.isModuleEnabled(params.teamId, params.projectId, 'baselines');
-      if (!ok) {
-        throw new AppError(403, 'module_disabled', 'The "baselines" module is not enabled for this project', {
-          moduleKey: 'baselines',
-        });
-      }
+      if (!ok) throw Errors.moduleDisabled('baselines');
       return reply.send(await svc.variance(params.teamId, params.projectId, query.baselineId));
     },
   });
