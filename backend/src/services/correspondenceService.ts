@@ -1,6 +1,6 @@
-import type { GlobalRole, Prisma } from '@prisma/client';
+import { Prisma, type GlobalRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
-import { Errors } from '../lib/errors.js';
+import { Errors, AppError } from '../lib/errors.js';
 import {
   assertCanWriteProject,
   isUserEligibleTaskResponsible,
@@ -225,48 +225,93 @@ export class CorrespondenceService {
 
     const { jy } = utcMidnightToJalali(letterDate);
 
-    const row = await prisma.$transaction(async (tx) => {
-      // The unique counter row serializes concurrent creates within a
-      // (project, jalaliYear). upsert increments atomically; the unique
-      // (projectId, jalaliYear, sequence) + (projectId, referenceNumber)
-      // indexes make duplicate numbers impossible.
-      const counter = await tx.correspondenceCounter.upsert({
-        where: { projectId_jalaliYear: { projectId, jalaliYear: jy } },
-        create: { projectId, jalaliYear: jy, currentValue: 1 },
-        update: { currentValue: { increment: 1 } },
-        select: { currentValue: true },
-      });
-      const sequence = counter.currentValue;
-      const referenceNumber = `${jy}-${String(sequence).padStart(3, '0')}`;
-
-      const created = await tx.correspondence.create({
-        data: {
-          teamId,
-          projectId,
-          direction: body.direction,
-          subject: body.subject,
-          body: body.body ?? null,
-          letterDate,
-          jalaliYear: jy,
-          sequence,
-          referenceNumber,
-          status: body.status ?? 'DRAFT',
-          senderId: body.senderId ?? null,
-          recipientId: body.recipientId ?? null,
-          createdById: actorId,
-        },
-        include: correspondenceInclude,
-      });
-      await logActivity(tx, {
-        teamId,
-        actorId,
-        action: 'correspondence.created',
-        meta: { correspondenceId: created.id, referenceNumber, projectId },
-      });
-      return created;
-    });
+    const row = await this.createWithSequence(tx =>
+      this.insertLetter(tx, { teamId, projectId, actorId, jy, letterDate, body }),
+    );
 
     return toView(row);
+  }
+
+  // v2.5.25 (W2.1): sequence assignment is already atomic — the
+  // CorrespondenceCounter upsert compiles to INSERT ... ON CONFLICT DO UPDATE,
+  // so concurrent creates serialize on the counter row and get distinct
+  // sequences (the "assigns distinct reference numbers under concurrency" test
+  // proves it). This bounded retry is DEFENSE-IN-DEPTH: should that atomic
+  // guarantee ever be violated (a Prisma change, a raw-SQL path, or manual
+  // counter tampering), recompute the number rather than surface a raw P2002,
+  // and after a few attempts return a stable 409 instead of a 500. The
+  // considered-and-rejected alternative was pg_advisory_xact_lock — stronger,
+  // but retry is idiomatic here and the (already-tiny) contention window makes
+  // the extra lock unnecessary.
+  private async createWithSequence(
+    work: (tx: Prisma.TransactionClient) => Promise<CorrespondenceRow>,
+  ): Promise<CorrespondenceRow> {
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await prisma.$transaction(work);
+      } catch (err) {
+        const isSeqConflict =
+          err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+        if (isSeqConflict && attempt < MAX_RETRIES) continue;
+        if (isSeqConflict) {
+          throw new AppError(
+            409,
+            'CORRESPONDENCE_SEQUENCE_CONFLICT',
+            'Could not assign a correspondence reference number under contention; please retry.',
+          );
+        }
+        throw err;
+      }
+    }
+  }
+
+  private async insertLetter(
+    tx: Prisma.TransactionClient,
+    args: {
+      teamId: string;
+      projectId: string;
+      actorId: string;
+      jy: number;
+      letterDate: Date;
+      body: CreateCorrespondenceBody;
+    },
+  ): Promise<CorrespondenceRow> {
+    const { teamId, projectId, actorId, jy, letterDate, body } = args;
+    const counter = await tx.correspondenceCounter.upsert({
+      where: { projectId_jalaliYear: { projectId, jalaliYear: jy } },
+      create: { projectId, jalaliYear: jy, currentValue: 1 },
+      update: { currentValue: { increment: 1 } },
+      select: { currentValue: true },
+    });
+    const sequence = counter.currentValue;
+    const referenceNumber = `${jy}-${String(sequence).padStart(3, '0')}`;
+
+    const created = await tx.correspondence.create({
+      data: {
+        teamId,
+        projectId,
+        direction: body.direction,
+        subject: body.subject,
+        body: body.body ?? null,
+        letterDate,
+        jalaliYear: jy,
+        sequence,
+        referenceNumber,
+        status: body.status ?? 'DRAFT',
+        senderId: body.senderId ?? null,
+        recipientId: body.recipientId ?? null,
+        createdById: actorId,
+      },
+      include: correspondenceInclude,
+    });
+    await logActivity(tx, {
+      teamId,
+      actorId,
+      action: 'correspondence.created',
+      meta: { correspondenceId: created.id, referenceNumber, projectId },
+    });
+    return created;
   }
 
   async update(

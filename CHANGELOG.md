@@ -13,6 +13,33 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.25] — 2026-07-04
+
+**Correspondence (W2.1): sequence assignment hardened (defense-in-depth).**
+**Finding (the wave premise was stale):** `correspondenceService.create` does NOT
+compute `max(sequence)+1` — it already assigns numbers via an atomic
+`CorrespondenceCounter` upsert, which Prisma 5 compiles to native
+`INSERT … ON CONFLICT DO UPDATE`. Concurrent creates therefore serialize on the
+counter row and get distinct, dense sequences; the existing integration test
+"assigns distinct reference numbers under concurrency" already proves 5 parallel
+creates yield `1404-001…005`. So the described P2002 race is not reachable.
+
+Rather than "fix" a non-bug, this adds **defense-in-depth**: the create is now
+wrapped in a bounded retry (`createWithSequence`, up to 3 attempts) that, should
+the atomic guarantee ever be violated (a Prisma change, a raw-SQL path, or manual
+counter tampering), recomputes rather than surfacing a raw `P2002`, and on
+exhaustion returns a stable **409 `CORRESPONDENCE_SEQUENCE_CONFLICT`** instead of
+a 500. The considered-and-rejected alternative was `pg_advisory_xact_lock` —
+stronger, but unnecessary given the atomic counter. No numbering-policy change
+(numbers are still assigned at create; the DRAFT-vs-issue decision stays blocked).
+Added a stronger test: 10 parallel creates on a **fresh** Jalali year (worst case
+— racing the first insert) all return 201, dense + unique, no 500s.
+
+*Note:* two pre-existing referral tests in `correspondence.test.ts` fail only in
+the ad-hoc local Docker harness (the file is in the known environmental-failure
+set); they are unrelated to this change, which touches only `create()`, and pass
+in the project's real CI (`test.yml`, which provides the OpenLDAP/service fixtures).
+
 ## [2.5.24] — 2026-07-04
 
 **Security (W1.3): notifications WebSocket auth via one-time ticket.**

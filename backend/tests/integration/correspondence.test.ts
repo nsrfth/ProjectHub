@@ -189,6 +189,34 @@ describe('correspondence numbering + CRUD', () => {
     ]);
   });
 
+  it('W2.1: N parallel creates on a fresh Jalali year all succeed — dense, unique, no 500s', async () => {
+    const s = await setup();
+    await enableModule(s.token, s.projectId);
+
+    const N = 10;
+    // beforeEach wiped counters, so these race on the FIRST insert of the year —
+    // the worst case for the sequence assignment. The atomic counter must still
+    // hand out 1..N with no P2002 / 500 leaking to the client.
+    const results = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        inject({
+          method: 'POST',
+          url: base(s),
+          headers: H(s.token),
+          payload: { direction: 'INCOMING', subject: `R${i}`, letterDate: DATE_1405 },
+        }),
+      ),
+    );
+
+    expect(results.every((r) => r.statusCode === 201)).toBe(true);
+    expect(results.some((r) => r.statusCode >= 500)).toBe(false);
+    const refs = results.map((r) => r.json().referenceNumber).sort();
+    expect(new Set(refs).size).toBe(N);
+    expect(refs).toEqual(
+      Array.from({ length: N }, (_, i) => `1405-${String(i + 1).padStart(3, '0')}`),
+    );
+  });
+
   it('list filters by direction, status, and search', async () => {
     const s = await setup();
     await enableModule(s.token, s.projectId);
