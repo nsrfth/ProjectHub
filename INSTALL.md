@@ -207,6 +207,48 @@ VITE_API_BASE_URL=http://localhost:4000/api
 
 ---
 
+## Developer security hooks
+
+The repo ships a pre-commit **secret scan** (gitleaks) so credentials never land
+in a commit. Because there is no root `package.json`, the hook is wired through
+`core.hooksPath` (not husky). Enable it once per clone:
+
+```bash
+# Linux / macOS / WSL
+git config core.hooksPath .githooks
+```
+
+```powershell
+# Windows PowerShell — same command, run from the repo root
+git config core.hooksPath .githooks
+```
+
+On each commit, `.githooks/pre-commit` runs `gitleaks protect --staged` against
+[.gitleaks.toml](.gitleaks.toml). It uses a native `gitleaks` binary if one is
+installed, otherwise falls back to the official Docker image; if neither is
+available it prints a warning and lets the commit through (so a missing tool
+never blocks you locally — CI is the hard gate). To install the binary:
+
+```bash
+# macOS
+brew install gitleaks
+# Linux
+curl -sSfL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.21.2_linux_x64.tar.gz | tar -xz gitleaks && sudo mv gitleaks /usr/local/bin/
+```
+
+```powershell
+# Windows PowerShell
+winget install gitleaks
+```
+
+CI runs the full set of gates in [.github/workflows/security.yml](.github/workflows/security.yml)
+on every PR and push to `main` — a full-history gitleaks scan, CodeQL (JS/TS),
+`npm audit` for both packages (warns on moderate, fails on high/critical), and a
+Trivy misconfiguration scan of `docker/` + `docker-compose.yml`. It runs in
+parallel with, and never gates, the `test` workflow.
+
+---
+
 ## First admin sign-in
 
 After `prisma db seed`:

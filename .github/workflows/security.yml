@@ -1,0 +1,88 @@
+name: security
+
+# W1.2: security gates that run alongside (never gating) the `test` workflow.
+#   - gitleaks:  full-history secret scan against .gitleaks.toml
+#   - codeql:    SAST for JavaScript/TypeScript (free on public repos)
+#   - npm-audit: dependency audit for backend + frontend (warn moderate, fail high+)
+#   - trivy:     IaC/misconfig scan of docker/ + docker-compose.yml
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: gitleaks (secret scan, full history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the scan covers every commit, not just the tip.
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          VERSION=8.21.2
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+      - name: Scan history
+        run: gitleaks detect --source . --config .gitleaks.toml --redact --no-banner -v
+
+  codeql:
+    name: codeql (SAST js/ts)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript
+
+  npm-audit:
+    name: npm audit (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [backend, frontend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Informational: surface everything (including moderate) without failing.
+      - name: Audit report (non-blocking)
+        run: npm audit --omit=dev || true
+      # Hard gate: fail the job only on high or critical advisories.
+      - name: Fail on high/critical
+        run: npm audit --omit=dev --audit-level=high
+
+  trivy-config:
+    name: trivy (docker + compose misconfig)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan docker/ and docker-compose.yml
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          # Keep the scan focused on our IaC surface.
+          skip-dirs: backend/node_modules,frontend/node_modules

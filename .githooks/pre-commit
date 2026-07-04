@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+# ProjectHub pre-commit hook (W1.2): block secrets from entering the tree.
+#
+# Enable once per clone (there is no root package.json, so this is wired via
+# core.hooksPath rather than husky):
+#
+#   git config core.hooksPath .githooks
+#
+# Runs `gitleaks protect --staged` against the repo's .gitleaks.toml. Uses a
+# native gitleaks binary if present, else falls back to the official Docker
+# image. If neither is available it warns and does NOT block the commit (so a
+# missing tool never wedges a contributor) — CI's security.yml is the hard gate.
+set -e
+
+CONFIG=".gitleaks.toml"
+
+if command -v gitleaks >/dev/null 2>&1; then
+  exec gitleaks protect --staged --redact --config "$CONFIG"
+elif command -v docker >/dev/null 2>&1; then
+  exec docker run --rm -v "$(pwd):/repo" -w /repo zricethezav/gitleaks:latest \
+    protect --staged --redact --config "/repo/$CONFIG"
+else
+  echo "pre-commit: gitleaks not found (install gitleaks or Docker to scan staged changes); skipping." >&2
+  echo "           See INSTALL.md → 'Developer security hooks'. CI still enforces the full scan." >&2
+  exit 0
+fi

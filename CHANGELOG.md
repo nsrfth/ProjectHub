@@ -13,6 +13,28 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.23] — 2026-07-04
+
+**Security (W1.2): secret scanning + CI security gates.**
+Added defense against credential leaks and a standing SAST/dependency/IaC gate.
+
+- **`.gitleaks.toml`** — extends gitleaks' default rules with an explicitly
+  enumerated allowlist (no blanket path excludes): the `taskhub.example.com`
+  documentation curl example, the test-only `MASTER_KEY`/JWT fixtures, and the
+  seed/demo passwords. A full-history baseline scan surfaced exactly these six
+  known-benign matches and nothing else — history is clean of real secrets.
+- **Pre-commit hook** — `.githooks/pre-commit` runs `gitleaks protect --staged`
+  (native binary or Docker fallback; warns-not-blocks if neither is present).
+  **[DEFAULT → deviation]** the wave spec called for husky, but the repo has no
+  root `package.json` (a documented invariant), so the hook is wired via
+  `git config core.hooksPath .githooks` instead — no Node dependency. Enablement
+  + Windows/PowerShell notes are in INSTALL.md → "Developer security hooks".
+- **`.github/workflows/security.yml`** — on PR + push to `main`, four parallel
+  jobs that do NOT gate `test.yml`: (a) gitleaks full-history scan, (b) CodeQL
+  for JavaScript/TypeScript, (c) `npm audit --omit=dev` for backend + frontend
+  (informational moderate report, hard fail on high/critical), (d) Trivy config
+  scan of `docker/` + `docker-compose.yml`.
+
 ## [2.5.22] — 2026-07-04
 
 **Security (W1.1): route-level module gating audit + one real gap closed.**
