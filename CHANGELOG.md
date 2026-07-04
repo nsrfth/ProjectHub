@@ -13,6 +13,26 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.32] — 2026-07-04
+
+**W4 — offsite backup + restore-verify ops scripts.** Two host-side scripts
+(`scripts/`) that close the disaster-recovery gap around the existing on-box
+backup scheduler. No app code changes.
+
+- **`scripts/offsite-backup.sh`**: copies the newest dump out of the backend
+  container and ships it offsite — rclone remote (`OFFSITE_METHOD=rclone`) or
+  rsync-over-SSH (`OFFSITE_METHOD=rsync`). Never deletes local backups; safe to
+  re-run; cron-friendly.
+- **`scripts/restore-verify.sh`**: restores a dump (newest, or a path you pass)
+  into a **throwaway** Postgres container that never touches the live DB, then
+  asserts schema + applied Prisma migrations + core tables are present. Exits
+  non-zero on any failure (unreadable archive, failed restore, empty schema) so
+  monitoring catches a silently-corrupt backup. Handles both `*.dump` and the
+  v1.32.3 `*.tar.gz` bundle format.
+- **`scripts/README.md`** documents the three-layer backup story (on-box
+  scheduler → offsite shipping → restore verification) with cron examples.
+- ARCHITECTURE.md gains a "Backups & disaster recovery" section.
+
 ## [2.5.31] — 2026-07-04
 
 **W3 — correspondence referral emails + docs correction.**

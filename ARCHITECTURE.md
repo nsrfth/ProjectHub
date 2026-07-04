@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2.5.31 (unified — frontend, backend, and manual share one number) (2026-07-04)
+**Version:** v2.5.32 (unified — frontend, backend, and manual share one number) (2026-07-04)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -478,6 +478,24 @@ the public hostname in Caddy/env separately.
 - File storage abstraction: uploads land on a local volume. The storage
   interface in `lib/storage.ts` (Feature 4) will accept an S3-compatible
   implementation as a swap-in.
+
+## Backups & disaster recovery
+
+Three complementary layers (a backup you have never restored is not a backup):
+
+1. **In-app scheduler** (v1.27+): `backupScheduler` → `backupsService` runs
+   `pg_dump --format=custom` into the `backups_data` volume on a schedule
+   (`BACKUP_ENABLED`, interval + retention via env/InstanceSetting). Since
+   v1.32.3 a backup is a `*.tar.gz` bundle (database.dump + uploads + secrets +
+   manifest); legacy/admin single-file `*.dump` is still restorable. This is
+   **on-box only** — it does not survive losing the box.
+2. **Offsite shipping** (W4, v2.5.32): `scripts/offsite-backup.sh` copies the
+   newest dump out of the container and pushes it to an rclone remote or over
+   rsync/SSH. Cron'd on the host; never touches local retention.
+3. **Restore verification** (W4, v2.5.32): `scripts/restore-verify.sh` restores
+   a dump into a **throwaway** Postgres (never the live DB) and asserts schema +
+   applied-migrations + core tables are present, exiting non-zero on any
+   failure so monitoring catches a corrupt backup. See `scripts/README.md`.
 
 ## Testing strategy
 
