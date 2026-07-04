@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2.5.30 (unified — frontend, backend, and manual share one number) (2026-07-04)
+**Version:** v2.5.31 (unified — frontend, backend, and manual share one number) (2026-07-04)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -103,7 +103,7 @@ Password reset:
   - request: generates a 64-hex-char token, stores SHA-256, expires in 1h.
     Response is identical whether the email exists or not (no enumeration).
     In dev the raw token is returned in the response body; in prod it would
-    be emailed (email integration intentionally not wired up per project decision).
+    be emailed via `lib/mailer.ts` when SMTP is configured (best-effort).
   - perform: validates token (lookup by hash, check expiry / used-flag),
     sets the new password, marks the reset used, and revokes every active
     refresh token for that user. Forces re-login everywhere.
@@ -463,9 +463,14 @@ the public hostname in Caddy/env separately.
 
 ## What's intentionally not here yet
 
-- Email delivery: per project decision, no SMTP integration. Password reset
-  returns the token in non-production responses. Wiring SMTP is a contained
-  change to `lib/mailer.ts` (not yet created) + the `AuthService` reset path.
+- Email delivery: **now wired** (was "not here yet" through v1.13). `lib/mailer.ts`
+  (since v1.14) sends via SMTP when configured (`SMTP_*` env); when unconfigured
+  it is a no-op and `mailer.isEnabled()` returns false, so every composer degrades
+  gracefully. `emailService` composes verification, password-reset, task-due,
+  standalone-task-due, and (W3, v2.5.31) correspondence-referral messages. All
+  domain emails are **best-effort**: a send failure never fails the parent
+  mutation, and the in-app `Notification` remains the source of truth. Password
+  reset still returns the raw token in non-production responses regardless.
 - Background jobs: Redis is provisioned but no BullMQ worker exists yet. The
   `jobs/` folder is reserved for the first job (likely overdue-task notifications).
 - Realtime: notifications are pull-based for v1. Add SSE or websockets when

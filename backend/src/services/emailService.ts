@@ -91,6 +91,35 @@ export const emailService = {
     });
   },
 
+  // W3 (v2.5.31): a letter was referred (ارجاع) to this user for ACTION/INFO.
+  // Best-effort — mirrors the other composers.
+  async sendCorrespondenceReferral(opts: {
+    to: string;
+    referenceNumber: string;
+    subject: string;
+    projectId: string;
+    kind: 'ACTION' | 'INFO';
+  }): Promise<void> {
+    if (!mailer.isEnabled()) return;
+    const url = appUrl(`/projects/${opts.projectId}/correspondence`);
+    const safeSubject = escapeHtml(opts.subject);
+    const safeRef = escapeHtml(opts.referenceNumber);
+    const kindLabel = opts.kind === 'ACTION' ? 'action' : 'information';
+    await mailer.sendMail({
+      to: opts.to,
+      subject: `Letter referred to you (${opts.kind}): ${opts.referenceNumber}`,
+      text: [
+        `A letter has been referred to you for ${kindLabel}.`,
+        `Reference: ${opts.referenceNumber} — ${opts.subject}`,
+        '',
+        `Open it: ${url}`,
+      ].join('\n'),
+      html: `<p>A letter has been referred to you for <strong>${kindLabel}</strong>.</p>
+<p><strong>${safeRef}</strong> — ${safeSubject}</p>
+<p><a href="${escapeHtml(url)}">Open correspondence</a></p>`,
+    });
+  },
+
   // v2.5.28: personal (standalone) task due reminder. No project link — these
   // live under the owner's Personal tab. Mirrors sendTaskDue's best-effort shape.
   async sendStandaloneTaskDue(opts: { to: string; taskTitle: string; dueDate: Date }): Promise<void> {

@@ -8,6 +8,8 @@ import {
 import { utcMidnightToJalali } from '../lib/shamsiCalendar.js';
 import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
+import { emailService } from './emailService.js';
+import { mailer } from '../lib/mailer.js';
 import { TasksService } from './tasksService.js';
 import type {
   CreateCorrespondenceBody,
@@ -716,6 +718,27 @@ export class CorrespondenceService {
         include: correspondenceInclude,
       });
     });
+
+    // W3 (v2.5.31): best-effort referral email, in addition to the in-app
+    // notification. Mirrors the TASK_DUE mailer path — never fails the refer.
+    if (mailer.isEnabled()) {
+      const recipients = await prisma.user.findMany({
+        where: { id: { in: targets.map((t) => t.userId) } },
+        select: { id: true, email: true },
+      });
+      const kindByUser = new Map(targets.map((t) => [t.userId, t.kind]));
+      for (const r of recipients) {
+        if (!r.email) continue;
+        void emailService.sendCorrespondenceReferral({
+          to: r.email,
+          referenceNumber: existing.referenceNumber,
+          subject: existing.subject,
+          projectId,
+          kind: kindByUser.get(r.id) ?? 'ACTION',
+        });
+      }
+    }
+
     return toView(row);
   }
 

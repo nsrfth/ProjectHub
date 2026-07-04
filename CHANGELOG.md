@@ -13,6 +13,21 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.31] — 2026-07-04
+
+**W3 — correspondence referral emails + docs correction.**
+
+- **Referral emails:** referring a letter now also sends a best-effort email to
+  each referred user (via `emailService.sendCorrespondenceReferral`), in addition
+  to the in-app `CORRESPONDENCE_REFERRAL` notification. It mirrors the existing
+  task-due mailer path — a send failure never fails the refer, and it is a no-op
+  unless SMTP is configured (`mailer.isEnabled()`).
+- **Docs correction:** ARCHITECTURE.md and CLAUDE.md previously stated email was
+  "intentionally not wired up" and `lib/mailer.ts` was "not yet created". That
+  was **stale** — `lib/mailer.ts` has existed since v1.14. Corrected both: email
+  is wired (SMTP-gated, best-effort); the in-app notification remains the source
+  of truth.
+
 ## [2.5.30] — 2026-07-04
 
 **Correspondence W2.3 — full-text search + cursor pagination.**

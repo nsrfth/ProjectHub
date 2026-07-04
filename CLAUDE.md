@@ -9,7 +9,7 @@ TaskHub — self-hosted team task management. Monorepo with `backend/` (Fastify 
 and Redis 7.
 
 **Versioning (from v2.5.0):** frontend, backend, the user manual, and `TASKHUB_VERSION` share a
-**single unified version number**, currently **2.5.30**. **Bump it on every change** (patch by
+**single unified version number**, currently **2.5.31**. **Bump it on every change** (patch by
 default) and keep all version stamps in lockstep — see the Deploy workflow section.
 
 The deep design docs are worth reading before non-trivial work:
@@ -123,9 +123,12 @@ the frontend matches on `error.code`, never on `message`. Use the helpers in `li
   *dates* (UTC-midnight, zone-neutral) and *timestamps* use different formatters —
   `lib/shamsi*`/`calendarDate` vs `lib/time`. Jalali (Shamsi) calendar support is first-class.
 - **IDs** are `cuid()`. **Refresh tokens** are stored as SHA-256 hashes; passwords use argon2id.
-- **No email delivery, no background-job queue, no realtime push** are wired up yet (Redis is
-  provisioned but unused; notifications are pull-based; `mailer.ts` returns the reset token in
-  dev). See ARCHITECTURE.md "What's intentionally not here yet" before assuming they exist.
+- **Email delivery IS wired** (since v1.14): `lib/mailer.ts` sends via SMTP when `SMTP_*` env is
+  set, else `mailer.isEnabled()` is false and every composer is a graceful no-op. All domain
+  emails (verification, reset, task-due, standalone-task-due, correspondence-referral) are
+  best-effort; the in-app `Notification` stays the source of truth; reset still returns the raw
+  token in dev. **No background-job queue, no realtime push** yet (Redis provisioned but unused;
+  notifications pull-based). See ARCHITECTURE.md "What's intentionally not here yet".
 - Schedulers (`backend/src/scheduler/`: due-date reminders, recurrence, backups, webhook
   dispatch) start in `server.ts`, not `app.ts`, so tests don't trigger them.
 
