@@ -7,6 +7,7 @@ import * as tasksApi from '@/features/tasks/api';
 import GroupedBoard from '@/features/planner/GroupedBoard';
 import TaskGrid from '@/features/planner/TaskGrid';
 import MyTasksCalendar from '@/features/planner/MyTasksCalendar';
+import PersonalTasksPanel from '@/features/standaloneTasks/PersonalTasksPanel';
 import {
   BOARD_GROUP_BY_LABEL,
   BOARD_GROUP_BY_ORDER,
@@ -16,7 +17,7 @@ import {
 import { loadBoardGroupBy, saveBoardGroupBy } from '@/features/planner/storage';
 import { useT } from '@/lib/i18n';
 
-type SubView = 'board' | 'grid' | 'calendar';
+type SubView = 'board' | 'grid' | 'calendar' | 'personal';
 type SortField = MeTasksQuery['sort'] | 'progress';
 
 export default function MyTasksPage(): JSX.Element {
@@ -99,7 +100,7 @@ export default function MyTasksPage(): JSX.Element {
       <p className="text-sm text-slate-500 mb-4">{t('planner.myTasks.hint')}</p>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {(['board', 'grid', 'calendar'] as const).map((v) => (
+        {(['board', 'grid', 'calendar', 'personal'] as const).map((v) => (
           <button
             key={v}
             type="button"
@@ -115,6 +116,7 @@ export default function MyTasksPage(): JSX.Element {
         ))}
       </div>
 
+      {subView !== 'personal' && (
       <div className="flex flex-wrap gap-2 mb-4 text-sm">
         <select
           value={filter}
@@ -192,8 +194,13 @@ export default function MyTasksPage(): JSX.Element {
           </select>
         )}
       </div>
+      )}
 
-      {isLoading && subView !== 'calendar' && <p className="text-sm text-slate-500">Loading…</p>}
+      {subView === 'personal' && <PersonalTasksPanel />}
+
+      {isLoading && subView !== 'calendar' && subView !== 'personal' && (
+        <p className="text-sm text-slate-500">Loading…</p>
+      )}
 
       {subView === 'board' && !isLoading && (
         <GroupedBoard

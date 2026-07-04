@@ -83,8 +83,6 @@ export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler 
       );
     });
 
-    if (dueTasks.length === 0) return 0;
-
     let emitted = 0;
     for (const t of dueTasks) {
       try {
@@ -133,6 +131,84 @@ export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler 
     }
     if (emitted > 0) {
       opts.logger.info({ count: emitted }, 'TASK_DUE notifications emitted');
+    }
+
+    // v2.5.28: parallel branch for personal (standalone) tasks. Same one-shot
+    // marker (lastDueNotifiedAt) + per-owner lead-hours + off-day handling.
+    const standaloneEmitted = await tickStandalone(now, floor, upperDue, reminderSettings, cal);
+
+    return emitted + standaloneEmitted;
+  }
+
+  async function tickStandalone(
+    now: Date,
+    floor: Date,
+    upperDue: Date,
+    reminderSettings: Awaited<ReturnType<typeof readReminderSettings>>,
+    cal: WorkingDayCalendar | null,
+  ): Promise<number> {
+    const candidates = await prisma.standaloneTask.findMany({
+      where: {
+        lastDueNotifiedAt: null,
+        deletedAt: null,
+        status: { in: ['TODO', 'IN_PROGRESS'] },
+        dueDate: { not: null, gte: floor, lte: upperDue },
+      },
+      select: {
+        id: true,
+        title: true,
+        dueDate: true,
+        ownerId: true,
+        owner: { select: { reminderLeadHours: true, email: true } },
+      },
+    });
+
+    const due = candidates.filter((t) => {
+      if (!t.dueDate) return false;
+      const leadHours = resolveLeadHours(
+        t.owner?.reminderLeadHours,
+        undefined,
+        opts.defaultLeadHours,
+      );
+      return shouldEmitDueReminder(
+        now,
+        t.dueDate,
+        leadHours,
+        reminderSettings.skipOffDays,
+        cal,
+        floor,
+      );
+    });
+
+    let emitted = 0;
+    for (const t of due) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await notifications.onStandaloneTaskDue(tx, {
+            standaloneTaskId: t.id,
+            ownerId: t.ownerId,
+            title: t.title,
+            dueDate: t.dueDate!.toISOString(),
+          });
+          await tx.standaloneTask.update({
+            where: { id: t.id },
+            data: { lastDueNotifiedAt: now },
+          });
+        });
+        if (mailer.isEnabled() && t.owner?.email) {
+          void emailService.sendStandaloneTaskDue({
+            to: t.owner.email,
+            taskTitle: t.title,
+            dueDate: t.dueDate!,
+          });
+        }
+        emitted += 1;
+      } catch (err) {
+        opts.logger.error({ err, standaloneTaskId: t.id }, 'STANDALONE_TASK_DUE emit failed');
+      }
+    }
+    if (emitted > 0) {
+      opts.logger.info({ count: emitted }, 'STANDALONE_TASK_DUE notifications emitted');
     }
     return emitted;
   }

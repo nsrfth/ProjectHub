@@ -152,6 +152,8 @@ export default function NotificationBell(): JSX.Element {
         return `"${p.taskTitle ?? 'A task'}" moved from ${p.from} to ${p.to}`;
       case 'TASK_DUE':
         return `"${p.taskTitle ?? 'A task'}" is due soon`;
+      case 'STANDALONE_TASK_DUE':
+        return `${t('standaloneTasks.notify.due')}: "${p.taskTitle ?? ''}"`;
       case 'MENTION':
         return `You were mentioned on "${p.taskTitle ?? 'a task'}": ${p.excerpt ?? ''}`;
       case 'CORRESPONDENCE_REFERRAL':
@@ -171,7 +173,9 @@ export default function NotificationBell(): JSX.Element {
     // straight to the task. Older notifications without projectId fall back
     // to the dashboard.
     const p = n.payload as { taskId?: string; projectId?: string };
-    if (n.type === 'CORRESPONDENCE_REFERRAL' && p.projectId) {
+    if (n.type === 'STANDALONE_TASK_DUE') {
+      void nav('/planner/my-tasks');
+    } else if (n.type === 'CORRESPONDENCE_REFERRAL' && p.projectId) {
       void nav(`/projects/${p.projectId}/correspondence`);
     } else if (p.projectId && p.taskId) {
       void nav(`/projects/${p.projectId}/tasks/${p.taskId}`);

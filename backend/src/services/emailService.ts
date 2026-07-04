@@ -90,4 +90,24 @@ export const emailService = {
 <p><a href="${escapeHtml(url)}">Open task</a></p>`,
     });
   },
+
+  // v2.5.28: personal (standalone) task due reminder. No project link — these
+  // live under the owner's Personal tab. Mirrors sendTaskDue's best-effort shape.
+  async sendStandaloneTaskDue(opts: { to: string; taskTitle: string; dueDate: Date }): Promise<void> {
+    if (!mailer.isEnabled()) return;
+    const url = appUrl('/planner/my-tasks');
+    const dueStr = opts.dueDate.toISOString().slice(0, 10);
+    const safeTitle = escapeHtml(opts.taskTitle);
+    await mailer.sendMail({
+      to: opts.to,
+      subject: `Personal task due ${dueStr}: ${opts.taskTitle}`,
+      text: [
+        `Your personal task "${opts.taskTitle}" is due on ${dueStr}.`,
+        '',
+        `Open your tasks: ${url}`,
+      ].join('\n'),
+      html: `<p>Your personal task <strong>${safeTitle}</strong> is due on <strong>${dueStr}</strong>.</p>
+<p><a href="${escapeHtml(url)}">Open your tasks</a></p>`,
+    });
+  },
 };

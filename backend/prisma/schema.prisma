@@ -90,6 +90,9 @@ enum NotifyType {
   GROUP_INVITE
   // v1.90: a project letter was referred (ارجاع) to you for ACTION or INFO.
   CORRESPONDENCE_REFERRAL
+  // v2.5.28: a personal (standalone) task you own is coming due. Team-less —
+  // see Notification.teamId (now nullable) and StandaloneTask.
+  STANDALONE_TASK_DUE
 }
 
 // v1.90: correspondence (دبیرخانه) module enums.
@@ -451,6 +454,8 @@ model User {
   comments       Comment[]
   activities     Activity[]
   notifications  Notification[]
+  // v2.5.28: personal tasks owned by this user (Option C — isolated model).
+  standaloneTasks StandaloneTask[] @relation("UserStandaloneTasks")
   refreshTokens      RefreshToken[]
   passwordResets     PasswordReset[]
   emailVerifications EmailVerification[]
@@ -1416,6 +1421,44 @@ model Subtask {
   @@index([assigneeId])
 }
 
+// v2.5.28 (StandaloneTask, Option C): personal tasks that live entirely outside
+// any project/team — quick capture for individual work. Its own status enum
+// (separate lifecycle, like Subtask) and NO teamId: fully isolated from project
+// machinery. Owner-scoped only; the owner is the sole reader/writer.
+enum StandaloneTaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+model StandaloneTask {
+  id                String               @id @default(cuid())
+  ownerId           String
+  title             String
+  description       String?
+  status            StandaloneTaskStatus @default(TODO)
+  // Reusing TaskPriority is a plain value-enum reuse, not machinery coupling.
+  priority          TaskPriority?
+  // Calendar-date convention (UTC-midnight, zone-neutral) — same as Task.dueDate.
+  dueDate           DateTime?
+  completedAt       DateTime?
+  // Manual ordering within a status column (dense reshuffle on reorder).
+  sortOrder         Int                  @default(0)
+  // One-shot due-reminder marker; reset to null on dueDate change (mirrors Task).
+  lastDueNotifiedAt DateTime?
+  // v2.5.28 (D8): set when promoted to a real project Task. Deliberately a
+  // PLAIN string, NOT a Prisma relation — isolation over referential integrity.
+  promotedTaskId    String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  deletedAt         DateTime?
+
+  owner User @relation("UserStandaloneTasks", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, deletedAt, status, sortOrder])
+  @@index([ownerId, dueDate])
+}
+
 // v1.29: task dependency edges. `taskId` is the BLOCKED task; `dependsOnId`
 // is the BLOCKER. Cycle prevention lives in the service layer (DFS reachability
 // check before insert) — Postgres has no native cycle constraint and CHECK
@@ -1957,13 +2000,16 @@ model InstanceSetting {
 model Notification {
   id        String     @id @default(cuid())
   userId    String
-  teamId    String
+  // v2.5.28: nullable — personal (standalone) task notifications have no team.
+  // Team-scoped notifications still always carry teamId; the list query filters
+  // by userId only, so null-team rows surface correctly for their owner.
+  teamId    String?
   type      NotifyType
   payload   Json
   readAt    DateTime?
   createdAt DateTime   @default(now())
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team      Team?      @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt, createdAt])
 }

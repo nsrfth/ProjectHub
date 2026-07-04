@@ -7,12 +7,15 @@ export type NotifyType =
   | 'MENTION'
   | 'TASK_STATUS'
   // v1.89: a letter was referred (ارجاع) to this user.
-  | 'CORRESPONDENCE_REFERRAL';
+  | 'CORRESPONDENCE_REFERRAL'
+  // v2.5.28: a personal (standalone) task is coming due.
+  | 'STANDALONE_TASK_DUE';
 
 export interface Notification {
   id: string;
   userId: string;
-  teamId: string;
+  // v2.5.28: null for personal (standalone) task notifications — they have no team.
+  teamId: string | null;
   type: NotifyType;
   // Shape varies per type; consumers cast based on type.
   payload: Record<string, unknown>;

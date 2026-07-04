@@ -13,6 +13,56 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.28] — 2026-07-04
+
+**Personal (standalone) tasks — Option C.** A quick-capture list for individual
+work that lives entirely **outside** any project or team. Built as a fully
+isolated `StandaloneTask` model with zero changes to `Task`/`Subtask` or any
+project-scoped service (the point of Option C).
+
+- **Schema migration `20260717120000_standalone_tasks`** (additive): new
+  `StandaloneTask` model + `StandaloneTaskStatus {TODO, IN_PROGRESS, DONE}` enum,
+  a `NotifyType.STANDALONE_TASK_DUE` value, and `Notification.teamId` relaxed to
+  **nullable** (personal-task notifications have no team). No existing table's
+  columns change otherwise; no data migration.
+- **Ownership (D1):** strictly personal — `ownerId` (Cascade), **no teamId**, no
+  sharing/assignment. Every query filtered by `ownerId`; another user's rows are
+  invisible (404, never 403 — no existence leak).
+- **Fields (D3):** title, description?, status, priority (reuses `TaskPriority`),
+  dueDate (calendar-date convention), completedAt (set/cleared on DONE), sortOrder
+  (manual ordering), lastDueNotifiedAt, soft-delete `deletedAt`, `promotedTaskId`.
+- **API:** me-scoped under `/api/me/standalone-tasks` (mirrors `meTasks` —
+  `requireAuth` + `tasks:read`/`tasks:write`): list (status/q/due/scope filters),
+  create, update, soft-delete, restore, reorder (dense sortOrder reshuffle),
+  and promote. Errors: `STANDALONE_TASK_NOT_FOUND` (404).
+- **Due reminders (D5):** additive branch in `dueDateScheduler` — emits
+  `STANDALONE_TASK_DUE` once per (task, dueDate), honouring the owner's
+  lead-hours + off-day prefs; resets on dueDate change; best-effort email via a
+  new `emailService.sendStandaloneTaskDue`. Scheduler still starts only from
+  `server.ts` (tests never trigger it).
+- **Promote to project (D8):** `POST …/:id/promote {projectId}` creates a real
+  Task via the **existing** task service (caller needs project WRITE via
+  `resolveProjectAccess`), then soft-deletes the standalone row and stores
+  `promotedTaskId` as a **plain string — no Prisma relation** (isolation over
+  referential integrity, deliberate). Partial-failure returns a `PROMOTE_PARTIAL`
+  warning rather than a cross-service rollback.
+- **Frontend:** a dedicated **Personal** tab on My Tasks (`/planner/my-tasks`) —
+  status-grouped list, create form, inline status change, move-up/down reorder,
+  Jalali-aware due badge with overdue highlight, promote dialog (WRITE-accessible
+  projects), and a recently-deleted view with restore. New `STANDALONE_TASK_DUE`
+  notification renders + deep-links to the tab. EN + FA (incl. RTL) throughout.
+- **Excluded from v1 (D4, on record):** subtasks/checklists, labels, custom
+  fields, attachments, comments, recurrence, time entries, workload/report
+  inclusion, Excel export, API-token automation endpoints. (Checklist-as-JSON is
+  the likely v2 ask.)
+- **Deviations surfaced:** (a) D3 named the enum `Priority` — the repo's value
+  enum is `TaskPriority`; reused that. (b) D5 required emitting an in-app
+  notification, but `Notification.teamId` was non-nullable — made it nullable
+  (additive; existing rows untouched; list query already filters by `userId`
+  only). This is a shared-table touch slightly beyond ground-rule 1's "enum
+  additive", called out here. (c) Reorder ships as move-up/down controls calling
+  the reorder endpoint; full drag-and-drop can layer on later.
+
 ## [2.5.27] — 2026-07-04
 
 **Org units: `COMPANY` (legal subsidiary) type.** Additive `OrgUnitType` value

@@ -204,6 +204,31 @@ export const notifications = {
       },
     );
   },
+
+  // v2.5.28: a personal (standalone) task is coming due. Owner-only, team-less
+  // notification (teamId null). Best-effort — never fails the caller.
+  async onStandaloneTaskDue(
+    client: Client,
+    ctx: { standaloneTaskId: string; ownerId: string; title: string; dueDate: string },
+  ): Promise<void> {
+    try {
+      await client.notification.create({
+        data: {
+          userId: ctx.ownerId,
+          teamId: null,
+          type: 'STANDALONE_TASK_DUE' as NotifyType,
+          payload: {
+            standaloneTaskId: ctx.standaloneTaskId,
+            taskTitle: ctx.title,
+            dueDate: ctx.dueDate,
+          },
+        },
+      });
+      notificationsHub.publish(ctx.ownerId, { type: 'notification:new', id: '' });
+    } catch {
+      // Best-effort fan-out.
+    }
+  },
 };
 
 export class NotificationsService {

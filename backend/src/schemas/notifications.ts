@@ -12,6 +12,11 @@ export const notifyTypeEnum = z.enum([
   // and the whole /api/notifications feed 500'd for any user holding one.
   'GROUP_INVITE',
   'TASK_UNBLOCKED',
+  // v2.5.28: both were emitted by services + stored in the DB but missing from
+  // this serializer enum — a held notification of either type would 500 the
+  // whole /api/notifications feed (same class of bug as the v1.87.1 note above).
+  'CORRESPONDENCE_REFERRAL',
+  'STANDALONE_TASK_DUE',
 ]);
 
 export const listNotificationsQuery = z.object({
@@ -30,7 +35,8 @@ export const listNotificationsQuery = z.object({
 export const notificationResponse = z.object({
   id: z.string(),
   userId: z.string(),
-  teamId: z.string(),
+  // v2.5.28: nullable — personal (standalone) task notifications carry no team.
+  teamId: z.string().nullable(),
   type: notifyTypeEnum,
   // Payload shape varies per type; the frontend switches on `type` and reads
   // expected fields. Keep it loose at the API boundary.

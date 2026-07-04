@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.5.27** (2026-07-04)
+Version **v2.5.28** (2026-07-04)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -444,7 +444,8 @@ The **Planner** hub (`/planner`) groups every way to *see* tasks without changin
 
 | Tab | What it shows |
 |-----|----------------|
-| **My Tasks** | Every task **assigned to you** across all teams and projects. Board, Grid, or **week calendar** sub-views. Sort by due date, priority, status, or progress. Quick filters: Due today, Overdue, Upcoming, Completed, High priority, by project. Mark complete or open the project from board cards. |
+| **My Tasks** | Every task **assigned to you** across all teams and projects. Board, Grid, **week calendar**, or **Personal** sub-views. Sort by due date, priority, status, or progress. Quick filters: Due today, Overdue, Upcoming, Completed, High priority, by project. Mark complete or open the project from board cards. |
+| **Personal** (v2.5.28) | A sub-view of **My Tasks** for **personal tasks** — quick capture that lives only here, outside any project or team. **Only you** can see them. Add a task with an optional priority and due date; drag order with the ▲/▼ controls within each status column (To do / In progress / Done). A due date shows overdue in red and you get a reminder notification as it approaches (respecting your reminder lead-hours). **Promote** turns a personal task into a real project task (pick a project you can write to) — it's copied over and removed from your personal list. **Delete** is a soft delete: switch to **Recently deleted** to restore. Personal tasks never appear in team boards, calendars, charts, reports, or exports. |
 | **Board** | Shortcut list of your projects — click one to open its kanban board with **Group by**. |
 | **Calendar** | Cross-project date grid (see [Calendar views](#calendar-views) below). |
 | **Charts** | Doughnut + bar charts: status mix, tasks per status, tasks per team member. Filter by team, project, **status**, **member**, and **due date range**. |
