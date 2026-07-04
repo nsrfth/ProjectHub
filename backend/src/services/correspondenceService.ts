@@ -213,7 +213,9 @@ export class CorrespondenceService {
   async list(
     teamId: string,
     projectId: string,
-    filters: ListCorrespondenceQuery = {},
+    // Partial: `limit` is required in the inferred query type (Zod .default),
+    // but direct callers may omit it — the `?? 50` below fills it.
+    filters: Partial<ListCorrespondenceQuery> = {},
   ): Promise<{ items: CorrespondenceView[]; nextCursor: string | null }> {
     await this.ensureModuleEnabled(teamId, projectId);
     const limit = filters.limit ?? 50;
