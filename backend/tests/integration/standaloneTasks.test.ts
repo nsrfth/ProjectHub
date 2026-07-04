@@ -152,7 +152,7 @@ describe('StandaloneTask owner isolation', () => {
 
 describe('StandaloneTask promote (D8)', () => {
   async function makeProject(token: string) {
-    const team = (await inject({ method: 'POST', url: '/api/teams', headers: H(token), payload: { name: 'T', slug: 'pt' } })).json();
+    const team = (await inject({ method: 'POST', url: '/api/teams', headers: H(token), payload: { name: 'T', slug: 'promo-team' } })).json();
     const project = (await inject({ method: 'POST', url: `/api/teams/${team.id}/projects`, headers: H(token), payload: { name: 'P' } })).json();
     return { teamId: team.id, projectId: project.id };
   }
