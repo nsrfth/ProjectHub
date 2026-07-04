@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.5.33** (2026-07-04)
+Version **v2.5.34** (2026-07-04)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -326,6 +326,53 @@ permission. Navigate to the register from the project row in the project list.
   **severity** (Minor / Major / Critical) and **disposition** (Use-as-is /
   Rework / Reject / Concession), optionally link a **corrective task**, and close
   it when resolved. References are **NCR-001**, …
+
+### Correspondence — دبیرخانه (v1.90+)
+
+A per-project **register of formal letters** — incoming, outgoing, and internal.
+The module is **off by default**; a **global admin** turns it on per project
+(Settings → Correspondence, or the project's Correspondence page). Once enabled,
+open it from the project via **Correspondence**. Reading needs
+`correspondence.read`; creating/editing/referring needs `correspondence.manage`.
+
+**Registering a letter.** Each letter has a **direction** (Incoming / Outgoing /
+Internal), a **subject** and body, a **letter date** (Jalali-aware), and a
+**sender**/**recipient** picked from the team **Contacts** directory. On save it
+gets a permanent **reference number** — `{Jalali year}-NNN`, numbered per project
+per year (e.g. `1404-001`, `1404-002`, then `1405-001` when the year rolls over).
+The number never changes, even if you later move the letter's date to another
+year. Set a **status** (Draft / Sent / Received / Archived) and attach files.
+
+**The other party's own reference (v2.5.26).** For an incoming letter you can
+also record the correspondent's **external reference number** and **external
+date** — their numbering, kept alongside yours.
+
+**Reply threads (v2.5.26).** Mark a letter as **In reply to** an earlier letter
+in the same project; the parent is shown inline on the letter and a **↩** badge
+appears on its row in the register, so a back-and-forth reads as a thread.
+
+**Turn a letter into work (v2.5.26).** From a letter, **create a task** (title,
+priority, due date) — it lands as a real task in the letter's project and is
+linked back to the letter (a **✔ n** badge shows how many). Use this to action
+an incoming request without retyping it.
+
+**Referrals — ارجاع.** Refer a letter to one or more team members for **Action**
+or **Information**, with an optional **note** and **due date**. Each referred
+person gets an in-app **notification** (and an **email**, if the server has SMTP
+configured — v2.5.31). They complete it by clicking **Mark handled** — on the
+letter itself, **or** from their personal inbox. A referred member can mark their
+own referral handled **even without edit access** to the project (v2.5.33);
+only the referred person can handle their own referral.
+
+**My referrals** (`/me/referrals`, sidebar → **My referrals**). A cross-team
+inbox of every letter referred to **you**, across all your teams. Filter by
+**status** (Pending / Handled) and by due date (**Overdue** / **Due this week**),
+mark items handled, and click through to the letter. Overdue items are
+highlighted.
+
+**Finding letters (v2.5.30).** The register's search box does a **full-text
+search** over subject, body, and reference numbers (multi-word aware). Long
+registers page with a **Load more** button (newest first).
 
 ---
 

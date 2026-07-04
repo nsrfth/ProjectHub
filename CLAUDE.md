@@ -9,7 +9,7 @@ TaskHub — self-hosted team task management. Monorepo with `backend/` (Fastify 
 and Redis 7.
 
 **Versioning (from v2.5.0):** frontend, backend, the user manual, and `TASKHUB_VERSION` share a
-**single unified version number**, currently **2.5.33**. **Bump it on every change** (patch by
+**single unified version number**, currently **2.5.34**. **Bump it on every change** (patch by
 default) and keep all version stamps in lockstep — see the Deploy workflow section.
 
 The deep design docs are worth reading before non-trivial work:

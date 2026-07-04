@@ -13,6 +13,16 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.34] — 2026-07-05
+
+**Docs — user manual now covers the Correspondence (دبیرخانه) module.** The
+manual had no correspondence section at all; added one (EN + FA) under the
+project modules, documenting: per-project register + auto reference numbers,
+letter fields/status/attachments, the W2.2 tier-1 features (external ref/date,
+reply threads, letter→task), referrals (ارجاع) with due dates + email
+notification, the **My referrals** inbox, and the W2.3 full-text search +
+pagination. No code changes.
+
 ## [2.5.33] — 2026-07-04
 
 **Fix — referred member can now mark a correspondence referral handled.** A

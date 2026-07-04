@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.5.12** (2026-06-30)
+Version **v2.5.34** (2026-07-04)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -189,12 +189,21 @@ project code, baselines); profiles only toggle the *optional* modules on top.
 ### Portfolio / org units (v1.99)
 
 The **Portfolio** page (`/portfolio`, Managers and global ADMIN) shows the
-**org-unit tree** above teams: **Holding → Portfolio → Program**. Projects attach
-to any node; roll-up reports count every project in that node's subtree across
-all teams.
+**org-unit tree** above teams: **Holding → Company → Portfolio → Program**.
+Projects attach to any node; roll-up reports count every project in that node's
+subtree across all teams.
 
-- A seeded **Holding** root exists after migration; Managers can add Portfolio
-  and Program nodes beneath it.
+- A seeded **Holding** root exists after migration; Managers can add Company,
+  Portfolio, and Program nodes beneath it.
+- **Company (v2.5.27)** represents a legal subsidiary. It sits under a Holding
+  (or nests under another Company for sub-subsidiaries); Portfolios can then hang
+  under a Company. The recommended shape for a group with subsidiaries is
+  **Holding → Company → Portfolio → Program**. A Company is a reporting grouping
+  only — it does **not** change who can see or edit anything (Teams remain the
+  access boundary). Setting a **reporting currency** on a Company is the natural
+  place for a subsidiary's currency; cost roll-ups use it. Subsidiary names are
+  entered via the Portfolio admin UI (or the optional `SEED_ORG_COMPANIES` seed
+  file at install) — none are pre-loaded.
 - **Attach a project:** Project edit (full mode) → **Portfolio org unit** picker
   (`portfolio.attach_project`). Detached projects (`orgUnitId` null) do not appear
   in roll-ups — same as before R3.
@@ -318,6 +327,53 @@ permission. Navigate to the register from the project row in the project list.
   Rework / Reject / Concession), optionally link a **corrective task**, and close
   it when resolved. References are **NCR-001**, …
 
+### Correspondence — دبیرخانه (v1.90+)
+
+A per-project **register of formal letters** — incoming, outgoing, and internal.
+The module is **off by default**; a **global admin** turns it on per project
+(Settings → Correspondence, or the project's Correspondence page). Once enabled,
+open it from the project via **Correspondence**. Reading needs
+`correspondence.read`; creating/editing/referring needs `correspondence.manage`.
+
+**Registering a letter.** Each letter has a **direction** (Incoming / Outgoing /
+Internal), a **subject** and body, a **letter date** (Jalali-aware), and a
+**sender**/**recipient** picked from the team **Contacts** directory. On save it
+gets a permanent **reference number** — `{Jalali year}-NNN`, numbered per project
+per year (e.g. `1404-001`, `1404-002`, then `1405-001` when the year rolls over).
+The number never changes, even if you later move the letter's date to another
+year. Set a **status** (Draft / Sent / Received / Archived) and attach files.
+
+**The other party's own reference (v2.5.26).** For an incoming letter you can
+also record the correspondent's **external reference number** and **external
+date** — their numbering, kept alongside yours.
+
+**Reply threads (v2.5.26).** Mark a letter as **In reply to** an earlier letter
+in the same project; the parent is shown inline on the letter and a **↩** badge
+appears on its row in the register, so a back-and-forth reads as a thread.
+
+**Turn a letter into work (v2.5.26).** From a letter, **create a task** (title,
+priority, due date) — it lands as a real task in the letter's project and is
+linked back to the letter (a **✔ n** badge shows how many). Use this to action
+an incoming request without retyping it.
+
+**Referrals — ارجاع.** Refer a letter to one or more team members for **Action**
+or **Information**, with an optional **note** and **due date**. Each referred
+person gets an in-app **notification** (and an **email**, if the server has SMTP
+configured — v2.5.31). They complete it by clicking **Mark handled** — on the
+letter itself, **or** from their personal inbox. A referred member can mark their
+own referral handled **even without edit access** to the project (v2.5.33);
+only the referred person can handle their own referral.
+
+**My referrals** (`/me/referrals`, sidebar → **My referrals**). A cross-team
+inbox of every letter referred to **you**, across all your teams. Filter by
+**status** (Pending / Handled) and by due date (**Overdue** / **Due this week**),
+mark items handled, and click through to the letter. Overdue items are
+highlighted.
+
+**Finding letters (v2.5.30).** The register's search box does a **full-text
+search** over subject, body, and reference numbers (multi-word aware). Long
+registers page with a **Load more** button (newest first).
+
 ---
 
 ## Tasks — the basics
@@ -435,7 +491,8 @@ The **Planner** hub (`/planner`) groups every way to *see* tasks without changin
 
 | Tab | What it shows |
 |-----|----------------|
-| **My Tasks** | Every task **assigned to you** across all teams and projects. Board, Grid, or **week calendar** sub-views. Sort by due date, priority, status, or progress. Quick filters: Due today, Overdue, Upcoming, Completed, High priority, by project. Mark complete or open the project from board cards. |
+| **My Tasks** | Every task **assigned to you** across all teams and projects. Board, Grid, **week calendar**, or **Personal** sub-views. Sort by due date, priority, status, or progress. Quick filters: Due today, Overdue, Upcoming, Completed, High priority, by project. Mark complete or open the project from board cards. |
+| **Personal** (v2.5.28) | A sub-view of **My Tasks** for **personal tasks** — quick capture that lives only here, outside any project or team. **Only you** can see them. Add a task with an optional priority and due date; drag order with the ▲/▼ controls within each status column (To do / In progress / Done). A due date shows overdue in red and you get a reminder notification as it approaches (respecting your reminder lead-hours). **Promote** turns a personal task into a real project task (pick a project you can write to) — it's copied over and removed from your personal list. **Delete** is a soft delete: switch to **Recently deleted** to restore. Personal tasks never appear in team boards, calendars, charts, reports, or exports. |
 | **Board** | Shortcut list of your projects — click one to open its kanban board with **Group by**. |
 | **Calendar** | Cross-project date grid (see [Calendar views](#calendar-views) below). |
 | **Charts** | Doughnut + bar charts: status mix, tasks per status, tasks per team member. Filter by team, project, **status**, **member**, and **due date range**. |
