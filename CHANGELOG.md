@@ -13,6 +13,38 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.26] — 2026-07-04
+
+**Correspondence (W2.2 — backend): Tier-1 features.** *(Frontend ships as a
+follow-up commit; this is the API + schema half.)*
+
+- **Schema migration `20260704120000_correspondence_tier1`** (additive, nullable):
+  `Correspondence.externalReferenceNumber` + `externalDate` (the counterpart
+  org's own number/date on an incoming letter); `Correspondence.replyToId`
+  self-relation (one level, `SetNull`); `CorrespondenceReferral.dueAt` +
+  index `[userId, status, dueAt]`; and a **`CorrespondenceTask`** join model
+  (composite PK = uniqueness, both FKs cascade — keeps `Task` untouched).
+- **API:** create/update accept the new nullable fields (reply-to is validated
+  to an existing, non-deleted letter **in the same project** — cross-project or
+  self reply → 400 `CORRESPONDENCE_REPLY_TO_INVALID`); referral targets accept
+  `dueAt`; the letter payload gains `externalReferenceNumber`/`externalDate`/
+  `replyToId`/`replyTo` (parent summary)/`linkedTasks`. New endpoints:
+  `POST /…/correspondence/:id/tasks` (create-and-link a task in the letter's
+  project via the task service; project WRITE + `correspondence:write`),
+  `GET /…/correspondence/:id/tasks`, and the cross-project inbox
+  `GET /api/me/referrals?status=&due=overdue|week|all` (user-scoped, constrained
+  to the caller's team memberships, excludes soft-deleted letters).
+- **[DEFAULT → deviation]** the wave spec called for a `correspondence.manage`
+  permission gate on the link-task route; the existing correspondence mutations
+  gate on project WRITE + the `correspondence:write` scope (there is no
+  `correspondence.manage` permission in the catalog), so the new route matches
+  that convention.
+- Tests: `correspondenceTier1.test.ts` — field round-trips, cross-project
+  reply-to rejection, create-and-link + cross-team block, and `me/referrals`
+  user/team isolation + overdue filter + soft-delete exclusion.
+- **Out of scope (flagged):** referral email/scheduler reminders (W3), CC
+  recipients, print letterhead, org-unit numbering (Tier 3).
+
 ## [2.5.25] — 2026-07-04
 
 **Correspondence (W2.1): sequence assignment hardened (defense-in-depth).**

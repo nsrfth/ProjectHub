@@ -1319,6 +1319,8 @@ model Task {
   resourceAssignments ResourceAssignment[]
   // v2.5 (PMIS R9): NCR corrective task back-link.
   qualityNcrs         QualityNcr[] @relation("NcrCorrectiveTask")
+  // v2.5.26 (W2.2): correspondence letters this task is linked to.
+  correspondenceLinks CorrespondenceTask[]
 
   // v1.30: tsvector for full-text search. Managed by raw SQL — the column
   // is GENERATED ALWAYS AS STORED with a GIN index. Prisma never reads it
@@ -1662,6 +1664,15 @@ model Correspondence {
   direction       CorrespondenceDirection
   subject         String
   body            String?
+  // v2.5.26 (W2.2): the counterpart org's own number/date on an incoming letter
+  // (nullable/additive; externalDate follows the UTC-midnight calendar-date
+  // convention like letterDate).
+  externalReferenceNumber String?
+  externalDate            DateTime?
+  // v2.5.26 (W2.2): one-level "reply to" link to another letter in the SAME
+  // project. Thread view is derived by walking the chain — no thread table.
+  // SetNull so deleting the parent doesn't cascade the reply away.
+  replyToId       String?
   // UTC-midnight instant for a Jalali calendar date (same convention as Task date fields).
   letterDate      DateTime
   // Jalali year derived from letterDate at create; the auto-number reset key.
@@ -1685,15 +1696,21 @@ model Correspondence {
   recipient Contact? @relation("CorrespondenceRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
   createdBy User?    @relation("CorrespondenceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   deletedBy User?    @relation("CorrespondenceDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  // v2.5.26 (W2.2): reply-to self-relation (one level; thread derived by walking).
+  replyTo   Correspondence?  @relation("CorrespondenceReplyTo", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Correspondence[] @relation("CorrespondenceReplyTo")
 
   referrals   CorrespondenceReferral[]
   attachments Attachment[]
+  // v2.5.26 (W2.2): letter↔task bridge (many tasks per letter).
+  linkedTasks CorrespondenceTask[]
 
   @@unique([projectId, jalaliYear, sequence])
   @@unique([projectId, referenceNumber])
   @@index([teamId])
   @@index([projectId, deletedAt, letterDate])
   @@index([projectId, status])
+  @@index([replyToId])
 }
 
 // v1.90: referral (ارجاع) of a letter to a team member for ACTION or INFO.
@@ -1706,6 +1723,9 @@ model CorrespondenceReferral {
   note             String?
   status           ReferralStatus @default(PENDING)
   referredById     String?
+  // v2.5.26 (W2.2): optional action-by date (calendar-date convention). Powers
+  // the cross-project "My referrals" inbox overdue/this-week filters + W3 reminders.
+  dueAt            DateTime?
   createdAt        DateTime       @default(now())
   handledAt        DateTime?
 
@@ -1716,7 +1736,24 @@ model CorrespondenceReferral {
 
   @@unique([correspondenceId, userId])
   @@index([userId, status])
+  @@index([userId, status, dueAt])
   @@index([correspondenceId])
+}
+
+// v2.5.26 (W2.2): letter↔task bridge. Keeps Task untouched; many tasks per
+// letter, and the link itself is auditable. Both FKs cascade so deleting either
+// side tears the link down. Composite PK doubles as the uniqueness guarantee.
+model CorrespondenceTask {
+  correspondenceId String
+  taskId           String
+  createdById      String?
+  createdAt        DateTime @default(now())
+
+  correspondence Correspondence @relation(fields: [correspondenceId], references: [id], onDelete: Cascade)
+  task           Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([correspondenceId, taskId])
+  @@index([taskId])
 }
 
 // v1.90: per-(project, Jalali year) sequence backing correspondence reference numbers.

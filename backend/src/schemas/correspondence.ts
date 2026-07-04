@@ -8,6 +8,14 @@ export const correspondenceStatusEnum = z.enum(['DRAFT', 'SENT', 'RECEIVED', 'AR
 export const referralKindEnum = z.enum(['ACTION', 'INFO']);
 export const referralStatusEnum = z.enum(['PENDING', 'HANDLED']);
 
+// v2.5.26 (W2.2): the counterpart org's own reference number + date, and an
+// optional reply-to link to another letter in the SAME project.
+const tier1Fields = {
+  externalReferenceNumber: z.string().max(200).trim().nullable().optional(),
+  externalDate: z.string().datetime().nullable().optional(),
+  replyToId: z.string().nullable().optional(),
+} as const;
+
 export const createCorrespondenceBody = z.object({
   direction: correspondenceDirectionEnum,
   subject: z.string().min(1).max(500).trim(),
@@ -19,6 +27,7 @@ export const createCorrespondenceBody = z.object({
   status: correspondenceStatusEnum.optional(),
   senderId: z.string().nullable().optional(),
   recipientId: z.string().nullable().optional(),
+  ...tier1Fields,
 });
 
 export const updateCorrespondenceBody = z
@@ -30,6 +39,7 @@ export const updateCorrespondenceBody = z
     status: correspondenceStatusEnum.optional(),
     senderId: z.string().nullable().optional(),
     recipientId: z.string().nullable().optional(),
+    ...tier1Fields,
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'Provide at least one field to update' });
 
@@ -51,6 +61,8 @@ export const referBody = z.object({
         userId: z.string(),
         kind: referralKindEnum.default('ACTION'),
         note: z.string().max(2_000).trim().nullable().optional(),
+        // v2.5.26 (W2.2): optional action-by date.
+        dueAt: z.string().datetime().nullable().optional(),
       }),
     )
     .min(1)
@@ -65,9 +77,16 @@ export const referralResponse = z.object({
   kind: referralKindEnum,
   note: z.string().nullable(),
   status: referralStatusEnum,
+  dueAt: z.string().nullable(),
   referredById: z.string().nullable(),
   createdAt: z.string(),
   handledAt: z.string().nullable(),
+});
+
+export const linkedTaskItem = z.object({
+  taskId: z.string(),
+  title: z.string(),
+  status: z.string(),
 });
 
 export const correspondenceResponse = z.object({
@@ -92,14 +111,57 @@ export const correspondenceResponse = z.object({
   recipientName: z.string().nullable(),
   attachmentCount: z.number().int(),
   hasReferrals: z.boolean(),
+  // v2.5.26 (W2.2): external ref/date, reply-to link + parent summary, linked tasks.
+  externalReferenceNumber: z.string().nullable(),
+  externalDate: z.string().nullable(),
+  replyToId: z.string().nullable(),
+  replyTo: z.object({ id: z.string(), referenceNumber: z.string(), subject: z.string() }).nullable(),
+  linkedTasks: z.array(linkedTaskItem),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 
 export const correspondenceListResponse = z.array(correspondenceResponse);
 
+// v2.5.26 (W2.2): create-and-link a task in the letter's project.
+export const createLinkedTaskBody = z.object({
+  title: z.string().min(1).max(500).trim(),
+  description: z.string().max(50_000).nullable().optional(),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
+  dueDate: z.string().datetime().nullable().optional(),
+  assigneeId: z.string().nullable().optional(),
+});
+export const linkedTasksResponse = z.object({ items: z.array(linkedTaskItem) });
+
+// v2.5.26 (W2.2): cross-project "My referrals" inbox.
+export const myReferralsQuery = z.object({
+  status: referralStatusEnum.optional(),
+  due: z.enum(['overdue', 'week', 'all']).optional(),
+});
+export const myReferralItem = z.object({
+  id: z.string(),
+  correspondenceId: z.string(),
+  kind: referralKindEnum,
+  note: z.string().nullable(),
+  status: referralStatusEnum,
+  dueAt: z.string().nullable(),
+  createdAt: z.string(),
+  handledAt: z.string().nullable(),
+  teamId: z.string(),
+  projectId: z.string(),
+  referenceNumber: z.string(),
+  subject: z.string(),
+  direction: correspondenceDirectionEnum,
+  letterDate: z.string().datetime(),
+});
+export const myReferralsResponse = z.object({ items: z.array(myReferralItem) });
+
 export type CreateCorrespondenceBody = z.infer<typeof createCorrespondenceBody>;
 export type UpdateCorrespondenceBody = z.infer<typeof updateCorrespondenceBody>;
 export type SetStatusBody = z.infer<typeof setStatusBody>;
 export type ListCorrespondenceQuery = z.infer<typeof listCorrespondenceQuery>;
 export type ReferBody = z.infer<typeof referBody>;
+export type CreateLinkedTaskBody = z.infer<typeof createLinkedTaskBody>;
+export type MyReferralsQuery = z.infer<typeof myReferralsQuery>;
+export type MyReferralItem = z.infer<typeof myReferralItem>;
+export type LinkedTaskItem = z.infer<typeof linkedTaskItem>;

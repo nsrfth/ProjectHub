@@ -9,6 +9,7 @@ import type {
 import type { AttachmentsService, AttachmentView } from '../services/attachmentsService.js';
 import type {
   CreateCorrespondenceBody,
+  CreateLinkedTaskBody,
   ListCorrespondenceQuery,
   ReferBody,
   SetStatusBody,
@@ -36,6 +37,7 @@ function dispositionFor(filename: string): string {
 function serializeReferral(r: ReferralView) {
   return {
     ...r,
+    dueAt: r.dueAt ? r.dueAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
     handledAt: r.handledAt ? r.handledAt.toISOString() : null,
   };
@@ -73,6 +75,11 @@ function serialize(c: CorrespondenceView) {
     recipientName: c.recipientName,
     attachmentCount: c.attachmentCount,
     hasReferrals: c.hasReferrals,
+    externalReferenceNumber: c.externalReferenceNumber,
+    externalDate: c.externalDate ? c.externalDate.toISOString() : null,
+    replyToId: c.replyToId,
+    replyTo: c.replyTo,
+    linkedTasks: c.linkedTasks,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   };
@@ -189,6 +196,36 @@ export class CorrespondenceController {
       req.user.sub,
     );
     return reply.send(serializeReferral(r));
+  };
+
+  // --- Linked tasks (W2.2) ---------------------------------------------------
+
+  linkTask = async (
+    req: FastifyRequest<{ Params: CorrespondenceParams; Body: CreateLinkedTaskBody }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    const items = await this.svc.linkTask(
+      req.params.teamId,
+      req.params.projectId,
+      req.params.id,
+      req.user.sub,
+      req.user.globalRole,
+      req.body,
+    );
+    return reply.status(201).send({ items });
+  };
+
+  listLinkedTasks = async (
+    req: FastifyRequest<{ Params: CorrespondenceParams }>,
+    reply: FastifyReply,
+  ) => {
+    const items = await this.svc.listLinkedTasks(
+      req.params.teamId,
+      req.params.projectId,
+      req.params.id,
+    );
+    return reply.send({ items });
   };
 
   // --- Attachments (correspondence-scoped) ----------------------------------

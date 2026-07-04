@@ -16,6 +16,8 @@ import {
   correspondenceListResponse,
   correspondenceResponse,
   createCorrespondenceBody,
+  createLinkedTaskBody,
+  linkedTasksResponse,
   listCorrespondenceQuery,
   referBody,
   referralResponse,
@@ -150,6 +152,33 @@ export async function correspondenceRoutes(
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.markReferralHandled,
+  });
+
+  // --- Linked tasks (W2.2) ---------------------------------------------------
+
+  r.get('/:id/tasks', {
+    preHandler: requireScope('correspondence:read'),
+    schema: {
+      tags: ['correspondence'],
+      summary: 'List tasks linked to a letter',
+      params: itemParams,
+      response: { 200: linkedTasksResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.listLinkedTasks,
+  });
+
+  r.post('/:id/tasks', {
+    preHandler: [requireProjectWriteAccess(), requireScope('correspondence:write')],
+    schema: {
+      tags: ['correspondence'],
+      summary: 'Create a task in the letter\'s project and link it to the letter',
+      params: itemParams,
+      body: createLinkedTaskBody,
+      response: { 201: linkedTasksResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.linkTask,
   });
 
   // --- Attachments (correspondence-scoped) ----------------------------------

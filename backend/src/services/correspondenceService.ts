@@ -8,9 +8,14 @@ import {
 import { utcMidnightToJalali } from '../lib/shamsiCalendar.js';
 import { logActivity } from './activityLogger.js';
 import { notifications } from './notificationsService.js';
+import { TasksService } from './tasksService.js';
 import type {
   CreateCorrespondenceBody,
+  CreateLinkedTaskBody,
+  LinkedTaskItem,
   ListCorrespondenceQuery,
+  MyReferralItem,
+  MyReferralsQuery,
   ReferBody,
   UpdateCorrespondenceBody,
 } from '../schemas/correspondence.js';
@@ -43,6 +48,7 @@ export interface ReferralView {
   kind: 'ACTION' | 'INFO';
   note: string | null;
   status: 'PENDING' | 'HANDLED';
+  dueAt: Date | null;
   referredById: string | null;
   createdAt: Date;
   handledAt: Date | null;
@@ -71,6 +77,11 @@ export interface CorrespondenceView {
   recipientName: string | null;
   attachmentCount: number;
   hasReferrals: boolean;
+  externalReferenceNumber: string | null;
+  externalDate: Date | null;
+  replyToId: string | null;
+  replyTo: { id: string; referenceNumber: string; subject: string } | null;
+  linkedTasks: { taskId: string; title: string; status: string }[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -81,6 +92,12 @@ const correspondenceInclude = {
   referrals: {
     orderBy: { createdAt: 'asc' as const },
     include: { user: { select: { name: true } } },
+  },
+  // v2.5.26 (W2.2): parent-letter summary + linked tasks.
+  replyTo: { select: { id: true, referenceNumber: true, subject: true } },
+  linkedTasks: {
+    orderBy: { createdAt: 'asc' as const },
+    include: { task: { select: { id: true, title: true, status: true } } },
   },
   _count: { select: { attachments: true } },
 } satisfies Prisma.CorrespondenceInclude;
@@ -112,6 +129,7 @@ function mapReferral(r: CorrespondenceRow['referrals'][number]): ReferralView {
     kind: r.kind,
     note: r.note,
     status: r.status,
+    dueAt: r.dueAt,
     referredById: r.referredById,
     createdAt: r.createdAt,
     handledAt: r.handledAt,
@@ -141,12 +159,27 @@ function toView(row: CorrespondenceRow): CorrespondenceView {
     recipientName: row.recipient?.name ?? null,
     attachmentCount: row._count.attachments,
     hasReferrals: row.referrals.length > 0,
+    externalReferenceNumber: row.externalReferenceNumber,
+    externalDate: row.externalDate,
+    replyToId: row.replyToId,
+    replyTo: row.replyTo
+      ? { id: row.replyTo.id, referenceNumber: row.replyTo.referenceNumber, subject: row.replyTo.subject }
+      : null,
+    linkedTasks: row.linkedTasks.map((l) => ({
+      taskId: l.task.id,
+      title: l.task.title,
+      status: l.task.status,
+    })),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
 
 export class CorrespondenceService {
+  // W2.2: create-and-link goes through the existing task service (WBS path,
+  // denormalized teamId, activity log) rather than a raw prisma insert.
+  private readonly tasks = new TasksService();
+
   // Re-assert the module is enabled for this project. The route layer also
   // checks this, but a service caller (or a future code path) must never be
   // able to reach correspondence for a disabled project. 404 — the module
@@ -278,6 +311,7 @@ export class CorrespondenceService {
     },
   ): Promise<CorrespondenceRow> {
     const { teamId, projectId, actorId, jy, letterDate, body } = args;
+    if (body.replyToId) await this.assertReplyToInProject(projectId, body.replyToId);
     const counter = await tx.correspondenceCounter.upsert({
       where: { projectId_jalaliYear: { projectId, jalaliYear: jy } },
       create: { projectId, jalaliYear: jy, currentValue: 1 },
@@ -301,6 +335,9 @@ export class CorrespondenceService {
         status: body.status ?? 'DRAFT',
         senderId: body.senderId ?? null,
         recipientId: body.recipientId ?? null,
+        externalReferenceNumber: body.externalReferenceNumber ?? null,
+        externalDate: body.externalDate ? new Date(body.externalDate) : null,
+        replyToId: body.replyToId ?? null,
         createdById: actorId,
       },
       include: correspondenceInclude,
@@ -333,6 +370,14 @@ export class CorrespondenceService {
 
     await this.assertContactInTeam(teamId, body.senderId);
     await this.assertContactInTeam(teamId, body.recipientId);
+    // W2.2: a reply-to must be another (non-deleted) letter in the SAME project,
+    // and never the letter itself.
+    if (body.replyToId) {
+      if (body.replyToId === id) {
+        throw new AppError(400, 'CORRESPONDENCE_REPLY_TO_INVALID', 'A letter cannot reply to itself.');
+      }
+      await this.assertReplyToInProject(projectId, body.replyToId);
+    }
 
     // referenceNumber is PERMANENT — editing letterDate to another Jalali year
     // does NOT renumber. We deliberately do not touch jalaliYear/sequence/
@@ -348,6 +393,13 @@ export class CorrespondenceService {
           ...(body.status !== undefined && { status: body.status }),
           ...(body.senderId !== undefined && { senderId: body.senderId }),
           ...(body.recipientId !== undefined && { recipientId: body.recipientId }),
+          ...(body.externalReferenceNumber !== undefined && {
+            externalReferenceNumber: body.externalReferenceNumber,
+          }),
+          ...(body.externalDate !== undefined && {
+            externalDate: body.externalDate ? new Date(body.externalDate) : null,
+          }),
+          ...(body.replyToId !== undefined && { replyToId: body.replyToId }),
         },
         include: correspondenceInclude,
       });
@@ -430,6 +482,135 @@ export class CorrespondenceService {
   // the project's eligible-responsible set (team members ∪ accepted group
   // grants). Re-referring an existing target resets it to PENDING (and may
   // change kind/note). Referred users get a CORRESPONDENCE_REFERRAL notification.
+  // W2.2: a reply-to must reference an existing, non-deleted letter in the SAME
+  // project (never cross-project). Read via prisma (a simple existence check).
+  private async assertReplyToInProject(projectId: string, replyToId: string): Promise<void> {
+    const parent = await prisma.correspondence.findFirst({
+      where: { id: replyToId, projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!parent) {
+      throw new AppError(
+        400,
+        'CORRESPONDENCE_REPLY_TO_INVALID',
+        'The reply-to letter must be an existing, non-deleted letter in the same project.',
+      );
+    }
+  }
+
+  // W2.2: create a task in the letter's project (via the task service) and link
+  // it to the letter. Needs project WRITE (the service re-asserts). Returns the
+  // letter's full linked-task list.
+  async linkTask(
+    teamId: string,
+    projectId: string,
+    id: string,
+    actorId: string,
+    actorGlobalRole: GlobalRole,
+    body: CreateLinkedTaskBody,
+  ): Promise<LinkedTaskItem[]> {
+    await this.ensureModuleEnabled(teamId, projectId);
+    await assertCanWriteProject(projectId, teamId, actorId, actorGlobalRole);
+    const letter = await prisma.correspondence.findFirst({
+      where: { id, teamId, projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!letter) throw Errors.notFound('Correspondence not found');
+
+    const task = await this.tasks.create(teamId, projectId, actorId, actorGlobalRole, {
+      title: body.title,
+      description: body.description ?? undefined,
+      priority: body.priority,
+      dueDate: body.dueDate ?? undefined,
+      assigneeId: body.assigneeId ?? undefined,
+    });
+    await prisma.correspondenceTask.create({
+      data: { correspondenceId: id, taskId: task.id, createdById: actorId },
+    });
+    await logActivity(prisma, {
+      teamId,
+      actorId,
+      action: 'correspondence.task_linked',
+      meta: { correspondenceId: id, taskId: task.id, projectId },
+    });
+    return this.listLinkedTasks(teamId, projectId, id);
+  }
+
+  async listLinkedTasks(teamId: string, projectId: string, id: string): Promise<LinkedTaskItem[]> {
+    await this.ensureModuleEnabled(teamId, projectId);
+    const letter = await prisma.correspondence.findFirst({
+      where: { id, teamId, projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!letter) throw Errors.notFound('Correspondence not found');
+    const links = await prisma.correspondenceTask.findMany({
+      where: { correspondenceId: id },
+      orderBy: { createdAt: 'asc' },
+      include: { task: { select: { id: true, title: true, status: true } } },
+    });
+    return links.map((l) => ({ taskId: l.task.id, title: l.task.title, status: l.task.status }));
+  }
+
+  // W2.2: cross-project "My referrals" inbox. User-scoped (not team-scoped):
+  // constrained to the caller's team memberships, excluding soft-deleted letters.
+  async listMyReferrals(userId: string, query: MyReferralsQuery): Promise<MyReferralItem[]> {
+    const memberships = await prisma.teamMembership.findMany({
+      where: { userId },
+      select: { teamId: true },
+    });
+    const teamIds = memberships.map((m) => m.teamId);
+    if (teamIds.length === 0) return [];
+
+    const where: Prisma.CorrespondenceReferralWhereInput = {
+      userId,
+      teamId: { in: teamIds },
+      correspondence: { deletedAt: null },
+      ...(query.status && { status: query.status }),
+    };
+    if (query.due === 'overdue') {
+      // dueAt < now (Prisma treats null as not-less-than, so nulls drop out).
+      where.dueAt = { lt: new Date() };
+    } else if (query.due === 'week') {
+      const now = new Date();
+      where.dueAt = { gte: now, lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) };
+    }
+
+    const rows = await prisma.correspondenceReferral.findMany({
+      where,
+      orderBy: [{ dueAt: 'asc' }, { createdAt: 'desc' }],
+      include: {
+        correspondence: {
+          select: {
+            id: true,
+            teamId: true,
+            projectId: true,
+            referenceNumber: true,
+            subject: true,
+            direction: true,
+            letterDate: true,
+          },
+        },
+      },
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      correspondenceId: r.correspondenceId,
+      kind: r.kind,
+      note: r.note,
+      status: r.status,
+      dueAt: r.dueAt ? r.dueAt.toISOString() : null,
+      createdAt: r.createdAt.toISOString(),
+      handledAt: r.handledAt ? r.handledAt.toISOString() : null,
+      teamId: r.correspondence.teamId,
+      projectId: r.correspondence.projectId,
+      referenceNumber: r.correspondence.referenceNumber,
+      subject: r.correspondence.subject,
+      direction: r.correspondence.direction,
+      letterDate: r.correspondence.letterDate.toISOString(),
+    }));
+  }
+
   async refer(
     teamId: string,
     projectId: string,
@@ -448,9 +629,17 @@ export class CorrespondenceService {
     if (!existing) throw Errors.notFound('Correspondence not found');
 
     // Dedupe by userId (last wins).
-    const byUser = new Map<string, { userId: string; kind: 'ACTION' | 'INFO'; note: string | null }>();
+    const byUser = new Map<
+      string,
+      { userId: string; kind: 'ACTION' | 'INFO'; note: string | null; dueAt: Date | null }
+    >();
     for (const t of body.targets) {
-      byUser.set(t.userId, { userId: t.userId, kind: t.kind ?? 'ACTION', note: t.note ?? null });
+      byUser.set(t.userId, {
+        userId: t.userId,
+        kind: t.kind ?? 'ACTION',
+        note: t.note ?? null,
+        dueAt: t.dueAt ? new Date(t.dueAt) : null,
+      });
     }
     const targets = [...byUser.values()];
 
@@ -472,12 +661,14 @@ export class CorrespondenceService {
             userId: t.userId,
             kind: t.kind,
             note: t.note,
+            dueAt: t.dueAt,
             status: 'PENDING',
             referredById: actorId,
           },
           update: {
             kind: t.kind,
             note: t.note,
+            dueAt: t.dueAt,
             status: 'PENDING',
             handledAt: null,
             referredById: actorId,

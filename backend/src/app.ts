@@ -76,6 +76,7 @@ import { taskhubRoutes } from './routes/taskhub.js';
 import { securitySettingsRoutes } from './routes/securitySettings.js';
 import { meTasksRoutes } from './routes/meTasks.js';
 import { meProjectBucketsRoutes } from './routes/meProjectBuckets.js';
+import { meReferralsRoutes } from './routes/meReferrals.js';
 import { maintenanceGate } from './middleware/maintenance.js';
 import { decorateLifecycle } from './lib/lifecycle.js';
 import { prisma } from './data/prisma.js';
@@ -142,6 +143,7 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(meTasksRoutes, { prefix: '/me' });
     await api.register(groupInvitesRoutes, { prefix: '/me/group-invites' });
     await api.register(meProjectBucketsRoutes, { prefix: '/me' });
+    await api.register(meReferralsRoutes, { prefix: '/me' });
     await api.register(teamsRoutes, { prefix: '/teams' });
     // Projects nest under teams so requireTeamRole picks up :teamId from the URL.
     await api.register(projectsRoutes, { prefix: '/teams/:teamId/projects' });
