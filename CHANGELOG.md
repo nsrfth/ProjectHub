@@ -13,6 +13,27 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.35] — 2026-07-05
+
+**Backups — Kopia offsite backups (encrypted, versioned, web UI).** An
+UpdraftPlus-style disaster-recovery option: a `kopia` service (compose `backup`
+profile, off by default) that snapshots the app's dump volume to **Google Drive**
+with client-side encryption, retention, and a browsable restore UI. No app code.
+
+- **`docker-compose.yml`**: new `kopia` service (`kopia/kopia`, `profiles:
+  ['backup']`) serving the Kopia web UI on `:51515`, mounting `backups_data`
+  read-only as the snapshot source; new `kopia_config`/`kopia_cache`/`kopia_logs`
+  volumes. Repository = Google Drive via Kopia's native gdrive backend + a
+  service-account key (unattended; no OAuth token to refresh).
+- **`scripts/kopia-setup.sh`**: one-time repo create/connect + retention policy
+  (`keep daily 7 / weekly 4 / monthly 6 / annual 1`, zstd) + 6-hourly schedule +
+  first snapshot.
+- **Security:** Kopia encrypts every object with `KOPIA_PASSWORD` before upload,
+  so the secrets-bearing dump bundles never reach the cloud in plaintext.
+  `secrets/` is git-ignored; `.env.example` documents the new `KOPIA_*` vars.
+- **Docs:** `scripts/README.md` gains a full "Kopia + Google Drive" walkthrough
+  (service-account setup, restore via UI/CLI); ARCHITECTURE DR section updated.
+
 ## [2.5.34] — 2026-07-05
 
 **Docs — user manual now covers the Correspondence (دبیرخانه) module.** The

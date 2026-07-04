@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2.5.34 (unified — frontend, backend, and manual share one number) (2026-07-04)
+**Version:** v2.5.35 (unified — frontend, backend, and manual share one number) (2026-07-04)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -491,7 +491,13 @@ Three complementary layers (a backup you have never restored is not a backup):
    **on-box only** — it does not survive losing the box.
 2. **Offsite shipping** (W4, v2.5.32): `scripts/offsite-backup.sh` copies the
    newest dump out of the container and pushes it to an rclone remote or over
-   rsync/SSH. Cron'd on the host; never touches local retention.
+   rsync/SSH. Cron'd on the host; never touches local retention. **Or, preferred
+   (v2.5.35):** the **Kopia** service (compose `backup` profile) — encrypted,
+   deduplicating, versioned snapshots of the dump volume to Google Drive (native
+   gdrive backend + service account) with a web UI, retention, and one-click
+   restore. Kopia encrypts with `KOPIA_PASSWORD` before upload, so the
+   secrets-bearing bundles never reach the cloud in plaintext. Setup:
+   `scripts/kopia-setup.sh` + `scripts/README.md`.
 3. **Restore verification** (W4, v2.5.32): `scripts/restore-verify.sh` restores
    a dump into a **throwaway** Postgres (never the live DB) and asserts schema +
    applied-migrations + core tables are present, exiting non-zero on any

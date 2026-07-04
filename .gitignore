@@ -13,6 +13,9 @@ build/
 .env.*.local
 .env.bak.*
 
+# secrets (Kopia Google Drive service-account key, etc.) — never commit
+secrets/
+
 # Leftover from a prior history-rewrite session — local-only safety copy
 .git.backup-before-rewrite/
 
