@@ -13,6 +13,19 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.21] — 2026-07-03
+
+**Settings: new "Date & time" menu — all calendar/date-time options grouped.**
+Added a dedicated **Date & time** page under Settings and moved every
+calendar / date-time option out of **Preferences** into it: the per-user
+calendar system (Shamsi/Gregorian), time zone, time format (12/24h), dual
+calendar, and reminder lead hours; plus the admin-only instance-wide workweek
+(weekend days), holidays, working-day scheduling, off-day reminders, and the
+date-edit restriction. **Preferences** now holds only theme, language, and the
+(non-date) task-dependency enforcement setting. Shared preference-form helpers
+were extracted to `features/settings/prefFormHelpers.tsx`. No API or schema
+changes — the preferences PATCH already accepted partial updates.
+
 ## [2.5.20] — 2026-07-02
 
 **Fix: `prisma db seed` no longer crashes on a fresh database.**

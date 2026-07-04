@@ -29,6 +29,13 @@ const NAV: NavItem[] = [
     descriptionKey: 'settings.nav.preferencesDesc',
     roles: ['ADMIN', 'MANAGER', 'MEMBER'],
   },
+  // v2.6: all calendar / date-time settings grouped under one menu.
+  {
+    to: '/settings/date-time',
+    labelKey: 'settings.nav.dateTime',
+    descriptionKey: 'settings.nav.dateTimeDesc',
+    roles: ['ADMIN', 'MANAGER', 'MEMBER'],
+  },
   {
     to: '/settings/trash',
     labelKey: 'settings.nav.trash',

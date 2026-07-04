@@ -315,7 +315,11 @@
 
   "settings.title": "تنظیمات",
   "settings.nav.preferences": "ترجیحات",
-  "settings.nav.preferencesDesc": "تقویم، تم، زبان",
+  "settings.nav.preferencesDesc": "تم، زبان",
+  "settings.nav.dateTime": "تاریخ و زمان",
+  "settings.nav.dateTimeDesc": "تقویم، منطقه زمانی، هفته کاری، تعطیلات",
+  "settings.dateTime.title": "تاریخ و زمان",
+  "settings.dateTime.subtitle": "سیستم تقویم، منطقه زمانی، هفته کاری، تعطیلات و زمان‌بندی مربوط به تاریخ.",
   "settings.nav.trash": "سطل زباله",
   "settings.nav.trashDesc": "بازیابی یا حذف دائمی موارد",
   "settings.nav.admin": "مدیر سامانه",

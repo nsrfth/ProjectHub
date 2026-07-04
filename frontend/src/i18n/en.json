@@ -315,7 +315,11 @@
 
   "settings.title": "Settings",
   "settings.nav.preferences": "Preferences",
-  "settings.nav.preferencesDesc": "Calendar, theme, language",
+  "settings.nav.preferencesDesc": "Theme, language",
+  "settings.nav.dateTime": "Date & time",
+  "settings.nav.dateTimeDesc": "Calendar, time zone, workweek, holidays",
+  "settings.dateTime.title": "Date & time",
+  "settings.dateTime.subtitle": "Calendar system, time zone, workweek, holidays, and date-related scheduling.",
   "settings.nav.trash": "Trash",
   "settings.nav.trashDesc": "Restore or purge deleted items",
   "settings.nav.admin": "Admin",

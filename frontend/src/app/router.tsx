@@ -28,6 +28,7 @@ import SecurityPage from '@/pages/settings/SecurityPage';
 import AuditPage from '@/pages/settings/AuditPage';
 import ApiWebhooksPage from '@/pages/settings/ApiWebhooksPage';
 import PreferencesPage from '@/pages/settings/PreferencesPage';
+import DateTimeSettingsPage from '@/pages/settings/DateTimeSettingsPage';
 import RolesPage from '@/pages/settings/RolesPage';
 import BackupsPage from '@/pages/settings/BackupsPage';
 import TaskhubPage from '@/pages/settings/TaskhubPage';
@@ -118,6 +119,7 @@ export const router = createBrowserRouter([
         element: <SettingsLayout />,
         children: [
           { path: 'preferences', element: <PreferencesPage /> },
+          { path: 'date-time', element: <DateTimeSettingsPage /> },
           { path: 'roles', element: <RolesPage /> },
           { path: 'labels', element: <LabelsPage /> },
           { path: 'custom-fields', element: <CustomFieldsPage /> },
