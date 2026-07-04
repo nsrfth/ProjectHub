@@ -38,3 +38,11 @@ export async function markRead(notificationId: string): Promise<void> {
 export async function markAllRead(): Promise<void> {
   await api.post('/notifications/read-all');
 }
+
+// v2.5.24 (W1.3): mint a single-use ticket for the notifications WebSocket.
+// The browser exchanges its (in-memory) bearer token for an opaque ticket over
+// this authenticated POST, then opens the socket with `?ticket=`. Tickets expire
+// in ~30s, so fetch a fresh one immediately before every connect — never cache.
+export async function wsTicket(): Promise<{ ticket: string; expiresInSec: number }> {
+  return (await api.post<{ ticket: string; expiresInSec: number }>('/ws/ticket')).data;
+}

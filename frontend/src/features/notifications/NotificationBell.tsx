@@ -42,12 +42,30 @@ export default function NotificationBell(): JSX.Element {
     let cancelled = false;
     let backoffMs = 1000; // exponential backoff up to 30s for reconnects
 
-    function connect(token: string): void {
+    function scheduleReconnect(): void {
+      if (cancelled || !getAccessToken()) return;
+      setTimeout(() => void connect(), backoffMs);
+      backoffMs = Math.min(backoffMs * 2, 30000);
+    }
+
+    // v2.5.24 (W1.3): mint a fresh single-use ticket (authenticated POST) right
+    // before opening the socket — tickets expire in ~30s so we never cache one.
+    async function connect(): Promise<void> {
+      if (cancelled || !getAccessToken()) return;
+      let ticket: string;
+      try {
+        ticket = (await notifApi.wsTicket()).ticket;
+      } catch {
+        // Couldn't mint a ticket (e.g. a transient 401 mid token-refresh) —
+        // back off and retry while still signed in.
+        scheduleReconnect();
+        return;
+      }
       if (cancelled) return;
       // SPA + Caddy are same-origin in prod; pick ws:// vs wss:// based on the
       // page protocol so HTTPS deployments don't downgrade to plaintext WS.
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${proto}//${window.location.host}/api/ws/notifications?token=${encodeURIComponent(token)}`;
+      const url = `${proto}//${window.location.host}/api/ws/notifications?ticket=${encodeURIComponent(ticket)}`;
       ws = new WebSocket(url);
       ws.onmessage = (ev) => {
         try {
@@ -65,26 +83,22 @@ export default function NotificationBell(): JSX.Element {
       };
       ws.onclose = () => {
         if (cancelled) return;
-        // Reconnect with backoff while a token is still present.
-        const t = getAccessToken();
-        if (!t) return;
-        setTimeout(() => connect(t), backoffMs);
-        backoffMs = Math.min(backoffMs * 2, 30000);
+        scheduleReconnect();
       };
     }
 
-    const initial = getAccessToken();
-    if (initial) connect(initial);
+    if (getAccessToken()) void connect();
 
-    // Subscribe to token changes — reconnect with the new token, or tear down
-    // if signed out.
+    // Subscribe to token changes — reconnect (with a fresh ticket) on the new
+    // token, or tear down if signed out.
     const unsub = onTokenChange((t) => {
       if (ws) {
         ws.onclose = null; // suppress reconnect-on-close for this teardown
         ws.close();
         ws = null;
       }
-      if (t) connect(t);
+      backoffMs = 1000;
+      if (t) void connect();
     });
 
     return () => {

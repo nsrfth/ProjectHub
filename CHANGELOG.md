@@ -13,6 +13,32 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.24] — 2026-07-04
+
+**Security (W1.3): notifications WebSocket auth via one-time ticket.**
+The realtime notifications channel no longer takes the access token in the URL
+(`GET /api/ws/notifications?token=<accessToken>`) — a known anti-pattern that
+leaks credentials into proxy/Caddy access logs. Instead:
+
+- **`POST /api/ws/ticket`** (normal bearer auth) mints a single-use, ~30s-TTL
+  ticket. The socket now upgrades with `?ticket=<t>` only; the `?token=` form is
+  removed (the sole consumer is our own frontend, which ships in lockstep).
+- **`wsTicketService`** — an in-memory store keyed by `sha256(ticket)` (the raw
+  value never rests in memory); consumed on first use (replay → reject), expiring
+  after 30s. **[DEFAULT → deviation]** the wave spec defaulted to Redis, but
+  `REDIS_URL` is optional and no Redis client is wired anywhere today, so an
+  in-memory store is the proportionate choice for the single-replica deployment;
+  a multi-replica setup would move it to Redis (`SET … EX 30 NX` + GETDEL).
+- **Frontend** (`NotificationBell`) fetches a fresh ticket immediately before
+  every connect/reconnect (never caches — tickets die in 30s).
+
+Tests: `wsTicketService` unit tests (single-use, expiry, unknown-ticket, hash
+isolation) + `wsTicket` integration test (auth required; distinct ticket per
+call). The socket upgrade itself isn't exercised — this suite is inject-only (no
+TCP) by design; the security-critical logic is in the store, which is unit-tested.
+The stale ARCHITECTURE.md "notifications are pull-based" note is corrected in W3
+(which is scoped to the realtime/email doc fixes).
+
 ## [2.5.23] — 2026-07-04
 
 **Security (W1.2): secret scanning + CI security gates.**
