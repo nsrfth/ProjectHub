@@ -51,6 +51,9 @@ export const listCorrespondenceQuery = z.object({
   direction: correspondenceDirectionEnum.optional(),
   status: correspondenceStatusEnum.optional(),
   search: z.string().max(200).trim().optional(),
+  // v2.5.30 (W2.3): cursor pagination. `cursor` is the last item's id.
+  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+  cursor: z.string().optional(),
 });
 
 // Refer (ارجاع) a letter to one or more team members for ACTION or INFO.
@@ -121,7 +124,11 @@ export const correspondenceResponse = z.object({
   updatedAt: z.string(),
 });
 
-export const correspondenceListResponse = z.array(correspondenceResponse);
+// v2.5.30 (W2.3): paginated list response (was a bare array pre-W2.3).
+export const correspondenceListResponse = z.object({
+  items: z.array(correspondenceResponse),
+  nextCursor: z.string().nullable(),
+});
 
 // v2.5.26 (W2.2): create-and-link a task in the letter's project.
 export const createLinkedTaskBody = z.object({

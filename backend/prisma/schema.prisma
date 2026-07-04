@@ -1751,6 +1751,11 @@ model Correspondence {
   // v2.5.26 (W2.2): letter↔task bridge (many tasks per letter).
   linkedTasks CorrespondenceTask[]
 
+  // v2.5.30 (W2.3): tsvector for full-text search (generated STORED column
+  // managed by raw SQL in the migration — see Task.searchVector). Unsupported()
+  // keeps it off the generated client; the service queries it via raw SQL.
+  searchVector Unsupported("tsvector")?
+
   @@unique([projectId, jalaliYear, sequence])
   @@unique([projectId, referenceNumber])
   @@index([teamId])

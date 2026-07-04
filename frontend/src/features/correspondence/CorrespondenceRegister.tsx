@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import * as corrApi from './api';
 import { LetterEditor } from './LetterEditor';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
@@ -39,11 +39,21 @@ export function CorrespondenceRegister({
 
   const filters: corrApi.LetterFilters = { direction, status, search: search.trim() || undefined };
 
-  const { data: letters = [], isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['correspondence', teamId, projectId, filters],
-    queryFn: () => corrApi.listLetters(teamId, projectId, filters),
+    queryFn: ({ pageParam }) =>
+      corrApi.listLetters(teamId, projectId, { ...filters, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: !!teamId && !!projectId,
   });
+  const letters = data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
     <div className="space-y-4">
@@ -157,6 +167,19 @@ export function CorrespondenceRegister({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {hasNextPage && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => void fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className="rounded-md border border-border px-4 py-1.5 text-sm hover:bg-bg-elevated disabled:opacity-50"
+          >
+            {isFetchingNextPage ? t('common.loading') : t('correspondence.loadMore')}
+          </button>
         </div>
       )}
 

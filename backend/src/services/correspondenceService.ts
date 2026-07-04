@@ -212,24 +212,40 @@ export class CorrespondenceService {
     teamId: string,
     projectId: string,
     filters: ListCorrespondenceQuery = {},
-  ): Promise<CorrespondenceView[]> {
+  ): Promise<{ items: CorrespondenceView[]; nextCursor: string | null }> {
     await this.ensureModuleEnabled(teamId, projectId);
+    const limit = filters.limit ?? 50;
     const where: Prisma.CorrespondenceWhereInput = { teamId, projectId, deletedAt: null };
     if (filters.direction) where.direction = filters.direction;
     if (filters.status) where.status = filters.status;
+
+    // v2.5.30 (W2.3): full-text search via the generated tsvector column.
+    // Prisma's typed `where` can't express `@@`, so resolve matching ids with a
+    // tiny raw query (config 'simple', websearch syntax) and constrain by them.
+    // Everything else — ordering, cursor pagination — stays in the typed client.
     if (filters.search) {
-      where.OR = [
-        { subject: { contains: filters.search, mode: 'insensitive' } },
-        { referenceNumber: { contains: filters.search, mode: 'insensitive' } },
-        { body: { contains: filters.search, mode: 'insensitive' } },
-      ];
+      const matches = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "Correspondence"
+        WHERE "teamId" = ${teamId} AND "projectId" = ${projectId} AND "deletedAt" IS NULL
+          AND "searchVector" @@ websearch_to_tsquery('simple', ${filters.search})`;
+      where.id = { in: matches.map((m) => m.id) };
     }
+
+    // Keyset pagination: stable total order (letterDate desc, id desc) with id as
+    // the unique tiebreaker Prisma's cursor rides on. Fetch limit+1 to detect more.
     const rows = await prisma.correspondence.findMany({
       where,
-      orderBy: [{ letterDate: 'desc' }, { sequence: 'desc' }],
+      orderBy: [{ letterDate: 'desc' }, { id: 'desc' }],
       include: correspondenceInclude,
+      take: limit + 1,
+      ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
     });
-    return rows.map(toView);
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return {
+      items: page.map(toView),
+      nextCursor: hasMore ? page[page.length - 1]!.id : null,
+    };
   }
 
   async get(teamId: string, projectId: string, id: string): Promise<CorrespondenceView> {

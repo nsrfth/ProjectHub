@@ -121,6 +121,14 @@ export interface LetterFilters {
   direction?: LetterDirection | '';
   status?: LetterStatus | '';
   search?: string;
+  // v2.5.30 (W2.3): cursor pagination.
+  limit?: number;
+  cursor?: string;
+}
+
+export interface LetterPage {
+  items: Letter[];
+  nextCursor: string | null;
 }
 
 function base(teamId: string, projectId: string): string {
@@ -131,12 +139,14 @@ export async function listLetters(
   teamId: string,
   projectId: string,
   filters: LetterFilters = {},
-): Promise<Letter[]> {
+): Promise<LetterPage> {
   const params: Record<string, string> = {};
   if (filters.direction) params.direction = filters.direction;
   if (filters.status) params.status = filters.status;
   if (filters.search) params.search = filters.search;
-  return (await api.get<Letter[]>(base(teamId, projectId), { params })).data;
+  if (filters.limit) params.limit = String(filters.limit);
+  if (filters.cursor) params.cursor = filters.cursor;
+  return (await api.get<LetterPage>(base(teamId, projectId), { params })).data;
 }
 
 export async function getLetter(

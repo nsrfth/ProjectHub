@@ -13,6 +13,26 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.30] — 2026-07-04
+
+**Correspondence W2.3 — full-text search + cursor pagination.**
+
+- **Schema migration `20260718120000_correspondence_fts`**: a generated STORED
+  `tsvector searchVector` on `Correspondence` (config `simple`; subject +
+  reference weighted A, external ref + body weighted B) with a GIN index.
+  Generated columns backfill existing rows automatically — no data migration.
+- **Search** now runs over the tsvector (`websearch_to_tsquery('simple', …)` —
+  multi-word, phrase, and prefix aware) instead of three `ILIKE contains`
+  scans; it matches subject, reference numbers, **and body**.
+- **Cursor pagination:** the list endpoint takes `limit` (≤100, default 50) +
+  `cursor` and returns `{ items, nextCursor }` (was a bare array — a breaking
+  change to that one endpoint; the SPA is updated in lockstep). Keyset order is
+  `(letterDate desc, id desc)` with `id` as the unique tiebreaker Prisma's
+  cursor rides — no offset drift. FTS is applied as an id-filter so ordering and
+  pagination stay uniform whether or not a search term is present.
+- **Frontend:** the register uses `useInfiniteQuery` with a **Load more** button;
+  the search box hint now says it searches the body too. EN + FA.
+
 ## [2.5.29] — 2026-07-04
 
 **Correspondence W2.2 — frontend.** UI for the Tier-1 backend shipped in

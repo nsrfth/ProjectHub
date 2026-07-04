@@ -109,7 +109,8 @@ describe('correspondence module enablement gate', () => {
 
     const after = await inject({ method: 'GET', url: base(s), headers: H(s.token) });
     expect(after.statusCode).toBe(200);
-    expect(after.json()).toEqual([]);
+    // v2.5.30 (W2.3): list is now paginated { items, nextCursor }.
+    expect(after.json()).toEqual({ items: [], nextCursor: null });
   });
 
   it('exposes correspondenceEnabled on the project response', async () => {
@@ -239,24 +240,62 @@ describe('correspondence numbering + CRUD', () => {
       url: `${base(s)}?direction=INCOMING`,
       headers: H(s.token),
     });
-    expect(incoming.json()).toHaveLength(1);
-    expect(incoming.json()[0].subject).toBe('Alpha incoming');
+    expect(incoming.json().items).toHaveLength(1);
+    expect(incoming.json().items[0].subject).toBe('Alpha incoming');
 
     const sent = await inject({
       method: 'GET',
       url: `${base(s)}?status=SENT`,
       headers: H(s.token),
     });
-    expect(sent.json()).toHaveLength(1);
-    expect(sent.json()[0].subject).toBe('Beta outgoing');
+    expect(sent.json().items).toHaveLength(1);
+    expect(sent.json().items[0].subject).toBe('Beta outgoing');
 
+    // v2.5.30 (W2.3): full-text search over the tsvector column.
     const search = await inject({
       method: 'GET',
       url: `${base(s)}?search=beta`,
       headers: H(s.token),
     });
-    expect(search.json()).toHaveLength(1);
-    expect(search.json()[0].subject).toBe('Beta outgoing');
+    expect(search.json().items).toHaveLength(1);
+    expect(search.json().items[0].subject).toBe('Beta outgoing');
+  });
+
+  it('W2.3: paginates by cursor and full-text-searches the body', async () => {
+    const s = await setup('pg@example.com', 'team-pg');
+    await enableModule(s.token, s.projectId);
+    // 5 letters; body carries a distinctive token on one of them.
+    for (let i = 0; i < 5; i++) {
+      await inject({
+        method: 'POST',
+        url: base(s),
+        headers: H(s.token),
+        payload: {
+          direction: 'INCOMING',
+          subject: `Letter ${i}`,
+          body: i === 2 ? 'contains the zebra keyword' : 'ordinary body',
+          letterDate: DATE_1404,
+        },
+      });
+    }
+
+    // Page 1: limit 2 → 2 items + a cursor.
+    const p1 = (await inject({ method: 'GET', url: `${base(s)}?limit=2`, headers: H(s.token) })).json();
+    expect(p1.items).toHaveLength(2);
+    expect(p1.nextCursor).toBeTruthy();
+
+    // Page 2 via cursor: no overlap with page 1.
+    const p2 = (
+      await inject({ method: 'GET', url: `${base(s)}?limit=2&cursor=${p1.nextCursor}`, headers: H(s.token) })
+    ).json();
+    expect(p2.items).toHaveLength(2);
+    const p1ids = new Set(p1.items.map((x: { id: string }) => x.id));
+    expect(p2.items.every((x: { id: string }) => !p1ids.has(x.id))).toBe(true);
+
+    // FTS over the body matches only the zebra letter.
+    const fts = (await inject({ method: 'GET', url: `${base(s)}?search=zebra`, headers: H(s.token) })).json();
+    expect(fts.items).toHaveLength(1);
+    expect(fts.items[0].subject).toBe('Letter 2');
   });
 
   it('keeps the reference number permanent when letterDate moves to another year', async () => {

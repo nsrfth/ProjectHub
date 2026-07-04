@@ -99,8 +99,12 @@ export class CorrespondenceController {
     req: FastifyRequest<{ Params: ProjectParams; Querystring: ListCorrespondenceQuery }>,
     reply: FastifyReply,
   ) => {
-    const items = await this.svc.list(req.params.teamId, req.params.projectId, req.query);
-    return reply.send(items.map(serialize));
+    const { items, nextCursor } = await this.svc.list(
+      req.params.teamId,
+      req.params.projectId,
+      req.query,
+    );
+    return reply.send({ items: items.map(serialize), nextCursor });
   };
 
   get = async (req: FastifyRequest<{ Params: CorrespondenceParams }>, reply: FastifyReply) => {

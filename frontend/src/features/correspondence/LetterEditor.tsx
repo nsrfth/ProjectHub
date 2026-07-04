@@ -59,12 +59,12 @@ export function LetterEditor({
   const readOnly = !canManage;
 
   // Candidate parent letters for the reply-to picker (same project, exclude self).
-  const { data: allLetters = [] } = useQuery({
-    queryKey: ['correspondence', teamId, projectId],
-    queryFn: () => corrApi.listLetters(teamId, projectId),
+  const { data: allLetters } = useQuery({
+    queryKey: ['correspondence', teamId, projectId, { replyPicker: true }],
+    queryFn: () => corrApi.listLetters(teamId, projectId, { limit: 100 }),
     enabled: canManage,
   });
-  const replyCandidates = allLetters.filter((l) => l.id !== savedId);
+  const replyCandidates = (allLetters?.items ?? []).filter((l) => l.id !== savedId);
 
   function invalidateList(): void {
     void qc.invalidateQueries({ queryKey: ['correspondence', teamId, projectId] });
