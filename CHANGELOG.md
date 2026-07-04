@@ -13,6 +13,28 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.33] — 2026-07-04
+
+**Fix — referred member can now mark a correspondence referral handled.** A
+pre-existing bug (since v1.90) blocked a user who was referred a letter (ارجاع)
+from completing it unless they also had project READ access: the correspondence
+route group applied `requireProjectAccess()` as a **plugin-level** hook, so a
+plain team member (owner-based project, no group grant) got `404 Project not
+found` on `POST …/referrals/:referralId/handle` — and the v2.5.29 "My referrals"
+mark-handled button did nothing for them.
+
+- **Fix:** `requireProjectAccess()` is no longer a plugin-level hook. It is added
+  per-route to the read endpoints (`GET /`, `GET /:id`, `GET /:id/tasks`). Write
+  endpoints already carry the stronger `requireProjectWriteAccess()`. The
+  referred-user action (`/handle`) requires neither — the service already gates
+  it on referral ownership (`referral.userId === actor`), with
+  `requireTeamRoleOrGrantedProject` + `requireCorrespondenceEnabled` still
+  applied. No endpoint's access widened except the intended `/handle` path.
+- **Tests:** the two previously-failing referral-handle tests now pass, plus a
+  new explicit regression test — a member with **no** project access is 404'd on
+  the register yet can mark their own referral handled (200) and see it in
+  `/me/referrals`.
+
 ## [2.5.32] — 2026-07-04
 
 **W4 — offsite backup + restore-verify ops scripts.** Two host-side scripts

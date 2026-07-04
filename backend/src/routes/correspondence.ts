@@ -44,15 +44,21 @@ export async function correspondenceRoutes(
 
   r.addHook('preHandler', requireAuth);
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
-  r.addHook('preHandler', requireProjectAccess());
   // Module enablement gate — applies to EVERY correspondence route.
   r.addHook('preHandler', requireCorrespondenceEnabled());
+  // v2.5.33: project READ access is NOT a plugin-level hook. It is added
+  // per-route to the read endpoints below. Write endpoints carry the stronger
+  // requireProjectWriteAccess(). The referred-user action (mark handled) needs
+  // NEITHER — a member referred a letter (ارجاع) may have no project access at
+  // all, yet must be able to complete their own referral; the service enforces
+  // referral ownership (referral.userId === actor). A plugin-level
+  // requireProjectAccess() previously 404'd those users out of /handle.
 
   const projectParams = z.object({ teamId: z.string(), projectId: z.string() });
   const itemParams = projectParams.extend({ id: z.string() });
 
   r.get('/', {
-    preHandler: requireScope('correspondence:read'),
+    preHandler: [requireProjectAccess(), requireScope('correspondence:read')],
     schema: {
       tags: ['correspondence'],
       summary: 'List letters in this project (newest first, excludes deleted)',
@@ -65,7 +71,7 @@ export async function correspondenceRoutes(
   });
 
   r.get('/:id', {
-    preHandler: requireScope('correspondence:read'),
+    preHandler: [requireProjectAccess(), requireScope('correspondence:read')],
     schema: {
       tags: ['correspondence'],
       summary: 'Get a single letter',
@@ -157,7 +163,7 @@ export async function correspondenceRoutes(
   // --- Linked tasks (W2.2) ---------------------------------------------------
 
   r.get('/:id/tasks', {
-    preHandler: requireScope('correspondence:read'),
+    preHandler: [requireProjectAccess(), requireScope('correspondence:read')],
     schema: {
       tags: ['correspondence'],
       summary: 'List tasks linked to a letter',

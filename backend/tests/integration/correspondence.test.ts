@@ -469,6 +469,51 @@ describe('correspondence referral', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('v2.5.33: a referred member with NO project access can still mark handled', async () => {
+    const s = await setup();
+    await enableModule(s.token, s.projectId);
+    // A plain team member — not the project owner, no group grant → NONE project
+    // access. They must not be able to read the register, but MUST be able to
+    // complete their own referral (the service enforces ownership).
+    const member = await addMember(s.token, s.teamId, 'noaccess@example.com', 'MEMBER');
+
+    const letter = (
+      await inject({
+        method: 'POST',
+        url: base(s),
+        headers: H(s.token),
+        payload: { direction: 'INCOMING', subject: 'For a no-access member', letterDate: DATE_1404 },
+      })
+    ).json();
+    const refer = await inject({
+      method: 'POST',
+      url: `${base(s)}/${letter.id}/referrals`,
+      headers: H(s.token),
+      payload: { targets: [{ userId: member.userId, kind: 'ACTION' }] },
+    });
+    const referralId = refer.json().referrals[0].id;
+
+    // The member genuinely has no project read access: the register 404s for them.
+    const list = await inject({ method: 'GET', url: base(s), headers: H(member.token) });
+    expect(list.statusCode).toBe(404);
+
+    // …yet they can mark their own referral handled.
+    const handle = await inject({
+      method: 'POST',
+      url: `${base(s)}/${letter.id}/referrals/${referralId}/handle`,
+      headers: H(member.token),
+      payload: {},
+    });
+    expect(handle.statusCode).toBe(200);
+    expect(handle.json().status).toBe('HANDLED');
+
+    // And it surfaces in their cross-team /me/referrals inbox as handled.
+    const inbox = (
+      await inject({ method: 'GET', url: '/api/me/referrals?status=HANDLED', headers: H(member.token) })
+    ).json();
+    expect(inbox.items.some((r: { id: string }) => r.id === referralId)).toBe(true);
+  });
+
   it('re-referring resets a handled referral to PENDING', async () => {
     const s = await setup();
     await enableModule(s.token, s.projectId);
