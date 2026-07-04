@@ -131,6 +131,19 @@ export function CorrespondenceRegister({
                     </span>
                   </td>
                   <td className="px-3 py-2 text-end whitespace-nowrap">
+                    {l.replyTo && (
+                      <span
+                        title={`${t('correspondence.field.inReplyTo')}: ${l.replyTo.referenceNumber}`}
+                        className="me-2"
+                      >
+                        ↩
+                      </span>
+                    )}
+                    {l.linkedTasks.length > 0 && (
+                      <span title={t('correspondence.linkedTasks.title')} className="me-2">
+                        ✔ {l.linkedTasks.length}
+                      </span>
+                    )}
                     {l.attachmentCount > 0 && (
                       <span title={t('correspondence.attachments.title')} className="me-2">
                         📎 {l.attachmentCount}

@@ -29,6 +29,7 @@ export function ReferralPanel({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [kind, setKind] = useState<corrApi.ReferralKind>('ACTION');
   const [note, setNote] = useState('');
+  const [dueDate, setDueDate] = useState('');
   const [referError, setReferError] = useState<string | null>(null);
 
   const key = ['correspondence', 'referrals', letterId];
@@ -51,13 +52,19 @@ export function ReferralPanel({
         teamId,
         projectId,
         letterId,
-        selectedIds.map((userId) => ({ userId, kind, note: note.trim() || undefined })),
+        selectedIds.map((userId) => ({
+          userId,
+          kind,
+          note: note.trim() || undefined,
+          dueAt: dueDate ? new Date(`${dueDate}T00:00:00.000Z`).toISOString() : null,
+        })),
       ),
     onSuccess: async () => {
       setReferError(null);
       setSelectedIds([]);
       setNote('');
       setKind('ACTION');
+      setDueDate('');
       await qc.invalidateQueries({ queryKey: key });
       await qc.invalidateQueries({ queryKey: ['correspondence', 'letter', letterId] });
     },
@@ -116,6 +123,17 @@ export function ReferralPanel({
                   </span>
                 </p>
                 {r.note && <p className="text-xs text-slate-500 mt-0.5">{r.note}</p>}
+                {r.dueAt && (
+                  <p
+                    className={`text-[11px] mt-0.5 ${
+                      r.status !== 'HANDLED' && new Date(r.dueAt).getTime() < Date.now()
+                        ? 'text-danger font-medium'
+                        : 'text-slate-500'
+                    }`}
+                  >
+                    {t('correspondence.referral.due')}: {formatShamsiTimestamp(r.dueAt)}
+                  </p>
+                )}
                 <p className="text-[11px] text-slate-400 mt-0.5" dir="rtl" title={formatShamsiTimestamp(r.createdAt) ?? ''}>
                   {formatRelativeTime(r.createdAt)}
                 </p>
@@ -171,6 +189,15 @@ export function ReferralPanel({
               className="flex-1 rounded border-border px-2 py-1 border text-sm dark:bg-slate-800"
             />
           </div>
+          <label className="flex items-center gap-2 text-xs text-text-muted">
+            {t('correspondence.referral.due')}:
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="rounded border-border px-2 py-1 border text-sm dark:bg-slate-800"
+            />
+          </label>
           {referError && <p className="text-xs text-danger" role="alert">{referError}</p>}
           <button
             type="button"

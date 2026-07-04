@@ -10,6 +10,20 @@ export type LetterStatus = 'DRAFT' | 'SENT' | 'RECEIVED' | 'ARCHIVED';
 export type ReferralKind = 'ACTION' | 'INFO';
 export type ReferralStatus = 'PENDING' | 'HANDLED';
 
+// v2.5.26 (W2.2): a task created from / linked to a letter.
+export interface LinkedTask {
+  taskId: string;
+  title: string;
+  status: string;
+}
+
+// v2.5.26 (W2.2): parent-letter summary shown in a reply thread.
+export interface ReplyToSummary {
+  id: string;
+  referenceNumber: string;
+  subject: string;
+}
+
 export interface Letter {
   id: string;
   projectId: string;
@@ -28,6 +42,12 @@ export interface Letter {
   hasReferrals?: boolean;
   // Backend returns referrals inline on the letter (no separate list route).
   referrals?: Referral[];
+  // v2.5.26 (W2.2): external correspondent's own ref/date, reply-to thread, links.
+  externalReferenceNumber: string | null;
+  externalDate: string | null;
+  replyToId: string | null;
+  replyTo: ReplyToSummary | null;
+  linkedTasks: LinkedTask[];
   createdAt: string;
   updatedAt: string;
 }
@@ -40,6 +60,10 @@ export interface LetterInput {
   senderId: string | null;
   recipientId: string | null;
   status: LetterStatus;
+  // v2.5.26 (W2.2): optional tier-1 fields.
+  externalReferenceNumber?: string | null;
+  externalDate?: string | null;
+  replyToId?: string | null;
 }
 
 export interface Referral {
@@ -49,6 +73,8 @@ export interface Referral {
   kind: ReferralKind;
   note: string | null;
   status: ReferralStatus;
+  // v2.5.26 (W2.2): optional action deadline.
+  dueAt: string | null;
   createdAt: string;
   handledAt: string | null;
 }
@@ -57,6 +83,25 @@ export interface ReferralInput {
   userId: string;
   kind: ReferralKind;
   note?: string;
+  dueAt?: string | null;
+}
+
+// v2.5.26 (W2.2): a row in the cross-project "My referrals" inbox.
+export interface MyReferral {
+  id: string;
+  correspondenceId: string;
+  kind: ReferralKind;
+  note: string | null;
+  status: ReferralStatus;
+  dueAt: string | null;
+  createdAt: string;
+  handledAt: string | null;
+  teamId: string;
+  projectId: string;
+  referenceNumber: string;
+  subject: string;
+  direction: LetterDirection;
+  letterDate: string;
 }
 
 // Forked from the task AttachmentsSection — correspondence attachments live
@@ -224,6 +269,51 @@ export async function downloadLetterAttachment(
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// --- Linked tasks (letter ↔ task bridge, W2.2) ---
+
+export interface CreateLinkedTaskInput {
+  title: string;
+  description?: string | null;
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  dueDate?: string | null;
+  assigneeId?: string | null;
+}
+
+export async function listLinkedTasks(
+  teamId: string,
+  projectId: string,
+  id: string,
+): Promise<LinkedTask[]> {
+  return (
+    await api.get<{ items: LinkedTask[] }>(`${base(teamId, projectId)}/${id}/tasks`)
+  ).data.items;
+}
+
+export async function createLinkedTask(
+  teamId: string,
+  projectId: string,
+  id: string,
+  input: CreateLinkedTaskInput,
+): Promise<LinkedTask[]> {
+  return (
+    await api.post<{ items: LinkedTask[] }>(`${base(teamId, projectId)}/${id}/tasks`, input)
+  ).data.items;
+}
+
+// --- Cross-project "My referrals" inbox (W2.2) ---
+
+export interface MyReferralsQuery {
+  status?: ReferralStatus;
+  due?: 'overdue' | 'week' | 'all';
+}
+
+export async function listMyReferrals(q: MyReferralsQuery = {}): Promise<MyReferral[]> {
+  const params: Record<string, string> = {};
+  if (q.status) params.status = q.status;
+  if (q.due) params.due = q.due;
+  return (await api.get<{ items: MyReferral[] }>('/me/referrals', { params })).data.items;
 }
 
 // Shared axios error-message extractor (forked from AttachmentsSection).

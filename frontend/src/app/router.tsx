@@ -8,6 +8,7 @@ import TaskDetailPage from '@/pages/TaskDetailPage';
 import ProjectGanttPage from '@/pages/ProjectGanttPage';
 import ProjectStatusPage from '@/pages/ProjectStatusPage';
 import CorrespondencePage from '@/pages/CorrespondencePage';
+import MyReferralsPage from '@/pages/MyReferralsPage';
 import ProjectRiskPage from '@/pages/ProjectRiskPage';
 import ProjectRecordsPage from '@/pages/ProjectRecordsPage';
 import ProjectChangeControlPage from '@/pages/ProjectChangeControlPage';
@@ -92,6 +93,7 @@ export const router = createBrowserRouter([
       { path: '/projects/:projectId/cost', element: <ProjectCostPage /> },
       { path: '/projects/:projectId/wbs', element: <ProjectWbsPage /> },
       { path: '/admin', element: <Navigate to="/settings/admin" replace /> },
+      { path: '/me/referrals', element: <MyReferralsPage /> },
       { path: '/reports', element: <ReportsPage /> },
       { path: '/workload', element: <WorkloadPage /> },
       { path: '/dashboards', element: <DashboardsListPage /> },

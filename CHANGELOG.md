@@ -13,6 +13,26 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.29] — 2026-07-04
+
+**Correspondence W2.2 — frontend.** UI for the Tier-1 backend shipped in
+v2.5.26. No schema or API changes.
+
+- **Letter editor:** external reference-number + external-date fields, and an
+  **"In reply to"** picker (choose a prior letter in the same project). A saved
+  reply shows its parent letter inline (thread context).
+- **Linked tasks panel** on each letter: lists tasks created from the letter and
+  a **"create a task from this letter"** form (title / priority / due date) that
+  lands the task in the letter's project via the existing task service.
+- **Referrals:** an optional **due date** on the refer form; referral rows show
+  the deadline with an overdue highlight.
+- **"My referrals" page** (`/me/referrals`, new sidebar entry): every letter
+  referred to you across all your teams, filterable by status and
+  overdue/this-week, with one-click "mark handled" and deep-links to the letter.
+- **Register indicators:** reply (↩) and linked-task (✔ n) badges per row.
+- `STANDALONE_TASK_DUE` + `CORRESPONDENCE_REFERRAL` notification rendering was
+  already added in v2.5.28. EN + FA (incl. RTL) throughout.
+
 ## [2.5.28] — 2026-07-04
 
 **Personal (standalone) tasks — Option C.** A quick-capture list for individual

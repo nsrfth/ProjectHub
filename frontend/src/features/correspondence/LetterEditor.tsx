@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as corrApi from './api';
 import { LetterAttachments } from './LetterAttachments';
 import { ReferralPanel } from './ReferralPanel';
+import { LinkedTasksPanel } from './LinkedTasksPanel';
 import { ContactPicker } from '@/features/contacts/ContactPicker';
 import Modal from '@/features/ui/Modal';
 import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
@@ -46,9 +47,24 @@ export function LetterEditor({
   const [senderId, setSenderId] = useState<string | null>(letter?.senderId ?? null);
   const [recipientId, setRecipientId] = useState<string | null>(letter?.recipientId ?? null);
   const [status, setStatus] = useState<corrApi.LetterStatus>(letter?.status ?? 'DRAFT');
+  // v2.5.26 (W2.2): external correspondent's own ref/date + reply-to thread.
+  const [externalReferenceNumber, setExternalReferenceNumber] = useState<string>(
+    letter?.externalReferenceNumber ?? '',
+  );
+  const [externalDate, setExternalDate] = useState<string | null>(letter?.externalDate ?? null);
+  const [replyToId, setReplyToId] = useState<string | null>(letter?.replyToId ?? null);
+  const [replyTo, setReplyTo] = useState<corrApi.ReplyToSummary | null>(letter?.replyTo ?? null);
   const [formError, setFormError] = useState<string | null>(null);
 
   const readOnly = !canManage;
+
+  // Candidate parent letters for the reply-to picker (same project, exclude self).
+  const { data: allLetters = [] } = useQuery({
+    queryKey: ['correspondence', teamId, projectId],
+    queryFn: () => corrApi.listLetters(teamId, projectId),
+    enabled: canManage,
+  });
+  const replyCandidates = allLetters.filter((l) => l.id !== savedId);
 
   function invalidateList(): void {
     void qc.invalidateQueries({ queryKey: ['correspondence', teamId, projectId] });
@@ -64,6 +80,9 @@ export function LetterEditor({
         senderId,
         recipientId,
         status,
+        externalReferenceNumber: externalReferenceNumber.trim() || null,
+        externalDate,
+        replyToId,
       };
       return savedId
         ? corrApi.updateLetter(teamId, projectId, savedId, input)
@@ -73,6 +92,7 @@ export function LetterEditor({
       setFormError(null);
       setSavedId(saved.id);
       setReferenceNumber(saved.referenceNumber);
+      setReplyTo(saved.replyTo);
       invalidateList();
       await qc.invalidateQueries({ queryKey: ['correspondence', 'letter', saved.id] });
     },
@@ -177,6 +197,41 @@ export function LetterEditor({
             </Field>
           </div>
 
+          {/* v2.5.26 (W2.2): external correspondent's own reference + date. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label={t('correspondence.field.externalReferenceNumber')}>
+              <input
+                type="text"
+                dir="ltr"
+                disabled={readOnly}
+                value={externalReferenceNumber}
+                onChange={(e) => setExternalReferenceNumber(e.target.value)}
+                placeholder={t('correspondence.field.externalReferenceNumberHint')}
+                className="w-full rounded border-border px-2 py-1 border text-sm font-mono dark:bg-slate-800 disabled:opacity-60"
+              />
+            </Field>
+            <Field label={t('correspondence.field.externalDate')}>
+              <ShamsiDatePicker value={externalDate} onChange={setExternalDate} disabled={readOnly} />
+            </Field>
+          </div>
+
+          {/* v2.5.26 (W2.2): reply-to (in-reply-to a prior letter in this project). */}
+          <Field label={t('correspondence.field.replyTo')}>
+            <select
+              disabled={readOnly}
+              value={replyToId ?? ''}
+              onChange={(e) => setReplyToId(e.target.value || null)}
+              className="w-full rounded border-border px-2 py-1 border text-sm dark:bg-slate-800 disabled:opacity-60"
+            >
+              <option value="">{t('correspondence.field.replyToNone')}</option>
+              {replyCandidates.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.referenceNumber} — {l.subject}
+                </option>
+              ))}
+            </select>
+          </Field>
+
           {formError && <p className="text-sm text-danger" role="alert">{formError}</p>}
 
           {!readOnly && (
@@ -201,6 +256,20 @@ export function LetterEditor({
 
         {savedId ? (
           <>
+            {replyTo && (
+              <div className="border-t border-border pt-3 text-xs text-slate-500">
+                {t('correspondence.field.inReplyTo')}:{' '}
+                <span dir="ltr" className="font-mono">{replyTo.referenceNumber}</span> — {replyTo.subject}
+              </div>
+            )}
+            <div className="border-t border-border pt-4">
+              <LinkedTasksPanel
+                teamId={teamId}
+                projectId={projectId}
+                letterId={savedId}
+                canManage={canManage}
+              />
+            </div>
             <div className="border-t border-border pt-4">
               <LetterAttachments
                 teamId={teamId}
