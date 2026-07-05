@@ -5,6 +5,18 @@
 @tailwind utilities;
 
 /*
+ * v2.5.38: Persian UI uses Vazirmatn (self-hosted via @fontsource, imported in
+ * main.tsx). lib/i18n.ts sets <html lang="fa" dir="rtl"> when Persian is active,
+ * so this overrides Tailwind Preflight's html font-family and cascades to all
+ * content. English (lang="en") keeps the default system stack. Monospace
+ * elements (font-mono, e.g. reference numbers) keep their own family.
+ */
+html[lang='fa'] {
+  font-family: 'Vazirmatn', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/*
  * v1.61: theme-aware safety net for legacy slate utilities.
  * Remaps bg/text/border classes to semantic CSS variables so unmigrated
  * components inherit the active palette. Explicit `dark:` overrides still

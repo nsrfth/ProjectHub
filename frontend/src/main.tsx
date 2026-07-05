@@ -8,6 +8,11 @@ import { router } from '@/app/router';
 import { adoptServerHolidays, adoptServerWeekend } from '@/lib/calendar';
 import { adoptServerScheduling } from '@/lib/scheduling';
 import { fetchSystemInfo } from '@/features/system/api';
+// v2.5.38: Vazirmatn (self-hosted, bundled by Vite) for Persian. Applied via
+// `html[lang='fa']` in index.css so English keeps the system font.
+import '@fontsource/vazirmatn/400.css';
+import '@fontsource/vazirmatn/500.css';
+import '@fontsource/vazirmatn/700.css';
 import './index.css';
 
 // v1.11: pull the instance-wide weekend convention (Sat/Sun vs Thu/Fri)

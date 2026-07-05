@@ -13,6 +13,15 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.38] — 2026-07-06
+
+**Persian UI uses the Vazirmatn font.** The Farsi interface now renders in
+**Vazirmatn** — a modern, highly legible Persian typeface — instead of the
+browser default. Self-hosted via `@fontsource/vazirmatn` (bundled into the build
+by Vite; no CDN, no CSP concerns, works fully offline). Scoped to `html[lang='fa']`
+so English keeps its system font, and monospace elements (reference numbers etc.)
+keep their own family. Weights 400/500/700.
+
 ## [2.5.37] — 2026-07-05
 
 **Backups — full self-service online backup from the GUI.** Admins now configure
