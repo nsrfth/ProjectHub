@@ -13,6 +13,34 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.37] — 2026-07-05
+
+**Backups — full self-service online backup from the GUI.** Admins now configure
+*everything* about Kopia → Google Drive from **Settings → Backups**, with no SSH
+or `.env`/file editing.
+
+- **Settings → Backups** panel now covers the whole lifecycle: **upload** the
+  Google service-account key, **set** the repository password (write-only),
+  Drive **folder**, schedule + retention, plus **Initialize / apply**, **Back up
+  now**, live **status** (Not set up → Pending → Initialising → Connected, with
+  snapshot count + last-snapshot time + last error), and an **Open Kopia
+  console** link for restore/browse.
+- **Self-configuring Kopia container** (`docker/kopia-entrypoint.sh`): the
+  backend writes the key/password/policy/triggers to a shared `kopia_secrets`
+  volume; the entrypoint reads it, connects/creates the encrypted Drive repo,
+  applies the policy, starts the server, and reconciles on Initialize /
+  Back-up-now triggers. The backend never needs Docker access or the fragile
+  Kopia HTTP API.
+- **Backend:** `POST /online/service-account` (upload), `PUT /online/password`,
+  `POST /online/initialize`, `POST /online/run` (all admin-only); status merges
+  config + which secrets are present + the entrypoint's `status.json`. Secrets
+  live only on the shared volume — never in the app DB, never returned by the API.
+- **Compose:** `kopia_secrets` volume shared backend↔kopia; kopia uses the
+  self-configuring entrypoint (no host service-account bind, no `KOPIA_PASSWORD`
+  env). `.env` no longer needs the repo password or folder id.
+- `scripts/kopia-setup.sh` remains as a CLI alternative. Tests cover the new
+  admin endpoints + trigger files + status flags.
+
 ## [2.5.36] — 2026-07-05
 
 **Backups — configure online backup (Kopia) from Settings → Backups.** Admins

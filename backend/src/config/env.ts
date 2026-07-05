@@ -155,6 +155,9 @@ const envSchema = z.object({
   KOPIA_SERVER_URL: z.string().url().optional(),
   KOPIA_SERVER_USERNAME: z.string().optional(),
   KOPIA_SERVER_PASSWORD: z.string().optional(),
+  // v2.5.37: shared volume where the app writes the Kopia service-account key,
+  // repo password, policy triggers, and reads status.json from the entrypoint.
+  KOPIA_SECRETS_DIR: z.string().default('/app/kopia-secrets'),
   // v1.30.7 (S-11): SSRF allow-list for the webhook target guard.
   // Comma-separated host names that are EXEMPT from the private-IP /
   // loopback / link-local rejection. Default empty so a fresh install

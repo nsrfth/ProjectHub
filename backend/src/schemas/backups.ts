@@ -41,17 +41,30 @@ export const onlineBackupConfig = z.object({
 export type OnlineBackupConfigInput = z.infer<typeof onlineBackupConfig>;
 export const onlineBackupConfigPatch = onlineBackupConfig.partial();
 
-// Best-effort status the backend derives from env + a reachability ping.
+// Status the backend derives from the config + the entrypoint's status.json.
 export const onlineBackupStatus = z.object({
   // The app has a usable config (enabled + folder set).
   configured: z.boolean(),
-  // The Kopia server env is present (the `backup` profile is expected to run).
-  serverConfigured: z.boolean(),
-  // A health ping to the Kopia server succeeded.
+  // A Google service-account key has been uploaded.
+  serviceAccountUploaded: z.boolean(),
+  // A repository password has been set.
+  passwordSet: z.boolean(),
+  // The Kopia entrypoint reports the repository is connected + policy applied.
+  initialized: z.boolean(),
+  // A health ping to the Kopia server succeeded (server up + reachable).
   reachable: z.boolean(),
-  // Human-readable detail (repo status text, or why it's unreachable).
+  // Most recent snapshot time + count, from the entrypoint (best-effort).
+  lastSnapshotAt: z.string().nullable(),
+  snapshotCount: z.number().int().nonnegative(),
+  // Last error the entrypoint hit (repo connect / snapshot), if any.
+  error: z.string().nullable(),
+  // Human-readable one-liner for the UI.
   detail: z.string().nullable(),
 });
+
+export const uploadServiceAccountResponse = z.object({ serviceAccountUploaded: z.literal(true) });
+export const setRepoPasswordBody = z.object({ password: z.string().min(1).max(512) });
+export const onlineActionResponse = z.object({ ok: z.literal(true), queued: z.string() });
 
 export const backupsPage = z.object({
   config: backupConfig,

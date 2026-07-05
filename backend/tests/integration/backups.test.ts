@@ -22,20 +22,25 @@ import { bootstrapUser } from '../helpers/bootstrapUser.js';
 
 let app: FastifyInstance;
 let backupDir: string;
+let kopiaSecretsDir: string;
 
 beforeAll(async () => {
   backupDir = await fs.mkdtemp(join(tmpdir(), 'taskhub-backup-test-'));
+  kopiaSecretsDir = await fs.mkdtemp(join(tmpdir(), 'taskhub-kopia-test-'));
   process.env.BACKUP_DIR = backupDir;
+  process.env.KOPIA_SECRETS_DIR = kopiaSecretsDir;
   const env = loadEnv();
   // loadEnv is cached after the first call elsewhere in the suite, so we
   // force BACKUP_DIR on the cached value to be safe.
   (env as { BACKUP_DIR: string }).BACKUP_DIR = backupDir;
+  (env as { KOPIA_SECRETS_DIR: string }).KOPIA_SECRETS_DIR = kopiaSecretsDir;
   app = await buildApp(env);
 });
 
 afterAll(async () => {
   await app.close();
   await fs.rm(backupDir, { recursive: true, force: true });
+  await fs.rm(kopiaSecretsDir, { recursive: true, force: true });
 });
 
 beforeEach(async () => {
@@ -172,6 +177,36 @@ describe('/api/admin/backups', () => {
       payload: { enabled: false },
     });
     expect(denied.statusCode).toBe(403);
+  });
+
+  it('v2.5.37: self-service — set password + trigger initialize/run, status reflects it', async () => {
+    const { adminToken, memberToken } = await setup();
+    const H = (t: string) => ({ authorization: `Bearer ${t}` });
+
+    // Set the repository password (write-only).
+    const pw = await app.inject({
+      method: 'PUT',
+      url: '/api/admin/backups/online/password',
+      headers: H(adminToken),
+      payload: { password: 'a-long-random-repo-password' },
+    });
+    expect(pw.statusCode).toBe(200);
+    expect(await fs.readFile(join(kopiaSecretsDir, 'repo-password'), 'utf8')).toBe('a-long-random-repo-password');
+
+    // Status now shows passwordSet true (service account still missing).
+    const status1 = (await app.inject({ method: 'GET', url: '/api/admin/backups', headers: H(adminToken) })).json();
+    expect(status1.onlineStatus.passwordSet).toBe(true);
+    expect(status1.onlineStatus.serviceAccountUploaded).toBe(false);
+
+    // Initialize + run drop trigger files the Kopia entrypoint reconciles on.
+    expect((await app.inject({ method: 'POST', url: '/api/admin/backups/online/initialize', headers: H(adminToken) })).statusCode).toBe(202);
+    expect((await app.inject({ method: 'POST', url: '/api/admin/backups/online/run', headers: H(adminToken) })).statusCode).toBe(202);
+    expect(await fs.readFile(join(kopiaSecretsDir, 'reinit'), 'utf8').then(() => true).catch(() => false)).toBe(true);
+    expect(await fs.readFile(join(kopiaSecretsDir, 'backup-now'), 'utf8').then(() => true).catch(() => false)).toBe(true);
+
+    // Non-admin blocked on all of it.
+    expect((await app.inject({ method: 'PUT', url: '/api/admin/backups/online/password', headers: H(memberToken), payload: { password: 'x' } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url: '/api/admin/backups/online/initialize', headers: H(memberToken) })).statusCode).toBe(403);
   });
 
   it('lists dumps written to BACKUP_DIR + serves them for download', async () => {

@@ -52,11 +52,33 @@ Kopia encrypts every object with `KOPIA_PASSWORD` *before* upload, so Google
 only sees ciphertext — which matters because a ProjectHub dump bundle contains
 `secrets.env`. **If you lose `KOPIA_PASSWORD`, the backups are unrecoverable.**
 
-### One-time setup
+### Setup — from the app (v2.5.37, recommended)
+
+Everything is configured in **Settings → Backups → "Online backup — Kopia →
+Google Drive"** — no SSH or `.env` editing:
+
+1. Start the backup service once: `docker compose --profile backup up -d kopia`
+   (and enable the on-box dump scheduler: **Settings → Backups → Enable
+   scheduled backups**, or `BACKUP_ENABLED=true`).
+2. Create a Google Cloud **service account**, enable the **Drive API**, share a
+   Drive folder with the service account, and copy the folder id (details below).
+3. In **Settings → Backups**: **upload** the service-account JSON, **set** a
+   repository password, paste the **folder id**, choose schedule + retention,
+   tick **Enable**, **Save**, then **Initialize / apply**. Status flips to
+   *Connected* and snapshots run on schedule. Use **Back up now** for an
+   immediate snapshot; **Open Kopia console** for restore/browse.
+
+The app writes what you enter to a shared volume; the Kopia container's
+entrypoint self-configures from it (connect/create repo + policy). The
+repository password and service-account key never leave the server.
+
+### Setup — CLI alternative (`kopia-setup.sh`)
+
+The steps below are the manual/scripted equivalent if you prefer the CLI.
 
 1. **Enable the on-box dump scheduler** so there's something to back up:
-   set `BACKUP_ENABLED=true` in `.env` (and pick period/retention in
-   Settings → Backups), then `docker compose up -d --force-recreate backend`.
+   set `BACKUP_ENABLED=true` in `.env`, then
+   `docker compose up -d --force-recreate backend`.
 
 2. **Create a Google Cloud service account** (unattended — no OAuth to refresh):
    - Google Cloud Console → new/any project → **APIs & Services → Enable APIs →

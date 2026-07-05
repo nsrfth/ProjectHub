@@ -9,9 +9,12 @@ import {
   backupConfigPatch,
   backupFilenameParam,
   backupsPage,
+  onlineActionResponse,
   onlineBackupConfig,
   onlineBackupConfigPatch,
   runBackupResponse,
+  setRepoPasswordBody,
+  uploadServiceAccountResponse,
 } from '../schemas/backups.js';
 import type { Env } from '../config/env.js';
 import { AppError, Errors } from '../lib/errors.js';
@@ -36,11 +39,12 @@ export async function backupsRoutes(
       jwtAccessSecret: opts.env.JWT_ACCESS_SECRET ?? null,
       jwtRefreshSecret: opts.env.JWT_REFRESH_SECRET ?? null,
     },
-    // v2.5.36: online-backup status ping target.
+    // v2.5.36/37: online-backup status ping + shared secrets volume.
     kopia: {
       url: opts.env.KOPIA_SERVER_URL ?? null,
       username: opts.env.KOPIA_SERVER_USERNAME ?? null,
       password: opts.env.KOPIA_SERVER_PASSWORD ?? null,
+      secretsDir: opts.env.KOPIA_SECRETS_DIR ?? null,
     },
   });
   const r = app.withTypeProvider<ZodTypeProvider>();
@@ -96,6 +100,67 @@ export async function backupsRoutes(
       if (!req.user) throw Errors.unauthorized();
       const next = await svc.setOnlineConfig(req.body, req.user.sub);
       return reply.send(next);
+    },
+  });
+
+  // v2.5.37: upload the Google service-account key (multipart, single JSON file).
+  r.post('/online/service-account', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Upload the Google service-account key for online backup (ADMIN only)',
+      consumes: ['multipart/form-data'],
+      response: { 201: uploadServiceAccountResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const file = await req.file({ limits: { fileSize: 256 * 1024 } });
+      if (!file) throw Errors.badRequest('Expected a multipart JSON file upload');
+      const bytes = await file.toBuffer();
+      await svc.saveServiceAccount(bytes);
+      return reply.status(201).send({ serviceAccountUploaded: true });
+    },
+  });
+
+  // v2.5.37: set the repository encryption password (write-only).
+  r.put('/online/password', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Set the online backup repository password (ADMIN only, write-only)',
+      body: setRepoPasswordBody,
+      response: { 200: onlineActionResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (req: FastifyRequest<{ Body: z.infer<typeof setRepoPasswordBody> }>, reply: FastifyReply) => {
+      await svc.setRepoPassword(req.body.password);
+      return reply.send({ ok: true, queued: 'password-set' });
+    },
+  });
+
+  // v2.5.37: (re)initialize the repository — connect/create + apply policy.
+  r.post('/online/initialize', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Initialize / apply the online backup repository (ADMIN only)',
+      response: { 202: onlineActionResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (_req, reply) => {
+      await svc.triggerInitialize();
+      return reply.status(202).send({ ok: true, queued: 'initialize' });
+    },
+  });
+
+  // v2.5.37: run an online snapshot now.
+  r.post('/online/run', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Run an online backup snapshot now (ADMIN only)',
+      response: { 202: onlineActionResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (_req, reply) => {
+      await svc.triggerBackupNow();
+      return reply.status(202).send({ ok: true, queued: 'backup-now' });
     },
   });
 

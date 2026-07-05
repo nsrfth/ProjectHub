@@ -7,11 +7,15 @@ import {
   deleteBackup,
   downloadBackup,
   fetchBackups,
+  initializeOnlineBackup,
   restoreBackup,
   runBackupNow,
+  runOnlineBackupNow,
+  setRepoPassword,
   updateBackupConfig,
   updateOnlineBackupConfig,
   uploadBackup,
+  uploadServiceAccount,
   type BackupFile,
   type BackupsPage as BackupsPageData,
 } from '@/features/backups/api';
@@ -417,10 +421,13 @@ function UploadSection({
   );
 }
 
-// v2.5.36: online backup (Kopia → Google Drive) config panel. Admin sets the
-// destination folder + schedule + retention here; the encryption password and
-// Google service-account stay server-side secrets (see scripts/README.md →
-// "Kopia + Google Drive"). Status is a best-effort reachability readout.
+
+// v2.5.37: full self-service online backup (Kopia → Google Drive). The admin
+// uploads the Google service-account key, sets the repository password, folder,
+// schedule + retention, and drives Initialize / Back up now — all from here. The
+// backend writes it to the shared volume the Kopia container self-configures
+// from; nothing is edited on the server. Restore browsing lives in the Kopia
+// console (:51515), linked below.
 function OnlineBackupPanel({ data }: { data: BackupsPageData }): JSX.Element {
   const qc = useQueryClient();
   const o = data.online;
@@ -432,8 +439,8 @@ function OnlineBackupPanel({ data }: { data: BackupsPageData }): JSX.Element {
   const [keepDaily, setKeepDaily] = useState(o.keepDaily);
   const [keepWeekly, setKeepWeekly] = useState(o.keepWeekly);
   const [keepMonthly, setKeepMonthly] = useState(o.keepMonthly);
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
     setEnabled(o.enabled);
@@ -444,34 +451,51 @@ function OnlineBackupPanel({ data }: { data: BackupsPageData }): JSX.Element {
     setKeepMonthly(o.keepMonthly);
   }, [o]);
 
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['backups'] });
+  const ok = (text: string) => { setMsg({ kind: 'ok', text }); invalidate(); };
+  const fail = (e: unknown, f: string) => setMsg({ kind: 'err', text: errorMessage(e, f) });
+
   const saveMut = useMutation({
     mutationFn: () =>
-      updateOnlineBackupConfig({
-        enabled,
-        folderId: folderId.trim(),
-        intervalHours,
-        keepDaily,
-        keepWeekly,
-        keepMonthly,
-      }),
-    onSuccess: () => {
-      setErr(null);
-      setOk('Saved. Re-run scripts/kopia-setup.sh on the server to apply the new policy.');
-      qc.invalidateQueries({ queryKey: ['backups'] });
-    },
-    onError: (e) => {
-      setOk(null);
-      setErr(errorMessage(e, 'Could not save'));
-    },
+      updateOnlineBackupConfig({ enabled, folderId: folderId.trim(), intervalHours, keepDaily, keepWeekly, keepMonthly }),
+    onSuccess: () => ok('Settings saved. Click "Initialize / apply" to push them to the backup repository.'),
+    onError: (e) => fail(e, 'Could not save'),
+  });
+  const uploadSaMut = useMutation({
+    mutationFn: (file: File) => uploadServiceAccount(file),
+    onSuccess: () => ok('Service-account key uploaded.'),
+    onError: (e) => fail(e, 'Upload failed'),
+  });
+  const pwMut = useMutation({
+    mutationFn: () => setRepoPassword(password),
+    onSuccess: () => { setPassword(''); ok('Repository password set.'); },
+    onError: (e) => fail(e, 'Could not set password'),
+  });
+  const initMut = useMutation({
+    mutationFn: initializeOnlineBackup,
+    onSuccess: () => ok('Initialize requested — the backup service is connecting the repository. Refresh status in a few seconds.'),
+    onError: (e) => fail(e, 'Could not initialize'),
+  });
+  const runMut = useMutation({
+    mutationFn: runOnlineBackupNow,
+    onSuccess: () => ok('Snapshot requested.'),
+    onError: (e) => fail(e, 'Could not start snapshot'),
   });
 
-  // Status badge colour.
-  const badge = st.reachable
+  const badge = st.initialized
     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
-    : st.configured
+    : st.reachable || st.configured
       ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
       : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
-  const badgeText = st.reachable ? 'Connected' : st.serverConfigured ? 'Not reachable' : 'Not set up';
+  const badgeText = st.initialized ? 'Connected' : st.reachable ? 'Initialising' : st.configured ? 'Pending' : 'Not set up';
+
+  const kopiaUrl = `${window.location.protocol}//${window.location.hostname}:51515`;
+  const step = (done: boolean, text: string) => (
+    <li className="flex items-center gap-2">
+      <span className={done ? 'text-success' : 'text-text-muted'}>{done ? '✓' : '○'}</span>
+      <span className={done ? '' : 'text-text-muted'}>{text}</span>
+    </li>
+  );
 
   return (
     <section className="border border-border rounded p-4 space-y-4">
@@ -481,72 +505,110 @@ function OnlineBackupPanel({ data }: { data: BackupsPageData }): JSX.Element {
       </div>
 
       <p className="text-xs text-text-muted">
-        Encrypted, versioned, offsite backups of your dumps to Google Drive, with a
-        web UI at <code>:51515</code>. The repository password and Google
-        service-account are configured once on the server (see{' '}
-        <code>scripts/README.md → "Kopia + Google Drive"</code>); here you set the
-        destination folder, schedule, and retention.
+        Encrypted, versioned, offsite backups of your dumps to Google Drive. Everything is
+        configured here — no server access needed. Kopia encrypts with your repository
+        password <strong>before</strong> upload, so Google only sees ciphertext.
       </p>
-      {st.detail && <p className="text-[11px] text-text-muted">Status: {st.detail}</p>}
 
-      <label className="flex items-center gap-2 text-sm">
+      <ol className="text-xs space-y-1">
+        {step(st.serviceAccountUploaded, 'Upload the Google service-account key')}
+        {step(st.passwordSet, 'Set a repository password')}
+        {step(!!folderId.trim(), 'Set the Google Drive folder + enable, then Save')}
+        {step(st.initialized, 'Initialize — connect the repository')}
+      </ol>
+      {st.detail && <p className="text-[11px] text-text-muted">Status: {st.detail}</p>}
+      {st.error && <p className="text-[11px] text-danger">Last error: {st.error}</p>}
+      {st.initialized && (
+        <p className="text-[11px] text-text-muted">
+          Snapshots: {st.snapshotCount}
+          {st.lastSnapshotAt ? ` · last ${new Date(st.lastSnapshotAt).toLocaleString()}` : ''}
+        </p>
+      )}
+
+      {/* Secrets: upload SA key + set password. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-border pt-3">
+        <label className="block text-sm">
+          <span className="block font-medium mb-1">Google service-account key (.json)</span>
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadSaMut.mutate(f); }}
+            className="block text-xs"
+          />
+          <span className="block text-[11px] text-text-muted mt-1">
+            {st.serviceAccountUploaded ? 'A key is stored. Upload again to replace it.' : 'From Google Cloud → the service account shared with your Drive folder.'}
+          </span>
+        </label>
+        <label className="block text-sm">
+          <span className="block font-medium mb-1">Repository password {st.passwordSet && <span className="text-success text-[11px]">(set)</span>}</span>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={st.passwordSet ? '••••••• (change)' : 'long random string'}
+              className="rounded border-border px-2 py-1 border flex-1 bg-surface text-xs"
+            />
+            <button type="button" onClick={() => pwMut.mutate()} disabled={!password || pwMut.isPending}
+              className="rounded border border-border px-2 py-1 text-xs disabled:opacity-50">Set</button>
+          </div>
+          <span className="block text-[11px] text-danger mt-1">Lose this and the backups are unrecoverable.</span>
+        </label>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm border-t border-border pt-3">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         <span className="font-medium">Enable online backup</span>
       </label>
 
       <label className="block text-sm">
         <span className="block font-medium mb-1">Google Drive folder ID</span>
-        <input
-          type="text"
-          dir="ltr"
-          value={folderId}
-          onChange={(e) => setFolderId(e.target.value)}
-          placeholder="1A2b3C…"
-          className="rounded border-border px-2 py-1 border w-full max-w-md bg-surface font-mono text-xs"
-        />
-        <span className="block text-[11px] text-text-muted mt-1">
-          The folder shared with the Kopia service account (copy it from the folder's URL).
-        </span>
+        <input type="text" dir="ltr" value={folderId} onChange={(e) => setFolderId(e.target.value)} placeholder="1A2b3C…"
+          className="rounded border-border px-2 py-1 border w-full max-w-md bg-surface font-mono text-xs" />
+        <span className="block text-[11px] text-text-muted mt-1">The folder shared with the service account (from its URL).</span>
       </label>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <label className="block text-sm">
-          <span className="block font-medium mb-1">Every (hours)</span>
-          <input type="number" min={1} max={24 * 30} value={intervalHours}
-            onChange={(e) => setIntervalHours(Number(e.target.value))}
-            className="rounded border-border px-2 py-1 border w-full bg-surface" />
-        </label>
-        <label className="block text-sm">
-          <span className="block font-medium mb-1">Keep daily</span>
-          <input type="number" min={0} max={365} value={keepDaily}
-            onChange={(e) => setKeepDaily(Number(e.target.value))}
-            className="rounded border-border px-2 py-1 border w-full bg-surface" />
-        </label>
-        <label className="block text-sm">
-          <span className="block font-medium mb-1">Keep weekly</span>
-          <input type="number" min={0} max={520} value={keepWeekly}
-            onChange={(e) => setKeepWeekly(Number(e.target.value))}
-            className="rounded border-border px-2 py-1 border w-full bg-surface" />
-        </label>
-        <label className="block text-sm">
-          <span className="block font-medium mb-1">Keep monthly</span>
-          <input type="number" min={0} max={240} value={keepMonthly}
-            onChange={(e) => setKeepMonthly(Number(e.target.value))}
-            className="rounded border-border px-2 py-1 border w-full bg-surface" />
-        </label>
+        {([
+          ['Every (hours)', intervalHours, setIntervalHours, 1, 24 * 30],
+          ['Keep daily', keepDaily, setKeepDaily, 0, 365],
+          ['Keep weekly', keepWeekly, setKeepWeekly, 0, 520],
+          ['Keep monthly', keepMonthly, setKeepMonthly, 0, 240],
+        ] as const).map(([label, val, set, min, max]) => (
+          <label key={label} className="block text-sm">
+            <span className="block font-medium mb-1">{label}</span>
+            <input type="number" min={min} max={max} value={val}
+              onChange={(e) => set(Number(e.target.value))}
+              className="rounded border-border px-2 py-1 border w-full bg-surface" />
+          </label>
+        ))}
       </div>
 
-      {err && <p role="alert" className="text-xs text-danger">{err}</p>}
-      {ok && <p className="text-xs text-success">{ok}</p>}
+      {msg && <p role="alert" className={`text-xs ${msg.kind === 'ok' ? 'text-success' : 'text-danger'}`}>{msg.text}</p>}
 
-      <button
-        type="button"
-        onClick={() => saveMut.mutate()}
-        disabled={saveMut.isPending}
-        className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
-      >
-        {saveMut.isPending ? 'Saving…' : 'Save online backup settings'}
-      </button>
+      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
+        <button type="button" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+          className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded px-3 py-1 text-sm font-medium disabled:opacity-50">
+          {saveMut.isPending ? 'Saving…' : 'Save settings'}
+        </button>
+        <button type="button" onClick={() => initMut.mutate()}
+          disabled={initMut.isPending || !st.serviceAccountUploaded || !st.passwordSet || !folderId.trim()}
+          className="rounded border border-border px-3 py-1 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50">
+          {initMut.isPending ? 'Requesting…' : 'Initialize / apply'}
+        </button>
+        <button type="button" onClick={() => runMut.mutate()} disabled={runMut.isPending || !st.initialized}
+          className="rounded border border-border px-3 py-1 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50">
+          {runMut.isPending ? 'Requesting…' : 'Back up now'}
+        </button>
+        <button type="button" onClick={() => invalidate()}
+          className="rounded border border-border px-3 py-1 text-sm hover:bg-slate-100 dark:hover:bg-slate-700">
+          Refresh status
+        </button>
+        <a href={kopiaUrl} target="_blank" rel="noreferrer"
+          className="ms-auto text-xs text-primary hover:underline">
+          Open Kopia console (restore, browse) ↗
+        </a>
+      </div>
     </section>
   );
 }

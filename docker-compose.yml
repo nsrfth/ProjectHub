@@ -93,6 +93,9 @@ services:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
       - caddy_custom_certs:/app/certs
+      # v2.5.37: where the app writes the Kopia service-account key, repo
+      # password, policy triggers, and reads back status.json.
+      - kopia_secrets:/app/kopia-secrets
     expose:
       - "4000"
 
@@ -203,45 +206,36 @@ services:
   # Gated by the `backup` profile so a plain `docker compose up` never starts it:
   #   docker compose --profile backup up -d kopia
   #
-  # It snapshots the app's CONSISTENT dumps (backups_data → /app/backups), so
-  # enable the in-app backup scheduler too (BACKUP_ENABLED=true) — that's what
-  # produces the dumps Kopia then versions + ships offsite.
-  #
-  # The repository lives on Google Drive via Kopia's native gdrive backend +
-  # a Google Cloud SERVICE ACCOUNT (unattended, no OAuth token to refresh).
-  # Kopia encrypts every object client-side with KOPIA_PASSWORD BEFORE upload,
-  # so Google only ever sees ciphertext (important: the dumps contain secrets).
-  # One-time setup — service account + `scripts/kopia-setup.sh` — is documented
-  # in scripts/README.md. The repo must be created/connected once before this
-  # server will start.
+  # v2.5.37: SELF-CONFIGURING. Everything the admin enters in ProjectHub's
+  # Settings → Backups (service-account key, repository password, Google Drive
+  # folder, schedule, retention) is written by the backend to the shared
+  # `kopia_secrets` volume + backups_data/online-backup.json. The custom
+  # entrypoint reads it, connects/creates the encrypted Google Drive repository,
+  # applies the policy, starts the server (UI + scheduled snapshots), and
+  # reconciles on file triggers the backend drops (Initialize / Back up now).
+  # No SSH / .env editing needed. Kopia encrypts client-side before upload, so
+  # Google only sees ciphertext (the dumps contain secrets).
   kopia:
     image: kopia/kopia:latest
     profiles: ['backup']
     restart: unless-stopped
     hostname: projecthub-kopia
+    entrypoint: ["/bin/sh", "/app/entrypoint.sh"]
     environment:
-      KOPIA_PASSWORD: ${KOPIA_PASSWORD}
       KOPIA_CONFIG_PATH: /app/config/repository.config
       KOPIA_CACHE_DIRECTORY: /app/cache
       KOPIA_LOG_DIR: /app/logs
-    command:
-      - server
-      - start
-      - --address=0.0.0.0:51515
-      # Trusted-LAN HTTP. Behind the LAN firewall this is acceptable; to serve
-      # HTTPS instead drop --insecure and add --tls-generate-cert (first run) +
-      # --tls-cert-file/--tls-key-file, or reverse-proxy it through Caddy.
-      - --insecure
-      - --server-username=${KOPIA_SERVER_USERNAME}
-      - --server-password=${KOPIA_SERVER_PASSWORD}
+      # Web-UI (http://<host>:51515) login. Repo password is NOT here — it comes
+      # from the shared volume where ProjectHub writes what the admin set.
+      KOPIA_SERVER_USERNAME: ${KOPIA_SERVER_USERNAME:-admin}
+      KOPIA_SERVER_PASSWORD: ${KOPIA_SERVER_PASSWORD:-admin}
     volumes:
       - backups_data:/app/backups:ro                 # snapshot source (app dumps)
+      - kopia_secrets:/app/secrets                    # SA key + repo password + status + triggers (from the app)
+      - ./docker/kopia-entrypoint.sh:/app/entrypoint.sh:ro
       - kopia_config:/app/config
       - kopia_cache:/app/cache
       - kopia_logs:/app/logs
-      # You provide this Google Cloud service-account key (git-ignored). See
-      # scripts/README.md → "Kopia + Google Drive".
-      - ./secrets/kopia-gdrive-sa.json:/app/sa.json:ro
     ports:
       - "51515:51515"
 
@@ -257,3 +251,5 @@ volumes:
   kopia_config:
   kopia_cache:
   kopia_logs:
+  # v2.5.37: SA key + repo password + status/triggers shared backend ↔ kopia.
+  kopia_secrets:

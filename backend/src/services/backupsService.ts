@@ -21,6 +21,9 @@ export interface BackupsServiceConfig {
     url?: string | null;
     username?: string | null;
     password?: string | null;
+    // v2.5.37: shared volume the app writes SA key / password / triggers to and
+    // reads status.json from.
+    secretsDir?: string | null;
   };
 }
 
@@ -37,8 +40,13 @@ export interface OnlineBackupConfig {
 
 export interface OnlineBackupStatus {
   configured: boolean;
-  serverConfigured: boolean;
+  serviceAccountUploaded: boolean;
+  passwordSet: boolean;
+  initialized: boolean;
   reachable: boolean;
+  lastSnapshotAt: string | null;
+  snapshotCount: number;
+  error: string | null;
   detail: string | null;
 }
 
@@ -201,20 +209,115 @@ export class BackupsService {
     );
   }
 
-  // Best-effort readout for the UI: is a config set, is the Kopia server wired
-  // up, and does it answer a health ping? Never throws.
+  private get kopiaSecretsDir(): string | null {
+    return this.kopia?.secretsDir ?? null;
+  }
+
+  private async fileExists(p: string): Promise<boolean> {
+    return fs
+      .access(p)
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  // v2.5.37: store the uploaded Google service-account key on the shared volume
+  // the Kopia entrypoint reads. Validates it parses as JSON first.
+  async saveServiceAccount(bytes: Buffer): Promise<void> {
+    const dir = this.kopiaSecretsDir;
+    if (!dir) throw Errors.badRequest('Online backup storage is not available on this instance.');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(bytes.toString('utf8'));
+    } catch {
+      throw Errors.badRequest('The service-account key must be a valid JSON file.');
+    }
+    if (!parsed || typeof parsed !== 'object' || !('client_email' in (parsed as object))) {
+      throw Errors.badRequest('That does not look like a Google service-account key (no client_email).');
+    }
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(join(dir, 'kopia-gdrive-sa.json'), bytes, { mode: 0o600 });
+  }
+
+  // v2.5.37: store the repository encryption password on the shared volume.
+  async setRepoPassword(password: string): Promise<void> {
+    const dir = this.kopiaSecretsDir;
+    if (!dir) throw Errors.badRequest('Online backup storage is not available on this instance.');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(join(dir, 'repo-password'), password, { mode: 0o600 });
+  }
+
+  // v2.5.37: drop a trigger file the Kopia entrypoint reconciles on.
+  private async writeTrigger(name: 'reinit' | 'backup-now'): Promise<void> {
+    const dir = this.kopiaSecretsDir;
+    if (!dir) throw Errors.badRequest('Online backup storage is not available on this instance.');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(join(dir, name), new Date().toISOString(), 'utf8');
+  }
+
+  async triggerInitialize(): Promise<void> {
+    await this.writeTrigger('reinit');
+  }
+
+  async triggerBackupNow(): Promise<void> {
+    await this.writeTrigger('backup-now');
+  }
+
+  // Status: combines what the app knows (config + which secrets are present)
+  // with what the Kopia entrypoint reports in status.json, plus a reachability
+  // ping. Never throws.
   async getOnlineStatus(): Promise<OnlineBackupStatus> {
     const cfg = await this.getOnlineConfig();
+    const dir = this.kopiaSecretsDir;
     const configured = cfg.enabled && cfg.folderId.trim().length > 0;
-    const url = this.kopia?.url ?? null;
-    if (!url) {
-      return {
-        configured,
-        serverConfigured: false,
-        reachable: false,
-        detail: 'Kopia backup service not configured (start the `backup` compose profile).',
-      };
+
+    let serviceAccountUploaded = false;
+    let passwordSet = false;
+    let initialized = false;
+    let lastSnapshotAt: string | null = null;
+    let snapshotCount = 0;
+    let error: string | null = null;
+
+    if (dir) {
+      serviceAccountUploaded = await this.fileExists(join(dir, 'kopia-gdrive-sa.json'));
+      passwordSet = await this.fileExists(join(dir, 'repo-password'));
+      try {
+        const raw = await fs.readFile(join(dir, 'status.json'), 'utf8');
+        const s = JSON.parse(raw) as Record<string, unknown>;
+        initialized = s.initialized === true;
+        lastSnapshotAt = typeof s.lastSnapshotAt === 'string' ? s.lastSnapshotAt : null;
+        snapshotCount = Number.isFinite(Number(s.snapshotCount)) ? Number(s.snapshotCount) : 0;
+        error = typeof s.error === 'string' ? s.error : null;
+      } catch {
+        /* no status yet — the entrypoint hasn't written one */
+      }
     }
+
+    const reachable = await this.pingKopia();
+
+    let detail: string;
+    if (!serviceAccountUploaded || !passwordSet) detail = 'Upload the Google service-account key and set the repository password to begin.';
+    else if (!configured) detail = 'Set the Google Drive folder and enable online backup.';
+    else if (error) detail = error;
+    else if (initialized) detail = 'Connected — Google Drive repository ready.';
+    else if (reachable) detail = 'Kopia service running — initialising…';
+    else detail = 'Start the backup service (docker compose --profile backup up -d kopia) to apply this config.';
+
+    return {
+      configured,
+      serviceAccountUploaded,
+      passwordSet,
+      initialized,
+      reachable,
+      lastSnapshotAt,
+      snapshotCount,
+      error,
+      detail,
+    };
+  }
+
+  private async pingKopia(): Promise<boolean> {
+    const url = this.kopia?.url ?? null;
+    if (!url) return false;
     try {
       const headers: Record<string, string> = {};
       if (this.kopia?.username && this.kopia?.password) {
@@ -227,17 +330,9 @@ export class BackupsService {
         headers,
         signal: controller.signal,
       }).finally(() => clearTimeout(timer));
-      return {
-        configured,
-        serverConfigured: true,
-        reachable: res.ok,
-        detail: res.ok
-          ? 'Connected to the Kopia backup service.'
-          : `Kopia server responded ${res.status}.`,
-      };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unreachable';
-      return { configured, serverConfigured: true, reachable: false, detail: `Kopia server unreachable: ${msg}` };
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 

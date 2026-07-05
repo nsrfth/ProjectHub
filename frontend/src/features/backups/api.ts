@@ -28,8 +28,13 @@ export interface OnlineBackupConfig {
 
 export interface OnlineBackupStatus {
   configured: boolean;
-  serverConfigured: boolean;
+  serviceAccountUploaded: boolean;
+  passwordSet: boolean;
+  initialized: boolean;
   reachable: boolean;
+  lastSnapshotAt: string | null;
+  snapshotCount: number;
+  error: string | null;
   detail: string | null;
 }
 
@@ -61,6 +66,30 @@ export async function updateOnlineBackupConfig(
   patch: Partial<OnlineBackupConfig>,
 ): Promise<OnlineBackupConfig> {
   return (await api.put<OnlineBackupConfig>('/admin/backups/online', patch)).data;
+}
+
+// v2.5.37: upload the Google service-account key.
+export async function uploadServiceAccount(file: File): Promise<void> {
+  const form = new FormData();
+  form.append('file', file);
+  await api.post('/admin/backups/online/service-account', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+}
+
+// v2.5.37: set the repository password (write-only).
+export async function setRepoPassword(password: string): Promise<void> {
+  await api.put('/admin/backups/online/password', { password });
+}
+
+// v2.5.37: (re)initialize the repository (connect/create + apply policy).
+export async function initializeOnlineBackup(): Promise<void> {
+  await api.post('/admin/backups/online/initialize', {});
+}
+
+// v2.5.37: run an online snapshot now.
+export async function runOnlineBackupNow(): Promise<void> {
+  await api.post('/admin/backups/online/run', {});
 }
 
 export async function runBackupNow(): Promise<BackupRunResult> {
