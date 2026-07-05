@@ -16,7 +16,41 @@ export interface BackupsServiceConfig {
     jwtAccessSecret?: string | null;
     jwtRefreshSecret?: string | null;
   };
+  // v2.5.36: Kopia server coordinates for the online-backup status ping.
+  kopia?: {
+    url?: string | null;
+    username?: string | null;
+    password?: string | null;
+  };
 }
+
+// v2.5.36: online backup (Kopia → Google Drive) policy.
+export interface OnlineBackupConfig {
+  enabled: boolean;
+  provider: 'GDRIVE';
+  folderId: string;
+  intervalHours: number;
+  keepDaily: number;
+  keepWeekly: number;
+  keepMonthly: number;
+}
+
+export interface OnlineBackupStatus {
+  configured: boolean;
+  serverConfigured: boolean;
+  reachable: boolean;
+  detail: string | null;
+}
+
+export const DEFAULT_ONLINE_BACKUP_CONFIG: OnlineBackupConfig = {
+  enabled: false,
+  provider: 'GDRIVE',
+  folderId: '',
+  intervalHours: 6,
+  keepDaily: 7,
+  keepWeekly: 4,
+  keepMonthly: 6,
+};
 
 // v1.27: automatic Postgres backups via pg_dump.
 //
@@ -55,6 +89,9 @@ export interface BackupRunResult {
 
 const CONFIG_KEY = 'backup.config';
 const LAST_RUN_KEY = 'backup.lastRunAt';
+// v2.5.36: online backup (Kopia) policy, admin-set from Settings → Backups.
+const ONLINE_CONFIG_KEY = 'backup.online';
+const ONLINE_POLICY_FILENAME = 'online-backup.json';
 const FILE_PREFIX = 'taskhub-';
 // v1.32.3: backups now ship as `.tar.gz` containing database.dump + uploads/
 // + secrets.env + manifest.json. `.dump` files (legacy + admin uploads from
@@ -83,6 +120,7 @@ export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
 export class BackupsService {
   private readonly uploadDir: string | null;
   private readonly secrets: BackupsServiceConfig['secrets'];
+  private readonly kopia: BackupsServiceConfig['kopia'];
 
   constructor(
     private readonly databaseUrl: string,
@@ -91,6 +129,7 @@ export class BackupsService {
   ) {
     this.uploadDir = config.uploadDir ?? null;
     this.secrets = config.secrets;
+    this.kopia = config.kopia;
   }
 
   // v1.32.3: bundled backups carry these alongside the DB so cross-server
@@ -124,6 +163,82 @@ export class BackupsService {
   // eslint-disable-next-line class-methods-use-this
   get secretsSidecarFilename(): string {
     return RESTORED_SECRETS_FILENAME;
+  }
+
+  // --- v2.5.36: online backup (Kopia → Google Drive) ----------------------
+
+  async getOnlineConfig(): Promise<OnlineBackupConfig> {
+    const row = await prisma.instanceSetting.findUnique({ where: { key: ONLINE_CONFIG_KEY } });
+    if (!row) return { ...DEFAULT_ONLINE_BACKUP_CONFIG };
+    return normaliseOnlineConfig(row.value);
+  }
+
+  async setOnlineConfig(
+    input: Partial<OnlineBackupConfig>,
+    actorId: string,
+  ): Promise<OnlineBackupConfig> {
+    const current = await this.getOnlineConfig();
+    const next = normaliseOnlineConfig({ ...current, ...input });
+    await prisma.instanceSetting.upsert({
+      where: { key: ONLINE_CONFIG_KEY },
+      update: { value: next as never, updatedBy: actorId },
+      create: { key: ONLINE_CONFIG_KEY, value: next as never, updatedBy: actorId },
+    });
+    // Mirror the policy onto the shared backups volume so `kopia-setup.sh` can
+    // apply it to the Kopia repository without the admin re-typing values.
+    await this.writeOnlinePolicyFile(next).catch(() => {
+      /* best-effort; the DB row is the source of truth */
+    });
+    return next;
+  }
+
+  private async writeOnlinePolicyFile(cfg: OnlineBackupConfig): Promise<void> {
+    await fs.mkdir(this.backupDir, { recursive: true });
+    await fs.writeFile(
+      join(this.backupDir, ONLINE_POLICY_FILENAME),
+      JSON.stringify(cfg, null, 2),
+      'utf8',
+    );
+  }
+
+  // Best-effort readout for the UI: is a config set, is the Kopia server wired
+  // up, and does it answer a health ping? Never throws.
+  async getOnlineStatus(): Promise<OnlineBackupStatus> {
+    const cfg = await this.getOnlineConfig();
+    const configured = cfg.enabled && cfg.folderId.trim().length > 0;
+    const url = this.kopia?.url ?? null;
+    if (!url) {
+      return {
+        configured,
+        serverConfigured: false,
+        reachable: false,
+        detail: 'Kopia backup service not configured (start the `backup` compose profile).',
+      };
+    }
+    try {
+      const headers: Record<string, string> = {};
+      if (this.kopia?.username && this.kopia?.password) {
+        const token = Buffer.from(`${this.kopia.username}:${this.kopia.password}`).toString('base64');
+        headers.Authorization = `Basic ${token}`;
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${url.replace(/\/+$/, '')}/api/v1/repo/status`, {
+        headers,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
+      return {
+        configured,
+        serverConfigured: true,
+        reachable: res.ok,
+        detail: res.ok
+          ? 'Connected to the Kopia backup service.'
+          : `Kopia server responded ${res.status}.`,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unreachable';
+      return { configured, serverConfigured: true, reachable: false, detail: `Kopia server unreachable: ${msg}` };
+    }
   }
 
   async getLastRunAt(): Promise<Date | null> {
@@ -529,6 +644,25 @@ function normaliseConfig(input: unknown): BackupConfig {
     ? clamp(Math.round(rawRetention), MIN_RETENTION, MAX_RETENTION)
     : DEFAULT_BACKUP_CONFIG.retention;
   return { enabled, intervalHours, retention };
+}
+
+// v2.5.36: coerce a stored/patched online-backup config into a safe shape.
+function normaliseOnlineConfig(input: unknown): OnlineBackupConfig {
+  const v = (input ?? {}) as Record<string, unknown>;
+  const d = DEFAULT_ONLINE_BACKUP_CONFIG;
+  const num = (raw: unknown, def: number, lo: number, hi: number): number => {
+    const n = Number(raw);
+    return Number.isFinite(n) ? clamp(Math.round(n), lo, hi) : def;
+  };
+  return {
+    enabled: typeof v.enabled === 'boolean' ? v.enabled : d.enabled,
+    provider: 'GDRIVE',
+    folderId: typeof v.folderId === 'string' ? v.folderId.trim().slice(0, 200) : d.folderId,
+    intervalHours: num(v.intervalHours, d.intervalHours, 1, 24 * 30),
+    keepDaily: num(v.keepDaily, d.keepDaily, 0, 365),
+    keepWeekly: num(v.keepWeekly, d.keepWeekly, 0, 520),
+    keepMonthly: num(v.keepMonthly, d.keepMonthly, 0, 240),
+  };
 }
 
 function clamp(n: number, lo: number, hi: number): number {

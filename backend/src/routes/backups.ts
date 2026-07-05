@@ -9,6 +9,8 @@ import {
   backupConfigPatch,
   backupFilenameParam,
   backupsPage,
+  onlineBackupConfig,
+  onlineBackupConfigPatch,
   runBackupResponse,
 } from '../schemas/backups.js';
 import type { Env } from '../config/env.js';
@@ -34,6 +36,12 @@ export async function backupsRoutes(
       jwtAccessSecret: opts.env.JWT_ACCESS_SECRET ?? null,
       jwtRefreshSecret: opts.env.JWT_REFRESH_SECRET ?? null,
     },
+    // v2.5.36: online-backup status ping target.
+    kopia: {
+      url: opts.env.KOPIA_SERVER_URL ?? null,
+      username: opts.env.KOPIA_SERVER_USERNAME ?? null,
+      password: opts.env.KOPIA_SERVER_PASSWORD ?? null,
+    },
   });
   const r = app.withTypeProvider<ZodTypeProvider>();
 
@@ -51,10 +59,12 @@ export async function backupsRoutes(
       security: [{ bearerAuth: [] }],
     },
     handler: async (_req, reply) => {
-      const [config, lastRunAt, items] = await Promise.all([
+      const [config, lastRunAt, items, online, onlineStatus] = await Promise.all([
         svc.getConfig(),
         svc.getLastRunAt(),
         svc.list(),
+        svc.getOnlineConfig(),
+        svc.getOnlineStatus(),
       ]);
       const nextRunAt = lastRunAt
         ? new Date(lastRunAt.getTime() + config.intervalHours * 3600_000).toISOString()
@@ -64,7 +74,28 @@ export async function backupsRoutes(
         lastRunAt: lastRunAt ? lastRunAt.toISOString() : null,
         nextRunAt,
         items,
+        online,
+        onlineStatus,
       });
+    },
+  });
+
+  // v2.5.36: update the online backup (Kopia → Google Drive) policy.
+  r.put('/online', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Update online backup config (ADMIN only) — Kopia → Google Drive policy.',
+      body: onlineBackupConfigPatch,
+      response: { 200: onlineBackupConfig },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (
+      req: FastifyRequest<{ Body: z.infer<typeof onlineBackupConfigPatch> }>,
+      reply: FastifyReply,
+    ) => {
+      if (!req.user) throw Errors.unauthorized();
+      const next = await svc.setOnlineConfig(req.body, req.user.sub);
+      return reply.send(next);
     },
   });
 

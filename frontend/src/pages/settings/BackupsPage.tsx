@@ -10,8 +10,10 @@ import {
   restoreBackup,
   runBackupNow,
   updateBackupConfig,
+  updateOnlineBackupConfig,
   uploadBackup,
   type BackupFile,
+  type BackupsPage as BackupsPageData,
 } from '@/features/backups/api';
 
 // v1.27: admin-only page to configure automatic Postgres backups + view/run/
@@ -244,6 +246,8 @@ export default function BackupsPage(): JSX.Element {
             {runError && <p role="alert" className="text-xs text-danger">{runError}</p>}
           </form>
 
+          <OnlineBackupPanel data={data} />
+
           <UploadSection
             onUpload={(f) => uploadMut.mutateAsync(f)}
             pending={uploadMut.isPending}
@@ -410,5 +414,139 @@ function UploadSection({
         {pending ? 'Uploading…' : 'Upload'}
       </button>
     </form>
+  );
+}
+
+// v2.5.36: online backup (Kopia → Google Drive) config panel. Admin sets the
+// destination folder + schedule + retention here; the encryption password and
+// Google service-account stay server-side secrets (see scripts/README.md →
+// "Kopia + Google Drive"). Status is a best-effort reachability readout.
+function OnlineBackupPanel({ data }: { data: BackupsPageData }): JSX.Element {
+  const qc = useQueryClient();
+  const o = data.online;
+  const st = data.onlineStatus;
+
+  const [enabled, setEnabled] = useState(o.enabled);
+  const [folderId, setFolderId] = useState(o.folderId);
+  const [intervalHours, setIntervalHours] = useState(o.intervalHours);
+  const [keepDaily, setKeepDaily] = useState(o.keepDaily);
+  const [keepWeekly, setKeepWeekly] = useState(o.keepWeekly);
+  const [keepMonthly, setKeepMonthly] = useState(o.keepMonthly);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEnabled(o.enabled);
+    setFolderId(o.folderId);
+    setIntervalHours(o.intervalHours);
+    setKeepDaily(o.keepDaily);
+    setKeepWeekly(o.keepWeekly);
+    setKeepMonthly(o.keepMonthly);
+  }, [o]);
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      updateOnlineBackupConfig({
+        enabled,
+        folderId: folderId.trim(),
+        intervalHours,
+        keepDaily,
+        keepWeekly,
+        keepMonthly,
+      }),
+    onSuccess: () => {
+      setErr(null);
+      setOk('Saved. Re-run scripts/kopia-setup.sh on the server to apply the new policy.');
+      qc.invalidateQueries({ queryKey: ['backups'] });
+    },
+    onError: (e) => {
+      setOk(null);
+      setErr(errorMessage(e, 'Could not save'));
+    },
+  });
+
+  // Status badge colour.
+  const badge = st.reachable
+    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
+    : st.configured
+      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
+      : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+  const badgeText = st.reachable ? 'Connected' : st.serverConfigured ? 'Not reachable' : 'Not set up';
+
+  return (
+    <section className="border border-border rounded p-4 space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-medium text-sm">Online backup — Kopia → Google Drive</h3>
+        <span className={`text-[11px] rounded-full px-2 py-0.5 ${badge}`}>{badgeText}</span>
+      </div>
+
+      <p className="text-xs text-text-muted">
+        Encrypted, versioned, offsite backups of your dumps to Google Drive, with a
+        web UI at <code>:51515</code>. The repository password and Google
+        service-account are configured once on the server (see{' '}
+        <code>scripts/README.md → "Kopia + Google Drive"</code>); here you set the
+        destination folder, schedule, and retention.
+      </p>
+      {st.detail && <p className="text-[11px] text-text-muted">Status: {st.detail}</p>}
+
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        <span className="font-medium">Enable online backup</span>
+      </label>
+
+      <label className="block text-sm">
+        <span className="block font-medium mb-1">Google Drive folder ID</span>
+        <input
+          type="text"
+          dir="ltr"
+          value={folderId}
+          onChange={(e) => setFolderId(e.target.value)}
+          placeholder="1A2b3C…"
+          className="rounded border-border px-2 py-1 border w-full max-w-md bg-surface font-mono text-xs"
+        />
+        <span className="block text-[11px] text-text-muted mt-1">
+          The folder shared with the Kopia service account (copy it from the folder's URL).
+        </span>
+      </label>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <label className="block text-sm">
+          <span className="block font-medium mb-1">Every (hours)</span>
+          <input type="number" min={1} max={24 * 30} value={intervalHours}
+            onChange={(e) => setIntervalHours(Number(e.target.value))}
+            className="rounded border-border px-2 py-1 border w-full bg-surface" />
+        </label>
+        <label className="block text-sm">
+          <span className="block font-medium mb-1">Keep daily</span>
+          <input type="number" min={0} max={365} value={keepDaily}
+            onChange={(e) => setKeepDaily(Number(e.target.value))}
+            className="rounded border-border px-2 py-1 border w-full bg-surface" />
+        </label>
+        <label className="block text-sm">
+          <span className="block font-medium mb-1">Keep weekly</span>
+          <input type="number" min={0} max={520} value={keepWeekly}
+            onChange={(e) => setKeepWeekly(Number(e.target.value))}
+            className="rounded border-border px-2 py-1 border w-full bg-surface" />
+        </label>
+        <label className="block text-sm">
+          <span className="block font-medium mb-1">Keep monthly</span>
+          <input type="number" min={0} max={240} value={keepMonthly}
+            onChange={(e) => setKeepMonthly(Number(e.target.value))}
+            className="rounded border-border px-2 py-1 border w-full bg-surface" />
+        </label>
+      </div>
+
+      {err && <p role="alert" className="text-xs text-danger">{err}</p>}
+      {ok && <p className="text-xs text-success">{ok}</p>}
+
+      <button
+        type="button"
+        onClick={() => saveMut.mutate()}
+        disabled={saveMut.isPending}
+        className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded px-3 py-1 text-sm font-medium disabled:opacity-50"
+      >
+        {saveMut.isPending ? 'Saving…' : 'Save online backup settings'}
+      </button>
+    </section>
   );
 }

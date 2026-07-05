@@ -15,11 +15,31 @@ export interface BackupFile {
   createdAt: string;
 }
 
+// v2.5.36: online backup (Kopia → Google Drive) policy + live status.
+export interface OnlineBackupConfig {
+  enabled: boolean;
+  provider: 'GDRIVE';
+  folderId: string;
+  intervalHours: number;
+  keepDaily: number;
+  keepWeekly: number;
+  keepMonthly: number;
+}
+
+export interface OnlineBackupStatus {
+  configured: boolean;
+  serverConfigured: boolean;
+  reachable: boolean;
+  detail: string | null;
+}
+
 export interface BackupsPage {
   config: BackupConfig;
   lastRunAt: string | null;
   nextRunAt: string | null;
   items: BackupFile[];
+  online: OnlineBackupConfig;
+  onlineStatus: OnlineBackupStatus;
 }
 
 export interface BackupRunResult {
@@ -34,6 +54,13 @@ export async function fetchBackups(): Promise<BackupsPage> {
 
 export async function updateBackupConfig(patch: Partial<BackupConfig>): Promise<BackupConfig> {
   return (await api.put<BackupConfig>('/admin/backups/config', patch)).data;
+}
+
+// v2.5.36: update the online backup (Kopia) policy.
+export async function updateOnlineBackupConfig(
+  patch: Partial<OnlineBackupConfig>,
+): Promise<OnlineBackupConfig> {
+  return (await api.put<OnlineBackupConfig>('/admin/backups/online', patch)).data;
 }
 
 export async function runBackupNow(): Promise<BackupRunResult> {

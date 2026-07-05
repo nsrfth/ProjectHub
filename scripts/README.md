@@ -85,8 +85,24 @@ only sees ciphertext — which matters because a ProjectHub dump bundle contains
    Open `http://<host>:51515`, log in with the `KOPIA_SERVER_*` creds. From
    there you can browse snapshots, trigger a backup, and **restore** files.
 
-Snapshots then run on the schedule set by `kopia-setup.sh` (every 6h) while the
-service is up, with retention `keep-daily 7 / weekly 4 / monthly 6 / annual 1`.
+Snapshots then run on the schedule set by `kopia-setup.sh` while the service is
+up, with the retention it applied.
+
+### Configuring from the app (Settings → Backups)
+
+An admin can set the **destination folder id, schedule, and retention** from
+**Settings → Backups → "Online backup — Kopia → Google Drive"** instead of the
+CLI. The app persists that policy and mirrors it to
+`/app/backups/online-backup.json` on the shared volume; **`kopia-setup.sh` reads
+that file** (folder id + interval + keep-daily/weekly/monthly) when present, so
+after changing settings in the UI just re-run:
+```bash
+scripts/kopia-setup.sh
+```
+The panel also shows a live **status** (Connected / Not reachable / Not set up)
+from a health ping to the Kopia server. The repository password and the Google
+service-account key remain **server-side secrets** — they are never entered in,
+sent to, or stored by the app.
 
 ### Restoring
 Use the web UI (snapshot → *Restore*), or from the CLI:

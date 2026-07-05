@@ -130,6 +130,50 @@ describe('/api/admin/backups', () => {
     expect(after.json().config).toEqual({ enabled: true, intervalHours: 12, retention: 14 });
   });
 
+  it('v2.5.36: exposes + persists the online backup (Kopia) config', async () => {
+    const { adminToken, memberToken } = await setup();
+    const H = (t: string) => ({ authorization: `Bearer ${t}` });
+
+    // Default online config on a fresh instance, plus a best-effort status
+    // (Kopia server not configured in tests).
+    const page = await app.inject({ method: 'GET', url: '/api/admin/backups', headers: H(adminToken) });
+    expect(page.json().online).toEqual({
+      enabled: false,
+      provider: 'GDRIVE',
+      folderId: '',
+      intervalHours: 6,
+      keepDaily: 7,
+      keepWeekly: 4,
+      keepMonthly: 6,
+    });
+    expect(page.json().onlineStatus.serverConfigured).toBe(false);
+    expect(page.json().onlineStatus.reachable).toBe(false);
+
+    // Admin updates the policy.
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/admin/backups/online',
+      headers: H(adminToken),
+      payload: { enabled: true, folderId: '1AbCdEf', intervalHours: 12, keepDaily: 14 },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toMatchObject({ enabled: true, folderId: '1AbCdEf', intervalHours: 12, keepDaily: 14 });
+
+    // Persisted + reflected in status (configured=true now).
+    const reread = await app.inject({ method: 'GET', url: '/api/admin/backups', headers: H(adminToken) });
+    expect(reread.json().online.folderId).toBe('1AbCdEf');
+    expect(reread.json().onlineStatus.configured).toBe(true);
+
+    // Non-admin is blocked.
+    const denied = await app.inject({
+      method: 'PUT',
+      url: '/api/admin/backups/online',
+      headers: H(memberToken),
+      payload: { enabled: false },
+    });
+    expect(denied.statusCode).toBe(403);
+  });
+
   it('lists dumps written to BACKUP_DIR + serves them for download', async () => {
     const { adminToken } = await setup();
     await writeFakeDump('taskhub-2026-05-26T10-00-00-000Z.dump', 'hello');

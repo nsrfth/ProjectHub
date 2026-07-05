@@ -148,6 +148,13 @@ const envSchema = z.object({
   // because dumps grow unpredictably + the upload endpoint is admin-only.
   // Overrides the global UPLOAD_MAX_BYTES which is sized for task attachments.
   BACKUP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
+  // v2.5.36: online backup (Kopia). Optional — only set when the `backup`
+  // compose profile runs. The backend uses these for a best-effort reachability
+  // check + status readout in Settings → Backups. Repo password + Google
+  // service-account stay server-side secrets (never in the app DB).
+  KOPIA_SERVER_URL: z.string().url().optional(),
+  KOPIA_SERVER_USERNAME: z.string().optional(),
+  KOPIA_SERVER_PASSWORD: z.string().optional(),
   // v1.30.7 (S-11): SSRF allow-list for the webhook target guard.
   // Comma-separated host names that are EXEMPT from the private-IP /
   // loopback / link-local rejection. Default empty so a fresh install

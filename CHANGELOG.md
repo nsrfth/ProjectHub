@@ -13,6 +13,27 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.36] — 2026-07-05
+
+**Backups — configure online backup (Kopia) from Settings → Backups.** Admins
+can now manage the online-backup policy in-app instead of editing files on the
+server.
+
+- **Settings → Backups** gains an **"Online backup — Kopia → Google Drive"**
+  panel: enable/disable, Google Drive **folder id**, snapshot **interval**, and
+  **retention** (keep daily/weekly/monthly), plus a live **status** badge
+  (Connected / Not reachable / Not set up) from a health ping to the Kopia server.
+- **Backend:** `backup.online` config in `InstanceSetting` (admin-only, via
+  `GET /api/admin/backups` + `PUT /api/admin/backups/online`). Saving mirrors the
+  policy to `/app/backups/online-backup.json` on the shared volume; the status
+  ping hits `KOPIA_SERVER_URL` best-effort (never throws). Repo password + Google
+  service-account stay server-side secrets — never sent to or stored by the app.
+- **`scripts/kopia-setup.sh`** now reads that JSON (folder id + interval +
+  retention) when present, so the UI is the source of truth — change settings in
+  the app, re-run the script to apply them to the Kopia repository.
+- Compose backend gains `KOPIA_SERVER_URL/USERNAME/PASSWORD` (defaults to the
+  `kopia:51515` service). Tests cover online-config persistence + admin gating.
+
 ## [2.5.35] — 2026-07-05
 
 **Backups — Kopia offsite backups (encrypted, versioned, web UI).** An

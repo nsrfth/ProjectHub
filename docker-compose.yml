@@ -81,6 +81,13 @@ services:
       BACKUP_ENABLED: ${BACKUP_ENABLED:-false}
       BACKUP_DIR: ${BACKUP_DIR:-/app/backups}
       BACKUP_CHECK_INTERVAL_MIN: ${BACKUP_CHECK_INTERVAL_MIN:-15}
+      # v2.5.36: lets Settings → Backups show online-backup (Kopia) status. The
+      # kopia service is reachable at kopia:51515 on the compose network when
+      # the `backup` profile is up; harmless (status just shows "not set up")
+      # when it isn't.
+      KOPIA_SERVER_URL: ${KOPIA_SERVER_URL:-http://kopia:51515}
+      KOPIA_SERVER_USERNAME: ${KOPIA_SERVER_USERNAME:-}
+      KOPIA_SERVER_PASSWORD: ${KOPIA_SERVER_PASSWORD:-}
       CERT_DIR: ${CERT_DIR:-/app/certs}
     volumes:
       - uploads_data:/app/uploads
