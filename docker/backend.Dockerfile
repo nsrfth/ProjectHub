@@ -41,10 +41,11 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 
-# Pre-create /app/uploads + /app/backups so the named-volume mounts inherit
-# their ownership (named volumes copy ownership from the image's matching
-# path on first mount).
-RUN mkdir -p /app/uploads /app/backups && chown -R app:app /app
+# Pre-create /app/uploads + /app/backups + /app/kopia-secrets so the named-volume
+# mounts inherit their ownership (named volumes copy ownership from the image's
+# matching path on first mount). The backend, which runs as `app`, writes the
+# Kopia config/secrets into /app/kopia-secrets (v2.5.37).
+RUN mkdir -p /app/uploads /app/backups /app/kopia-secrets && chown -R app:app /app
 USER app
 
 EXPOSE 4000

@@ -220,6 +220,9 @@ services:
     profiles: ['backup']
     restart: unless-stopped
     hostname: projecthub-kopia
+    # Root so it can read/write the app-owned kopia_secrets volume regardless of
+    # the backend's uid (avoids the classic shared-volume uid mismatch).
+    user: "0:0"
     entrypoint: ["/bin/sh", "/app/entrypoint.sh"]
     environment:
       KOPIA_CONFIG_PATH: /app/config/repository.config
