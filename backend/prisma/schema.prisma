@@ -245,6 +245,10 @@ enum ThemePreference {
   SOLARIZED
   HIGH_CONTRAST
   NORD
+  INDIGO
+  VIBRANT
+  SUNSET
+  AGGRESSIVE
 }
 
 enum HolidaySource {

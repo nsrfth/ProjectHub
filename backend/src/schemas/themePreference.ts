@@ -8,6 +8,10 @@ export const THEME_PREFERENCE_VALUES = [
   'SOLARIZED',
   'HIGH_CONTRAST',
   'NORD',
+  'INDIGO',
+  'VIBRANT',
+  'SUNSET',
+  'AGGRESSIVE',
 ] as const;
 
 export const themePreferenceEnum = z.enum(THEME_PREFERENCE_VALUES);

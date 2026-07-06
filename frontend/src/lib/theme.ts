@@ -11,6 +11,10 @@ export const THEME_PREFERENCES = [
   'SOLARIZED',
   'HIGH_CONTRAST',
   'NORD',
+  'INDIGO',
+  'VIBRANT',
+  'SUNSET',
+  'AGGRESSIVE',
 ] as const;
 
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];
@@ -28,11 +32,20 @@ const ALL_THEME_CLASSES = [
   'theme-solarized',
   'theme-high-contrast',
   'theme-nord',
+  'theme-indigo',
+  'theme-vibrant',
+  'theme-sunset',
+  'theme-aggressive',
 ] as const;
 
 /** Dark-family resolved themes get `<html class="dark">` for legacy `dark:` variants. */
 export function isDarkFamily(resolved: ResolvedTheme): boolean {
-  return resolved === 'DARK' || resolved === 'MIDNIGHT' || resolved === 'NORD';
+  return (
+    resolved === 'DARK' ||
+    resolved === 'MIDNIGHT' ||
+    resolved === 'NORD' ||
+    resolved === 'AGGRESSIVE'
+  );
 }
 
 export function resolvedThemeClass(resolved: ResolvedTheme): string {

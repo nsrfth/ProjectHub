@@ -10,6 +10,10 @@ const SWATCH: Record<ThemePreference, { bg: string; surface: string; text: strin
   SOLARIZED: { bg: '#fdf6e3', surface: '#eee8d5', text: '#073642', primary: '#268bd2' },
   HIGH_CONTRAST: { bg: '#ffffff', surface: '#000000', text: '#000000', primary: '#0000ee' },
   NORD: { bg: '#2e3440', surface: '#434c5e', text: '#eceff4', primary: '#88c0d0' },
+  INDIGO: { bg: '#f6f6fd', surface: '#ffffff', text: '#1e1b3a', primary: '#5558e3' },
+  VIBRANT: { bg: '#fef7ff', surface: '#ffffff', text: '#2a1a3a', primary: '#7c3aed' },
+  SUNSET: { bg: '#fff8f3', surface: '#ffffff', text: '#3a1f1a', primary: '#c2410c' },
+  AGGRESSIVE: { bg: '#0d0a0a', surface: '#1f1414', text: '#f5e6e6', primary: '#e11d48' },
 };
 
 const LABEL_KEY: Record<ThemePreference, string> = {
@@ -20,6 +24,10 @@ const LABEL_KEY: Record<ThemePreference, string> = {
   SOLARIZED: 'preferences.theme.solarized',
   HIGH_CONTRAST: 'preferences.theme.highContrast',
   NORD: 'preferences.theme.nord',
+  INDIGO: 'preferences.theme.indigo',
+  VIBRANT: 'preferences.theme.vibrant',
+  SUNSET: 'preferences.theme.sunset',
+  AGGRESSIVE: 'preferences.theme.aggressive',
 };
 
 interface ThemePickerProps {

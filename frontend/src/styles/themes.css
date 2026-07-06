@@ -96,6 +96,78 @@
   --color-accent: #0000ee;
 }
 
+/* Indigo brand (light base): neutrals tinted toward brand indigo #6366f1.
+   AA: text #1e1b3a on #f6f6fd = 15.3:1; on #fff = 16.5:1; muted #6b6a8c on
+   #f6f6fd = 4.8:1; white on primary #5558e3 = 5.4:1. */
+.theme-indigo {
+  --color-bg: #f6f6fd;
+  --color-bg-elevated: #fbfbff;
+  --color-surface: #ffffff;
+  --color-border: #dedcf3;
+  --color-text: #1e1b3a;
+  --color-text-muted: #6b6a8c;
+  --color-primary: #5558e3;
+  --color-primary-contrast: #ffffff;
+  --color-success: #16a34a;
+  --color-warning: #ca8a04;
+  --color-danger: #dc2626;
+  --color-accent: #6366f1;
+}
+
+/* Vibrant (light base): high-saturation, colourful. Electric-violet primary +
+   hot-pink accent on a faint lavender-white. AA: text #2a1a3a on #fef7ff =
+   15.3:1; muted #6b5b7b on #fef7ff = 5.9:1; white on primary #7c3aed = 5.7:1. */
+.theme-vibrant {
+  --color-bg: #fef7ff;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-border: #ead6f2;
+  --color-text: #2a1a3a;
+  --color-text-muted: #6b5b7b;
+  --color-primary: #7c3aed;
+  --color-primary-contrast: #ffffff;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-accent: #ec4899;
+}
+
+/* Sunset (light base): warm, colourful. Burnt-orange primary + sea-teal accent
+   on a peach-cream base. AA: text #3a1f1a on #fff8f3 = 14.4:1; muted #7b5b52 on
+   #fff8f3 = 5.8:1; white on primary #c2410c = 5.2:1. */
+.theme-sunset {
+  --color-bg: #fff8f3;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-border: #ffe0cc;
+  --color-text: #3a1f1a;
+  --color-text-muted: #7b5b52;
+  --color-primary: #c2410c;
+  --color-primary-contrast: #ffffff;
+  --color-success: #059669;
+  --color-warning: #eab308;
+  --color-danger: #e11d48;
+  --color-accent: #0d9488;
+}
+
+/* Aggressive (dark base): high-energy hazard aesthetic — blood-crimson primary +
+   fiery-orange accent on near-black. AA: text #f5e6e6 on #0d0a0a = 16.3:1; muted
+   #b08a8a on #1f1414 = 5.9:1; white on primary #e11d48 = 4.7:1. */
+.theme-aggressive {
+  --color-bg: #0d0a0a;
+  --color-bg-elevated: #170f0f;
+  --color-surface: #1f1414;
+  --color-border: #3d1f1f;
+  --color-text: #f5e6e6;
+  --color-text-muted: #b08a8a;
+  --color-primary: #e11d48;
+  --color-primary-contrast: #ffffff;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #fb7185;
+  --color-accent: #f97316;
+}
+
 .theme-nord {
   --color-bg: #2e3440;
   --color-bg-elevated: #3b4252;

@@ -86,6 +86,10 @@ describe('theme preference runtime', () => {
       SOLARIZED: 'SOLARIZED',
       HIGH_CONTRAST: 'HIGH_CONTRAST',
       NORD: 'NORD',
+      INDIGO: 'INDIGO',
+      VIBRANT: 'VIBRANT',
+      SUNSET: 'SUNSET',
+      AGGRESSIVE: 'AGGRESSIVE',
     };
     for (const pref of theme.THEME_PREFERENCES) {
       theme.applyToDom(theme.resolveThemePreference(pref));
@@ -121,7 +125,7 @@ describe('theme preference runtime', () => {
 
   it('7) dark-family themes add legacy dark class for Tailwind dark: variants', async () => {
     const theme = await loadTheme(false);
-    for (const resolved of ['DARK', 'MIDNIGHT', 'NORD'] as const) {
+    for (const resolved of ['DARK', 'MIDNIGHT', 'NORD', 'AGGRESSIVE'] as const) {
       theme.applyToDom(resolved);
       expect(theme.isDarkFamily(resolved)).toBe(true);
       expect(document.documentElement.classList.contains('dark')).toBe(true);

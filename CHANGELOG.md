@@ -13,6 +13,54 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.43] — 2026-07-06
+
+**New "Aggressive" theme.** A high-energy dark-base theme with a hazard
+aesthetic: blood-crimson primary (`#e11d48`) and fiery-orange accent (`#f97316`)
+on near-black. Joins the dark family (gets the legacy `dark` class for `dark:`
+variants). All critical text pairs meet WCAG AA (body 16:1, white-on-primary
+4.7:1). Selectable from **Preferences → Theme** (EN "Aggressive" / FA "تهاجمی");
+persisted like the others. Ships with the `ThemePreference` enum value (Zod +
+Prisma + migration `20260722120000_theme_aggressive`). Eleventh theme.
+
+## [2.5.42] — 2026-07-06
+
+**New "Sunset" theme.** A warm colourful light-base theme: burnt-orange primary
+(`#c2410c`) with a sea-teal accent (`#0d9488`) and gold/rose/emerald semantics on
+a peach-cream base. All critical text pairs meet WCAG AA (body 14:1,
+white-on-primary 5.2:1). Selectable from **Preferences → Theme** (EN "Sunset" /
+FA "غروب"); persisted like the others. Ships with the `ThemePreference` enum
+value (Zod + Prisma + migration `20260721120000_theme_sunset`). Tenth theme.
+
+## [2.5.41] — 2026-07-06
+
+**New "Vibrant" theme.** A colourful light-base theme: electric-violet primary
+(`#7c3aed`) with a contrasting hot-pink accent (`#ec4899`) and vivid
+emerald/amber/rose semantics, on a faint lavender-white. All critical text pairs
+meet WCAG AA (body 15:1, white-on-primary 5.7:1). Selectable from
+**Preferences → Theme** (EN "Vibrant" / FA "پرنگ"); persisted like the others.
+Ships with the `ThemePreference` enum value (Zod + Prisma + migration
+`20260720120000_theme_vibrant`) so saving works out of the box. Ninth theme.
+
+## [2.5.40] — 2026-07-06
+
+**Fix: saving the Indigo theme returned Internal Server Error.** v2.5.39 added
+`INDIGO` to the request validation and CSS but not to the `ThemePreference`
+Postgres enum, so persisting the preference failed. Migration
+`20260719120000_theme_indigo` adds the enum value (additive, `ADD VALUE IF NOT
+EXISTS`).
+
+## [2.5.39] — 2026-07-06
+
+**New "Indigo" theme.** A light-base theme built around the brand indigo
+(`#6366f1`): the neutral backgrounds and borders carry a subtle indigo-lavender
+tint so the surface reads as branded rather than plain gray, with a slightly
+deepened primary (`#5558e3`) so white button text clears WCAG AA (5.4:1). All
+critical text pairs meet AA (body text 15–16:1). Selectable from
+**Preferences → Theme** (EN "Indigo" / FA "نیلی"); persisted like the other
+themes. Eighth theme alongside Light, Dark, Midnight, Solarized, High-contrast
+and Nord.
+
 ## [2.5.38] — 2026-07-06
 
 **Persian UI uses the Vazirmatn font.** The Farsi interface now renders in
