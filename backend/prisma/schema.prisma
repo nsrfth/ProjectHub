@@ -249,6 +249,7 @@ enum ThemePreference {
   VIBRANT
   SUNSET
   AGGRESSIVE
+  OCEAN
 }
 
 enum HolidaySource {

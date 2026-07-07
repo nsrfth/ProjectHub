@@ -23,7 +23,9 @@ white surfaces. All tokens meet WCAG AA (primary 6.7:1, muted text 4.9:1).
 Selectable in Preferences → Theme as "Ocean" / "اقیانوس". `OCEAN` is added to
 the frontend `THEME_PREFERENCES`, the backend `themePreference` enum (so the
 choice persists), the `ThemePicker` swatch/label maps, and `.theme-ocean` tokens
-in `themes.css`. Client + persistence only — no schema migration.
+in `themes.css`. Because `themePreference` is a native Postgres enum, this
+ships an additive migration (`ALTER TYPE "ThemePreference" ADD VALUE IF NOT
+EXISTS 'OCEAN'`) alongside the `schema.prisma` enum value.
 
 ## [2.5.47] — 2026-07-07
 
