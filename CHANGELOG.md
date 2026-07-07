@@ -13,6 +13,15 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.45] — 2026-07-07
+
+**Fix: install.sh now validates the admin email.** You sign into ProjectHub with
+an email (there is no separate username), and the login form requires a valid
+address — so entering a plain username like `alireza` at the "Admin email" prompt
+seeded an admin account that could never be logged into. The installer now
+rejects anything that isn't a well-formed email and re-prompts, with a message
+explaining you log in with the address.
+
 ## [2.5.44] — 2026-07-07
 
 **Fix: two install blockers for self-hosters.**

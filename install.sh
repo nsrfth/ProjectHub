@@ -131,7 +131,16 @@ POSTGRES_PASSWORD=$(printf '%s' "$POSTGRES_PASSWORD" | tr -d '\r\n[:space:]')
 
 echo
 note "3/4 — First admin user"
-ADMIN_EMAIL=$(ask "Admin email" "admin@taskhub.local")
+# You sign in with this EMAIL (ProjectHub has no separate username), and the
+# login form requires a valid email address — so reject anything that isn't one,
+# otherwise the seeded admin account can never be logged into.
+while true; do
+  ADMIN_EMAIL=$(ask "Admin email (you log in with this)" "admin@taskhub.local")
+  if [[ "$ADMIN_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
+    break
+  fi
+  warn "That isn't a valid email — you log in with an email address, not a username. Try again."
+done
 while true; do
   pw=$(ask_secret "Admin password (Enter to auto-generate)" "")
   if [[ -z "$pw" ]]; then
