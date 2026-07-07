@@ -107,13 +107,28 @@ if [[ "$SITE_HOST" != ":80" && "$SITE_HOST" != :* ]]; then
 fi
 
 # Derived:
-#  - COOKIE_SECURE: required true for HTTPS (Caddy serves), false for :80
-#  - CORS_ORIGINS:  the origin the SPA is served from
-#  - PUBLIC_APP_URL: same origin, used for links in outbound emails
+#  - COOKIE_SECURE: true for HTTPS (Caddy serves TLS), false for plain-HTTP :80
+#  - CORS_ORIGINS:  the EXACT browser origin(s) the SPA is opened from. The API
+#                   rejects any Origin not on this list ("Origin not allowed" ->
+#                   500 on /api/auth/*), so for a LAN box this must be the IP or
+#                   hostname you actually type in the address bar, not localhost.
+#                   Browsers omit the default port (:80/:443) from Origin, so we
+#                   strip it here — otherwise the allowlist never matches.
+#  - PUBLIC_APP_URL: primary origin, used for links in outbound emails
 if [[ "$SITE_HOST" == :* ]]; then
   COOKIE_SECURE=false
-  CORS_ORIGINS="http://localhost${SITE_HOST}"
-  PUBLIC_APP_URL="http://localhost${SITE_HOST}"
+  port="${SITE_HOST#:}"
+  if [[ "$port" == "80" ]]; then suffix=""; else suffix=":$port"; fi
+  # Best-effort auto-detect of this machine's primary LAN IP for the default.
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  echo
+  echo "   Plain-HTTP (no TLS). Enter the URL you'll open ProjectHub at in the"
+  echo "   browser — its LAN IP or hostname. Comma-separate several if needed."
+  ACCESS_URL=$(ask "Browser URL" "http://${ip:-localhost}${suffix}")
+  ACCESS_URL="${ACCESS_URL%/}"
+  # Always allow on-box localhost too (for curl / same-machine testing).
+  CORS_ORIGINS="http://localhost${suffix},${ACCESS_URL}"
+  PUBLIC_APP_URL="${ACCESS_URL%%,*}"
 else
   COOKIE_SECURE=true
   CORS_ORIGINS="https://${SITE_HOST}"

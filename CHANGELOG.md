@@ -13,6 +13,18 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.46] — 2026-07-07
+
+**Fix: install.sh now sets CORS_ORIGINS to the real browser URL for LAN/HTTP
+installs.** Logging in from a LAN box over plain HTTP failed with a 500
+(*"Origin not allowed"*) because the installer only ever allowlisted
+`http://localhost:80` for the `:80` case — which (a) isn't the IP/hostname you
+actually open in the browser, and (b) carries a `:80` that browsers strip from
+the Origin, so it never matched even on the same machine. The `:80` path now
+prompts for the URL you'll open ProjectHub at (auto-detecting the primary LAN IP
+as the default), allowlists that plus `localhost`, and strips the default port.
+HTTPS/domain installs are unchanged.
+
 ## [2.5.45] — 2026-07-07
 
 **Fix: install.sh now validates the admin email.** You sign into ProjectHub with
