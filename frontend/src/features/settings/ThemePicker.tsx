@@ -14,6 +14,7 @@ const SWATCH: Record<ThemePreference, { bg: string; surface: string; text: strin
   VIBRANT: { bg: '#fef7ff', surface: '#ffffff', text: '#2a1a3a', primary: '#7c3aed' },
   SUNSET: { bg: '#fff8f3', surface: '#ffffff', text: '#3a1f1a', primary: '#c2410c' },
   AGGRESSIVE: { bg: '#0d0a0a', surface: '#1f1414', text: '#f5e6e6', primary: '#e11d48' },
+  OCEAN: { bg: '#f2f5f9', surface: '#ffffff', text: '#0f2138', primary: '#1d4ed8' },
 };
 
 const LABEL_KEY: Record<ThemePreference, string> = {
@@ -28,6 +29,7 @@ const LABEL_KEY: Record<ThemePreference, string> = {
   VIBRANT: 'preferences.theme.vibrant',
   SUNSET: 'preferences.theme.sunset',
   AGGRESSIVE: 'preferences.theme.aggressive',
+  OCEAN: 'preferences.theme.ocean',
 };
 
 interface ThemePickerProps {

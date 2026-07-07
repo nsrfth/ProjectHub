@@ -168,6 +168,26 @@
   --color-accent: #f97316;
 }
 
+/* Ocean (light base): the product's own palette from the reference screenshots —
+   royal-blue primary + golden-amber accent on a cool slate-white base, matching
+   the app's blue CTAs, amber status pills, and charcoal/gold report charts.
+   AA: text #0f2138 on #f2f5f9 = 14.6:1; muted #55647a on #f2f5f9 = 4.9:1;
+   white on primary #1d4ed8 = 6.7:1. */
+.theme-ocean {
+  --color-bg: #f2f5f9;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-border: #dbe3ee;
+  --color-text: #0f2138;
+  --color-text-muted: #55647a;
+  --color-primary: #1d4ed8;
+  --color-primary-contrast: #ffffff;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-accent: #f59e0b;
+}
+
 .theme-nord {
   --color-bg: #2e3440;
   --color-bg-elevated: #3b4252;

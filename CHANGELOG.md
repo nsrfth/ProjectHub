@@ -13,6 +13,18 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.48] — 2026-07-07
+
+**Feature: new "Ocean" theme.** Adds a light-family theme inspired by the
+product's own reference screenshots — a royal-blue primary (`#1d4ed8`) matching
+the app's blue CTAs, a golden-amber accent (`#f59e0b`) echoing the amber status
+pills and gold report-chart bars, and a cool slate-white base (`#f2f5f9`) with
+white surfaces. All tokens meet WCAG AA (primary 6.7:1, muted text 4.9:1).
+Selectable in Preferences → Theme as "Ocean" / "اقیانوس". `OCEAN` is added to
+the frontend `THEME_PREFERENCES`, the backend `themePreference` enum (so the
+choice persists), the `ThemePicker` swatch/label maps, and `.theme-ocean` tokens
+in `themes.css`. Client + persistence only — no schema migration.
+
 ## [2.5.47] — 2026-07-07
 
 **Feature: collapsible desktop side rail.** The left navigation can now be
