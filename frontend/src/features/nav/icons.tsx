@@ -153,3 +153,13 @@ export const IconChevronDown = (p: IconProps) => (
     <polyline points="6 9 12 15 18 9" />
   </Base>
 );
+
+// Sidebar collapse/expand toggle. A "panel" glyph (framed rail on the
+// inline-start edge) — direction-neutral so it reads the same under LTR and
+// RTL without needing to flip a chevron.
+export const IconSidebarToggle = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <line x1="9" y1="4" x2="9" y2="20" />
+  </Base>
+);

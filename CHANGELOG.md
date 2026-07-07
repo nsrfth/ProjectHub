@@ -13,6 +13,19 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.47] — 2026-07-07
+
+**Feature: collapsible desktop side rail.** The left navigation can now be
+collapsed to an icon-only 64px rail (expanded is 240px) via a toggle in the
+sidebar header; collapsed items keep their icons and gain native tooltips.
+The choice is persisted per browser in `localStorage`
+(`taskhub.sidebar.collapsed`) and synced across tabs via the `storage` event.
+Tablet-width viewports (md–lg) auto-collapse; desktop (lg+) defaults to
+expanded unless the user collapsed it. The toggle is keyboard-operable with a
+correct `aria-expanded` state, and the main content offset animates in step so
+there is no layout jump. Client-only — no schema or API change. New:
+`frontend/src/lib/sidebar.ts`, `features/nav/SidebarToggle.tsx`.
+
 ## [2.5.46] — 2026-07-07
 
 **Fix: install.sh now sets CORS_ORIGINS to the real browser URL for LAN/HTTP

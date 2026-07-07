@@ -1,6 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
 import TopNav from '@/features/nav/TopNav';
+import { useSidebarCollapsed } from '@/lib/sidebar';
 
 // Guards routes that require authentication. While the initial refresh is in
 // flight we render nothing rather than flicker to /login.
@@ -16,12 +17,20 @@ import TopNav from '@/features/nav/TopNav';
 // inside the TopNav flex row.
 export default function ProtectedRoute(): JSX.Element | null {
   const { user, loading } = useAuth();
+  const collapsed = useSidebarCollapsed();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   return (
     <div className="min-h-screen bg-bg text-text">
       <TopNav />
-      <main className="md:ps-64">
+      {/* Content offset tracks the rail width so it never sits under the
+          sidebar and shifts in step with collapse/expand. */}
+      <main
+        className={[
+          'transition-[padding] duration-200 ease-in-out',
+          collapsed ? 'md:ps-16' : 'md:ps-64',
+        ].join(' ')}
+      >
         <Outlet />
       </main>
     </div>

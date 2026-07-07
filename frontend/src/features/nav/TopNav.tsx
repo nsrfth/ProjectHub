@@ -6,6 +6,7 @@ import LeftSidebar from './LeftSidebar';
 import { IconMenu } from './icons';
 import SearchInput from '@/features/search/SearchInput';
 import { useT, type MessageKey } from '@/lib/i18n';
+import { useSidebarCollapsed } from '@/lib/sidebar';
 
 // v1.24: slim top bar. v1.31 redesign: padding switched to logical
 // `ps-64` so the bar sits beside the sidebar on the inline-start edge
@@ -34,6 +35,7 @@ export default function TopNav(): JSX.Element {
   const t = useT();
   const { pathname } = useLocation();
   const titleKey = titleKeyFor(pathname);
+  const collapsed = useSidebarCollapsed();
 
   return (
     <>
@@ -43,7 +45,10 @@ export default function TopNav(): JSX.Element {
         className={[
           'sticky top-0 z-30 h-14 flex items-center gap-3',
           'bg-surface border-b border-border text-text',
-          'px-4 md:ps-72',
+          'px-4 transition-[padding] duration-200 ease-in-out',
+          // Sit beside the rail; the extra inline-start indent (ps-72 vs the
+          // rail's 64) keeps the title clear of the rail edge when expanded.
+          collapsed ? 'md:ps-20' : 'md:ps-72',
         ].join(' ')}
       >
         <button
