@@ -40,6 +40,13 @@ ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
+# Needed for `npx prisma db seed` (used by install.sh and manual re-seeds):
+# package.json carries the `prisma.seed` command, and the tsx seeder imports
+# from src/ (e.g. prisma/seed.ts -> ../src/lib/systemUser.js). tsconfig.json
+# provides the path/module resolution tsx honours.
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/src ./src
 
 # Pre-create /app/uploads + /app/backups + /app/kopia-secrets so the named-volume
 # mounts inherit their ownership (named volumes copy ownership from the image's

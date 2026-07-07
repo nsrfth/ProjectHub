@@ -13,6 +13,20 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.44] — 2026-07-07
+
+**Fix: two install blockers for self-hosters.**
+- `docker compose exec backend npx prisma db seed` failed with *"add a prisma.seed
+  property"* — the production image's runner stage never copied `package.json`
+  (which carries the `prisma.seed` command), `tsconfig.json`, or `src/` (the tsx
+  seeder imports `../src/lib/systemUser.js`). Now copied, so seeding works out of
+  the box — including `install.sh`'s own seed step, which used the same command.
+- `install.sh` could write a `DATABASE_URL` split across two lines when the
+  generated Postgres password picked up a stray newline, breaking docker compose's
+  env parser (*unexpected character "@" in variable name*). The password is now
+  stripped of any whitespace/newlines, and `DATABASE_URL`/`POSTGRES_PASSWORD` are
+  quoted in the generated `.env`.
+
 ## [2.5.43] — 2026-07-06
 
 **New "Aggressive" theme.** A high-energy dark-base theme with a hazard

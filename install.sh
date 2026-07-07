@@ -124,6 +124,10 @@ echo
 note "2/4 — Database password"
 echo "   Press Enter to auto-generate a 24-char random password."
 POSTGRES_PASSWORD=$(ask_secret "Postgres password" "$(gen_db_password)")
+# Strip any stray CR/LF/whitespace so it can never split the DATABASE_URL line
+# in .env (a lone newline here wraps the URL and breaks docker compose's env
+# parser: `unexpected character "@" in variable name`).
+POSTGRES_PASSWORD=$(printf '%s' "$POSTGRES_PASSWORD" | tr -d '\r\n[:space:]')
 
 echo
 note "3/4 — First admin user"
@@ -162,13 +166,13 @@ cat > .env <<EOF
 
 # --- Postgres ---
 POSTGRES_USER=taskhub
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
 POSTGRES_DB=taskhub
 
 # --- Backend ---
 NODE_ENV=production
 PORT=4000
-DATABASE_URL=${DATABASE_URL}
+DATABASE_URL="${DATABASE_URL}"
 REDIS_URL=redis://redis:6379
 
 JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
