@@ -74,9 +74,10 @@ export default function MyTasksCalendar({ limit = 200 }: Props): JSX.Element {
               key={key}
               className={[
                 'rounded shadow p-2 min-h-[100px]',
-                // Off days (weekend/holiday) get a subtle theme-aware tint
-                // rather than an alarming red — red reads as an error state.
-                offDay ? 'bg-bg-elevated' : 'bg-surface',
+                // Off days (weekend/holiday) get a soft warm-brown tint
+                // (`--color-offday`) rather than an alarming red — red reads as
+                // an error state; brown reads as "non-working".
+                offDay ? 'bg-offday' : 'bg-surface',
               ].join(' ')}
               title={holidayName ?? undefined}
             >

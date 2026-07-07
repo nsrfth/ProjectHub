@@ -21,6 +21,8 @@ const config: Config = {
         warning: 'var(--color-warning)',
         danger: 'var(--color-danger)',
         accent: 'var(--color-accent)',
+        // Off-day (weekend/holiday) cell tint — see styles/themes.css.
+        offday: 'var(--color-offday)',
       },
     },
   },

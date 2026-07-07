@@ -367,9 +367,10 @@ export default function CalendarPage(): JSX.Element {
               key={k}
               className={[
                 'p-1 min-h-[110px] flex flex-col',
-                // Off days (weekend/holiday) get a subtle theme-aware tint
-                // rather than an alarming red — red reads as an error state.
-                offDay ? 'bg-bg-elevated' : 'bg-white',
+                // Off days (weekend/holiday) get a soft warm-brown tint
+                // (`--color-offday`) rather than an alarming red — red reads as
+                // an error state; brown reads as "non-working".
+                offDay ? 'bg-offday' : 'bg-white',
                 !inMonth ? 'opacity-60' : '',
               ].join(' ')}
               title={holidayName ?? undefined}

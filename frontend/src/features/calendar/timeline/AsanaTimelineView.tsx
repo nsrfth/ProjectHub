@@ -392,9 +392,9 @@ export default function AsanaTimelineView({ selectedTeam, teams }: Props): JSX.E
                       <div
                         key={i}
                         className={`absolute top-0 bottom-0 border-l border-slate-100 dark:border-slate-700 ${
-                          m.offDay ? 'bg-red-50 dark:bg-red-950/30' : ''
+                          m.offDay ? 'bg-offday' : ''
                         } ${m.major ? 'text-slate-700 font-medium' : 'text-slate-400'} ${
-                          m.offDay ? 'text-red-600' : ''
+                          m.offDay ? 'text-text-muted' : ''
                         }`}
                         style={{ left: m.x, width: dayPx }}
                         title={m.holidayName ?? undefined}
@@ -405,7 +405,7 @@ export default function AsanaTimelineView({ selectedTeam, teams }: Props): JSX.E
                       <div
                         key={i}
                         className={`absolute top-0 bottom-0 border-l border-slate-50 dark:border-slate-800 ${
-                          m.offDay ? 'bg-red-50 dark:bg-red-950/30' : ''
+                          m.offDay ? 'bg-offday' : ''
                         }`}
                         style={{ left: m.x, width: dayPx }}
                         title={m.holidayName ?? undefined}
@@ -442,7 +442,7 @@ export default function AsanaTimelineView({ selectedTeam, teams }: Props): JSX.E
                     <div
                       key={i}
                       className={`absolute top-0 bottom-0 border-l border-slate-100 dark:border-slate-800 pointer-events-none ${
-                        m.offDay ? 'bg-red-50/80 dark:bg-red-950/20' : ''
+                        m.offDay ? 'bg-offday' : ''
                       }`}
                       style={{ left: m.x, width: dayPx }}
                     />

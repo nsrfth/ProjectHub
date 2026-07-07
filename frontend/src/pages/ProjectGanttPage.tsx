@@ -912,8 +912,23 @@ function HeaderColumn({
 
   return (
     <g>
+      {/* Off-day (weekend/holiday) column shading — soft warm brown via the
+          shared `--color-offday` token (was a hardcoded red-50 that read as an
+          error state). Rendered first so it sits behind the grid lines, row
+          backgrounds, bars, dependency arrows, and the today-line. `var()`
+          only resolves inside a CSS `style`, not an SVG presentation attribute,
+          so fill is set via style. Holiday columns carry the holiday name as a
+          full-column tooltip, matching the calendar views. */}
       {col.offDay && (
-        <rect x={col.x} y={0} width={col.width} height={chartHeight} fill="#fef2f2" />
+        <rect
+          x={col.x}
+          y={0}
+          width={col.width}
+          height={chartHeight}
+          style={{ fill: 'var(--color-offday)' }}
+        >
+          {col.holidayName ? <title>{col.holidayName}</title> : null}
+        </rect>
       )}
       <line
         x1={col.x}
@@ -923,8 +938,7 @@ function HeaderColumn({
         stroke={stroke}
         strokeWidth={strokeWidth}
       />
-      <text x={col.x + 2} y={14} fontSize="10" fill={col.offDay ? '#dc2626' : '#64748b'}>
-        {col.holidayName ? <title>{col.holidayName}</title> : null}
+      <text x={col.x + 2} y={14} fontSize="10" fill="#64748b">
         {label}
       </text>
     </g>

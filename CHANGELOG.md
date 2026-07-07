@@ -13,6 +13,20 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.50] — 2026-07-08
+
+**Weekend and holiday cells are tinted with a brown colour across calendar and
+Gantt views.** A new semantic token `--color-offday` (`bg-offday`) — a soft
+warm brown, light `#efe7dd` / dark `#2e2822` — replaces the previous grey/red
+off-day tints and now drives all three date grids consistently: the month
+calendar (`CalendarPage`), the weekly planner (`MyTasksCalendar`), and the
+project Gantt day columns (`ProjectGanttPage`, which previously shaded off-days
+in red). Gantt off-day columns render a full-height shading rect behind the
+bars, dependency arrows, and today-line, and expose the holiday name on hover
+to match the calendars. Holidays and weekends share the tint; holidays stay
+distinguished by their name label/tooltip. Frontend-only; no schema or API
+change, and off-day/weekend/holiday configuration is untouched.
+
 ## [2.5.49] — 2026-07-07
 
 **Fix: calendar off days no longer use an alarming red background.** Weekend

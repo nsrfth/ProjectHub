@@ -202,3 +202,28 @@
   --color-danger: #bf616a;
   --color-accent: #81a1c1;
 }
+
+/* Off-day (weekend / holiday) cell tint — a soft warm brown, shared by the
+   month calendar, weekly planner, and Gantt day columns via the `bg-offday`
+   utility / `var(--color-offday)`. Grouped by light/dark family and appended
+   last so every theme inherits a family-appropriate value without touching
+   each block above. Deliberately warm-neutral (not red) so weekends read as
+   "non-working", not "error"; cell text (default `--color-text`) and the muted
+   day number stay legible on it in both families. */
+:root,
+.theme-light,
+.theme-solarized,
+.theme-high-contrast,
+.theme-indigo,
+.theme-vibrant,
+.theme-sunset,
+.theme-ocean {
+  --color-offday: #efe7dd;
+}
+
+.theme-dark,
+.theme-midnight,
+.theme-aggressive,
+.theme-nord {
+  --color-offday: #2e2822;
+}

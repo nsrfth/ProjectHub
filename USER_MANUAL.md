@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.5.48** (2026-07-07)
+Version **v2.5.50** (2026-07-08)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -515,7 +515,7 @@ Each task appears as a coloured pill — the pill colour is the **team accent** 
 
 The **Date field** dropdown (Due vs Planned) applies to grid modes only — the Timeline view uses each task's start/due (or subtask start/end) range directly. Completed tasks are omitted from grid calendar fetches; the Timeline shows all non-deleted tasks (including done) so historical bars remain visible.
 
-Off-days are determined by **weekend weekdays** ([Workweek](#workweek-off-days)) plus **instance holidays** ([Holidays](#holidays-admin)). Both render with a red label and red-50 background tint; holidays also show their **name** on hover.
+Off-days are determined by **weekend weekdays** ([Workweek](#workweek-off-days)) plus **instance holidays** ([Holidays](#holidays-admin)). Since **v2.5.50** they render with a soft **warm-brown** background tint (rather than the old red, which read as an error) — consistently in the month calendar, the weekly planner, and the **Project Gantt** day columns; holidays also show their **name** on hover in all three. The tint adapts to the active theme (a muted brown in dark themes).
 
 ---
 
