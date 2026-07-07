@@ -366,14 +366,16 @@ export default function CalendarPage(): JSX.Element {
             <div
               key={k}
               className={[
-                'bg-white p-1 min-h-[110px] flex flex-col',
-                offDay ? 'bg-red-50' : '',
+                'p-1 min-h-[110px] flex flex-col',
+                // Off days (weekend/holiday) get a subtle theme-aware tint
+                // rather than an alarming red — red reads as an error state.
+                offDay ? 'bg-bg-elevated' : 'bg-white',
                 !inMonth ? 'opacity-60' : '',
               ].join(' ')}
               title={holidayName ?? undefined}
             >
               <div className="flex items-center justify-between text-xs">
-                <span className={`${offDay ? 'text-danger' : 'text-slate-600'} ${isToday ? 'font-bold' : ''}`}>
+                <span className={`${offDay ? 'text-text-muted' : 'text-slate-600'} ${isToday ? 'font-bold' : ''}`}>
                   {monthMode ? day.getUTCDate() : `${DAY_NAMES_FULL[day.getUTCDay()]} · ${shortLabel(day, false)}`}
                 </span>
                 {tasks.length > 0 && (

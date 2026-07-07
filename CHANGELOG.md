@@ -13,6 +13,15 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.49] — 2026-07-07
+
+**Fix: calendar off days no longer use an alarming red background.** Weekend
+and holiday cells were tinted with a raw `bg-red-50` (and red day numbers),
+which reads as an error state and ignored the theme system. They now use a
+subtle, theme-aware `bg-bg-elevated` tint with muted day numbers, in both the
+main calendar (`CalendarPage`) and the planner "My Tasks" Shamsi week
+(`MyTasksCalendar`). Holidays keep their name tooltip.
+
 ## [2.5.48] — 2026-07-07
 
 **Feature: new "Ocean" theme.** Adds a light-family theme inspired by the

@@ -74,11 +74,13 @@ export default function MyTasksCalendar({ limit = 200 }: Props): JSX.Element {
               key={key}
               className={[
                 'rounded shadow p-2 min-h-[100px]',
-                offDay ? 'bg-red-50 dark:bg-red-950/30' : 'bg-surface',
+                // Off days (weekend/holiday) get a subtle theme-aware tint
+                // rather than an alarming red — red reads as an error state.
+                offDay ? 'bg-bg-elevated' : 'bg-surface',
               ].join(' ')}
               title={holidayName ?? undefined}
             >
-              <div className={`text-xs font-medium mb-2 ${offDay ? 'text-danger' : 'text-slate-500'}`}>
+              <div className={`text-xs font-medium mb-2 ${offDay ? 'text-text-muted' : 'text-slate-500'}`}>
                 {formatShamsiDate(d.toISOString()) ?? d.getUTCDate()}
                 {holidayName && (
                   <span className="block text-[10px] truncate">{holidayName}</span>
