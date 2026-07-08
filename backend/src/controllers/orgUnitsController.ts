@@ -59,6 +59,16 @@ export class OrgUnitsController {
     return reply.send(await this.svc.move(req.params.orgUnitId, req.user.sub, req.body));
   };
 
+  getProjectOrgUnit = async (
+    req: FastifyRequest<{ Params: ProjectParams }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    return reply.send(
+      await this.svc.getProjectOrgUnit(req.params.teamId, req.params.projectId),
+    );
+  };
+
   setProjectOrgUnit = async (
     req: FastifyRequest<{ Params: ProjectParams; Body: SetProjectOrgUnitBody }>,
     reply: FastifyReply,

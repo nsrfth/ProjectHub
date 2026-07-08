@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useT } from '@/lib/i18n';
 import * as portfolioApi from '@/features/portfolio/api';
@@ -32,12 +33,30 @@ export default function ProjectOrgUnitPanel({
     staleTime: 60_000,
   });
 
+  // v2.5.51: load the project's current attachment so the picker reflects it
+  // on reopen. Previously the select was write-only (defaultValue="") and always
+  // reset to the placeholder even when a unit was attached.
+  const { data: current } = useQuery({
+    queryKey: ['project', projectId, 'org-unit'],
+    queryFn: () => portfolioApi.getProjectOrgUnit(teamId, projectId),
+    enabled: canAttach,
+  });
+
   const flat = flattenNodes(tree);
+
+  // Controlled selection, seeded from the fetched assignment ('' = none).
+  const [selected, setSelected] = useState<string>('');
+  useEffect(() => {
+    setSelected(current?.orgUnitId ?? '');
+  }, [current?.orgUnitId]);
 
   const attachMut = useMutation({
     mutationFn: (orgUnitId: string | null) =>
       portfolioApi.setProjectOrgUnit(teamId, projectId, orgUnitId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['portfolio'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['portfolio'] });
+      qc.invalidateQueries({ queryKey: ['project', projectId, 'org-unit'] });
+    },
   });
 
   if (!canAttach) return <></>;
@@ -47,9 +66,10 @@ export default function ProjectOrgUnitPanel({
       <h3 className="text-sm font-medium mb-1">{t('portfolio.projectAttach')}</h3>
       <p className="text-xs text-text-muted mb-2">{t('portfolio.projectAttachHint')}</p>
       <select
-        defaultValue=""
+        value={selected}
         onChange={(e) => {
           const v = e.target.value;
+          setSelected(v === '__none__' ? '' : v);
           attachMut.mutate(v === '__none__' ? null : v);
         }}
         className="w-full rounded border px-2 py-1 text-sm dark:bg-slate-700"

@@ -13,6 +13,16 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.51] — 2026-07-08
+
+**Fix: the project edit page now shows the project's current portfolio org unit.**
+The "attach to org unit" picker in the project edit modal was write-only — its `<select>` used
+`defaultValue=""` and never loaded the existing assignment, so reopening the edit page always
+showed the empty "Choose org unit…" placeholder even though the attachment was saved (and
+visible on the Portfolio roll-up). Added a read endpoint `GET /api/teams/:teamId/projects/
+:projectId/org-unit` (mirrors the existing PUT) and made the picker a controlled select seeded
+from it, so the current org unit is pre-selected on open.
+
 ## [2.5.50] — 2026-07-08
 
 **Weekend and holiday cells are tinted with a brown colour across calendar and

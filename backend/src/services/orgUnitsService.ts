@@ -226,6 +226,24 @@ export class OrgUnitsService {
     return toView(row);
   }
 
+  // v2.5.51: read-only lookup of a project's current org-unit attachment so the
+  // project edit picker can pre-select it. Mirrors setProjectOrgUnit's shape.
+  async getProjectOrgUnit(
+    teamId: string,
+    projectId: string,
+  ): Promise<{ projectId: string; orgUnitId: string | null; orgUnitName: string | null }> {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, teamId: true, orgUnitId: true, orgUnit: { select: { name: true } } },
+    });
+    if (!project || project.teamId !== teamId) throw Errors.notFound('Project not found');
+    return {
+      projectId: project.id,
+      orgUnitId: project.orgUnitId,
+      orgUnitName: project.orgUnit?.name ?? null,
+    };
+  }
+
   async setProjectOrgUnit(
     teamId: string,
     projectId: string,

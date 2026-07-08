@@ -98,11 +98,24 @@ export async function getPortfolioCost(orgUnitId: string): Promise<PortfolioCost
   return (await api.get<PortfolioCost>(`/org-units/${orgUnitId}/reports/cost`)).data;
 }
 
+export interface ProjectOrgUnit {
+  projectId: string;
+  orgUnitId: string | null;
+  orgUnitName: string | null;
+}
+
+export async function getProjectOrgUnit(
+  teamId: string,
+  projectId: string,
+): Promise<ProjectOrgUnit> {
+  return (await api.get(`/teams/${teamId}/projects/${projectId}/org-unit`)).data;
+}
+
 export async function setProjectOrgUnit(
   teamId: string,
   projectId: string,
   orgUnitId: string | null,
-): Promise<{ projectId: string; orgUnitId: string | null; orgUnitName: string | null }> {
+): Promise<ProjectOrgUnit> {
   return (
     await api.put(`/teams/${teamId}/projects/${projectId}/org-unit`, { orgUnitId })
   ).data;

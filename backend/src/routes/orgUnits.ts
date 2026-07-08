@@ -208,6 +208,21 @@ export async function projectOrgUnitRoutes(app: FastifyInstance): Promise<void> 
   r.addHook('preHandler', requireTeamRoleOrGrantedProject('MEMBER', 'MANAGER'));
   r.addHook('preHandler', requireProjectAccess());
 
+  // v2.5.51: read the project's current org-unit so the edit-page picker can
+  // show the existing assignment (the PUT below was write-only, which left the
+  // dropdown blank on reopen even though the roll-up showed the attachment).
+  r.get('/', {
+    preHandler: [requireScope('projects:read')],
+    schema: {
+      tags: ['portfolio'],
+      summary: "Get a project's current org unit",
+      params: projectParams,
+      response: { 200: projectOrgUnitResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.getProjectOrgUnit,
+  });
+
   r.put('/', {
     preHandler: [requirePermission('portfolio.attach_project'), requireScope('projects:write')],
     schema: {
