@@ -41,6 +41,8 @@ function serialize(p: {
   ragStatus: string;
   ragReason: string | null;
   healthUpdatedAt: string | null;
+  // v2.5.52: portfolio org unit (company); null when unattached.
+  orgUnit: { id: string; name: string } | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -63,6 +65,7 @@ function serialize(p: {
     ragStatus: p.ragStatus,
     ragReason: p.ragReason,
     healthUpdatedAt: p.healthUpdatedAt,
+    orgUnit: p.orgUnit,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };

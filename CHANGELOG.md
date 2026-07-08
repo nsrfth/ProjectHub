@@ -13,6 +13,15 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.53] — 2026-07-08
+
+**Hotfix: Projects list 500 (`orgUnit` missing from response) introduced in v2.5.52.**
+The projects controller has its own `serialize()` helper (used by every project response path,
+including the cross-team `/api/projects` list); v2.5.52 added `orgUnit` to the service's `toView`
+and the response schema but not to `serialize()`, so the field was stripped before serialization
+and Fastify's response validation rejected it with a 500 ("Could not load projects"). Added
+`orgUnit` to `serialize()`.
+
 ## [2.5.52] — 2026-07-08
 
 **Feat: show the portfolio org unit (company) on each project card.**
