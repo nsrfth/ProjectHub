@@ -47,6 +47,8 @@ export interface ProjectView {
   ragStatus: RagStatus;
   ragReason: string | null;
   healthUpdatedAt: string | null;
+  // v2.5.52: attached portfolio org unit (company), null when unattached.
+  orgUnit: { id: string; name: string } | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,6 +59,8 @@ const projectInclude = {
     include: { label: true },
     orderBy: { label: { name: 'asc' as const } },
   },
+  // v2.5.52: portfolio org unit (company) for the projects-list card.
+  orgUnit: { select: { id: true, name: true } },
 } satisfies Prisma.ProjectInclude;
 
 type ProjectRow = Prisma.ProjectGetPayload<{ include: typeof projectInclude }>;
@@ -99,6 +103,7 @@ function toView(p: ProjectRow): ProjectView {
     // healthUpdatedAt is a true instant (UTC), unlike the zone-neutral
     // calendar dates above — serialize with the timestamp formatter.
     healthUpdatedAt: p.healthUpdatedAt ? p.healthUpdatedAt.toISOString() : null,
+    orgUnit: p.orgUnit ? { id: p.orgUnit.id, name: p.orgUnit.name } : null,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };

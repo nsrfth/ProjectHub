@@ -161,6 +161,8 @@ export const projectResponse = z.object({
   ragStatus: ragStatusEnum,
   ragReason: z.string().nullable(),
   healthUpdatedAt: z.string().datetime().nullable(),
+  // v2.5.52: attached portfolio org unit (company); null when unattached.
+  orgUnit: z.object({ id: z.string(), name: z.string() }).nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

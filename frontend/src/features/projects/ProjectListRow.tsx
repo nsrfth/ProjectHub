@@ -269,6 +269,13 @@ export default function ProjectListRow({
           </span>
         </div>
       )}
+      {/* v2.5.52: portfolio org unit (company), shown directly below Budget. */}
+      <div className="mt-1 ms-7 text-xs text-text flex items-center gap-2 flex-wrap">
+        <span className="font-medium">{t('projects.orgUnit.label')}:</span>
+        <span className={project.orgUnit ? undefined : 'text-text-muted italic'}>
+          {project.orgUnit?.name ?? t('projects.orgUnit.unassigned')}
+        </span>
+      </div>
     </li>
   );
 }

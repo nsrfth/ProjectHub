@@ -158,6 +158,8 @@ describe('GET /api/teams/:teamId/projects', () => {
     const list = res.json();
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('A1');
+    // v2.5.52: list carries the portfolio org unit; null when unattached.
+    expect(list[0].orgUnit).toBeNull();
   });
 });
 

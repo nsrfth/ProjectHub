@@ -13,6 +13,18 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.52] — 2026-07-08
+
+**Feat: show the portfolio org unit (company) on each project card.**
+The Projects list now displays `Org Unit: {name}` directly below the `Budget:` line on every
+project card, resolved through the project's attached org unit (`Project.orgUnitId` → `OrgUnit`,
+which is COMPANY-level in practice). Falls back to *Unassigned* when the project has no org unit.
+The projects list/detail API responses gained a nullable `orgUnit: { id, name }` (populated via
+the existing `toView` mapper, so all project endpoints carry it). No schema/migration change — the
+`Project → OrgUnit` relation already existed. The "All projects / Personal buckets" toggle and
+existing filters are untouched. Filtering/sorting by org unit on this page is intentionally out of
+scope.
+
 ## [2.5.51] — 2026-07-08
 
 **Fix: the project edit page now shows the project's current portfolio org unit.**

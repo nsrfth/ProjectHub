@@ -792,6 +792,8 @@
   "common.loading": "Loading…",
   "projects.bucketAssign": "Assign to buckets",
   "projects.budget.label": "Budget",
+  "projects.orgUnit.label": "Org Unit",
+  "projects.orgUnit.unassigned": "Unassigned",
   "projects.budget.planned": "Planned",
   "projects.budget.error": "Could not save budget",
   "projects.labels": "Labels",

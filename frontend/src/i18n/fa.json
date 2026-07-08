@@ -792,6 +792,8 @@
   "common.loading": "در حال بارگذاری…",
   "projects.bucketAssign": "افزودن به سطل‌ها",
   "projects.budget.label": "بودجه",
+  "projects.orgUnit.label": "واحد سازمانی",
+  "projects.orgUnit.unassigned": "تخصیص‌نیافته",
   "projects.budget.planned": "برنامه",
   "projects.budget.error": "ذخیرهٔ بودجه ممکن نشد",
   "projects.labels": "برچسب‌ها",

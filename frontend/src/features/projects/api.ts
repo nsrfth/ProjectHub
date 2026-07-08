@@ -36,6 +36,9 @@ export interface Project {
   // admin in Settings → Correspondence module; the SPA gates the nav entry +
   // routes on it. Optional on the wire for forward-compat with older responses.
   correspondenceEnabled?: boolean;
+  // v2.5.52: attached portfolio org unit (company). Null when unattached;
+  // optional on the wire for forward-compat with older responses.
+  orgUnit?: { id: string; name: string } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -48,6 +51,7 @@ function normalizeProject<P extends Project>(p: P): P {
     ragStatus: p.ragStatus ?? 'GREEN',
     ragReason: p.ragReason ?? null,
     healthUpdatedAt: p.healthUpdatedAt ?? null,
+    orgUnit: p.orgUnit ?? null,
   };
 }
 
