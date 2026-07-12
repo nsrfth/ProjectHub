@@ -17,7 +17,11 @@ export const KNOWN_ACTIVITY_ACTIONS = [
 export const activityResponse = z.object({
   id: z.string(),
   taskId: z.string(),
-  actorId: z.string(),
+  // v2.5.55: system-generated activities have no human actor — the controller
+  // returns `actorId: null` for system users (actorName falls back to
+  // "(system)"). The schema must allow null or Fastify's response validation
+  // 500s the whole activity feed for any task with a system activity.
+  actorId: z.string().nullable(),
   actorName: z.string(),
   action: z.string(),
   meta: z.unknown(),

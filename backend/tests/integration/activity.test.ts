@@ -162,4 +162,30 @@ describe('activity log', () => {
     expect(activity[0].action).toBe('task.status_changed');
     expect(activity[activity.length - 1].action).toBe('task.created');
   });
+
+  // v2.5.55 regression: a task with a system-emitted activity (actorId null —
+  // scheduler / SCIM / system-manager) used to 500 the whole feed because the
+  // response schema required actorId to be a string.
+  it('returns 200 (not 500) for a task with a system activity (null actorId)', async () => {
+    const s = await setup();
+    await prisma.activity.create({
+      data: {
+        taskId: s.taskId,
+        teamId: s.teamId,
+        actorId: null,
+        action: 'task.updated',
+        meta: { fields: ['status'] },
+      },
+    });
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}/activity`,
+      headers: { authorization: `Bearer ${s.token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const activity = res.json() as Array<{ actorId: string | null; actorName: string }>;
+    const system = activity.find((a) => a.actorId === null);
+    expect(system).toBeTruthy();
+    expect(system!.actorName).toBe('(system)');
+  });
 });

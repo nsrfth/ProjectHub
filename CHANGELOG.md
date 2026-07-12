@@ -13,6 +13,25 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.55] — 2026-07-12
+
+**Two fixes: stale-cache blank dashboard, and an activity-feed 500.**
+
+- **PWA update prompt (frontend).** Switched the service worker from silent
+  `autoUpdate` to `registerType: 'prompt'` with a new `PwaReloadPrompt` toast
+  ("A new version is available — Refresh", EN + FA). Previously, after a deploy
+  an already-open tab kept running the old precached JS bundle against the newer
+  backend, which silently rendered a **blank dashboard / empty teams list** (the
+  failure mode called out in `docker/Caddyfile`); users had to hard-refresh or
+  clear site data. Clicking Refresh skip-waits the new worker and reloads onto
+  the current bundle.
+- **Activity feed 500 (backend).** `GET /…/tasks/:taskId/activity` returned a
+  `ResponseValidationError` 500 for any task carrying a system-emitted activity:
+  the controller returns `actorId: null` for system actors (actorName
+  "(system)"), but the response schema required a string. Made `actorId`
+  nullable in `schemas/activity.ts` (matching `audit.ts` / `reports.ts`), with a
+  regression test.
+
 ## [2.5.54] — 2026-07-12
 
 **New PMO (Project Management Office) role — read-only cross-project oversight + standards

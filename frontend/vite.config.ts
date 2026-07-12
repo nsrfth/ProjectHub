@@ -7,7 +7,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // v2.5.55: 'prompt' (not 'autoUpdate') so a new deploy surfaces an
+      // explicit "new version — Refresh" toast (see app/PwaReloadPrompt) rather
+      // than the old worker silently serving a stale precached bundle against a
+      // newer backend, which rendered a blank dashboard / empty teams list.
+      registerType: 'prompt',
       includeAssets: ['icons/apple-touch-icon.png'],
       manifest: {
         name: 'ProjectHub',

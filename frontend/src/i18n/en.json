@@ -1611,5 +1611,9 @@
   "evm.metric.tcpi": "TCPI",
   "evm.series.title": "S-Curve",
 
-  "module.disabled": "This module is not enabled for this project. Enable it in Settings → Profiles."
+  "module.disabled": "This module is not enabled for this project. Enable it in Settings → Profiles.",
+
+  "pwa.newVersion": "A new version of ProjectHub is available.",
+  "pwa.refresh": "Refresh",
+  "pwa.dismiss": "Dismiss"
 }

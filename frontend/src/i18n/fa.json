@@ -1509,5 +1509,9 @@
   "evm.metric.tcpi": "TCPI",
   "evm.series.title": "منحنی S",
 
-  "module.disabled": "این ماژول برای این پروژه فعال نیست. آن را در تنظیمات ← پروفایل‌ها فعال کنید."
+  "module.disabled": "این ماژول برای این پروژه فعال نیست. آن را در تنظیمات ← پروفایل‌ها فعال کنید.",
+
+  "pwa.newVersion": "نسخه‌ی جدید ProjectHub در دسترس است.",
+  "pwa.refresh": "بازخوانی",
+  "pwa.dismiss": "بستن"
 }
