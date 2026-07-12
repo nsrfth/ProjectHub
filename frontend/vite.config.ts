@@ -7,11 +7,18 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // v2.5.55: 'prompt' (not 'autoUpdate') so a new deploy surfaces an
-      // explicit "new version — Refresh" toast (see app/PwaReloadPrompt) rather
-      // than the old worker silently serving a stale precached bundle against a
-      // newer backend, which rendered a blank dashboard / empty teams list.
-      registerType: 'prompt',
+      // v2.5.56: SELF-DESTROYING service worker. A very old cached worker (from
+      // before /api was NetworkOnly) was intercepting /api/* and returning empty
+      // documents — blanking the dashboard / teams list — and normal SW updates
+      // (autoUpdate, then prompt) failed to evict it. `selfDestroying` generates a
+      // worker that unregisters itself and wipes its caches on the next visit,
+      // cleaning every client automatically with no manual cache-clearing. This
+      // disables offline/installability (not needed for this internal tool) and
+      // removes the whole stale-SW bug class: with no worker, browsers just fetch
+      // fresh assets (index.html is Cache-Control: no-cache via Caddy). A
+      // properly-tested PWA can be reintroduced later if ever wanted.
+      selfDestroying: true,
+      registerType: 'autoUpdate',
       includeAssets: ['icons/apple-touch-icon.png'],
       manifest: {
         name: 'ProjectHub',

@@ -5,7 +5,6 @@ import { RouterProvider } from 'react-router-dom';
 import { AuthProvider } from '@/features/auth/AuthContext';
 import { TeamsProvider } from '@/features/teams/TeamsContext';
 import { router } from '@/app/router';
-import PwaReloadPrompt from '@/app/PwaReloadPrompt';
 import { adoptServerHolidays, adoptServerWeekend } from '@/lib/calendar';
 import { adoptServerScheduling } from '@/lib/scheduling';
 import { fetchSystemInfo } from '@/features/system/api';
@@ -44,7 +43,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <TeamsProvider>
           <RouterProvider router={router} />
-          <PwaReloadPrompt />
         </TeamsProvider>
       </AuthProvider>
     </QueryClientProvider>

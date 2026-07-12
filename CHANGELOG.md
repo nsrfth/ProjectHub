@@ -13,6 +13,20 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.56] — 2026-07-12
+
+**Self-destroying service worker — evict the stale PWA worker that blanked the app.**
+A very old cached service worker (predating the `NetworkOnly` `/api/*` rule) was intercepting
+`GET /api/teams` and returning an empty `text/html` document instead of the backend JSON, so the
+dashboard showed "Join a team" / empty lists in the affected browsers while the account and backend
+were completely healthy (confirmed: `200 (from service worker)`, `Content-Length: 0`; Incognito —
+no worker — worked). Normal SW updates (`autoUpdate`, then the v2.5.55 `prompt`) failed to evict it.
+Set `VitePWA({ selfDestroying: true })`: the worker now unregisters itself and wipes its caches on
+each client's next visit — cleaning everyone automatically, no manual cache-clearing. Removed the
+v2.5.55 `PwaReloadPrompt`. **Trade-off:** offline/installability is disabled (unused for this
+internal tool); with no worker, browsers fetch fresh assets normally (index.html stays
+`Cache-Control: no-cache` via Caddy), which removes the entire stale-worker bug class going forward.
+
 ## [2.5.55] — 2026-07-12
 
 **Two fixes: stale-cache blank dashboard, and an activity-feed 500.**
