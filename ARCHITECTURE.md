@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2.5.53 (unified — frontend, backend, and manual share one number) (2026-07-08)
+**Version:** v2.5.54 (unified — frontend, backend, and manual share one number) (2026-07-12)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -75,6 +75,17 @@ Two roles namespaces exist for a reason:
 
 Collapsing these into one enum invariably leads to confused checks like "is
 this user admin of *this team* or admin of *the system*".
+
+Per-team **authorization** is really the v1.23 **custom-role RBAC**: each team seeds three
+**system roles** — **Manager**, **Member**, and **PMO** (v2.5.54) — as `Role` rows carrying a
+`permissions: string[]` matrix (`lib/permissions.ts`), referenced by `TeamMembership.roleId`. The
+`TeamRole` enum is a **legacy mirror/fallback** (a custom role whose name isn't "Manager" mirrors
+to `MEMBER`), read only when `roleId` is null. **PMO** is a read-only oversight role: it holds
+`project.read_all` (READ to every team project, **never** WRITE) plus profile/standards governance
+(`pmo.*`), portfolio view, and the approval gates — assign it from the member role dropdown. For
+the **global** portfolio/org-unit routes (no `:teamId`, so no membership on the request),
+`requirePermissionAnyTeam(...)` resolves a `portfolio.*` permission across all the caller's team
+roles so a non-admin PMO can reach the cross-team roll-ups.
 
 ## Auth flow
 
@@ -367,8 +378,10 @@ Access resolution (highest wins, `scope`: `view` for list/get, `nested` for task
 3. `project.write_all` → WRITE; else `project.edit` manager → READ in **view** scope only
    (rename via separate update gate)
 4. `ProjectEditDelegate(projectId, userId)` → WRITE (v1.86 full-edit delegate)
-5. ACCEPTED group grant with any FULL membership → WRITE; READONLY only → READ
-6. else NONE
+5. `project.read_all` (PMO, v2.5.54) → READ in **both** scopes — read-only oversight of every
+   team project; capped at READ, never escalates to WRITE
+6. ACCEPTED group grant with any FULL membership → WRITE; READONLY only → READ
+7. else NONE
 
 External members are **not** given `TeamMembership`; they reach nested routes only via
 `requireTeamRoleOrGrantedProject` when `resolveProjectAccess !== NONE`.

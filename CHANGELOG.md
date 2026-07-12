@@ -13,6 +13,34 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.54] — 2026-07-12
+
+**New PMO (Project Management Office) role — read-only cross-project oversight + standards
+governance.** PMO ships as a third **per-team system role** alongside Manager / Member (seeded on
+every team, editable but undeletable), built on the v1.23 custom-role RBAC — **no `TeamRole` enum
+change**. Assign it from **Team settings ▸ member role dropdown**; a PMO is scoped to the team it's
+assigned to and sees **all** of that team's projects **read-only**.
+
+- **New permission `project.read_all`** — READ (both list/view and nested task/comment scope) to
+  **every** project in the team, without owning it. The read-only twin of `project.write_all`:
+  `resolveProjectAccess` caps it at `READ` and it can **never** escalate to `WRITE`, so a PMO can
+  open any project's tasks but not edit project/task content (write attempts return 403, not 404).
+  Added to the Projects group in the role matrix; default-on for the Manager system role and
+  backfilled onto existing Manager roles by migration.
+- **PMO default permission set** (`DEFAULT_PMO_PERMISSIONS`) — oversight-first: `project.read_all`,
+  `portfolio.view` + `portfolio.attach_project`, the `pmo.*` profile/standards governance keys,
+  `core.capture_baseline`, and the `change.approve` / `timesheet.approve` gates. Deliberately
+  excludes all authoring writes; widen per team via the role matrix if needed.
+- **Portfolio routes now resolve for a non-admin PMO.** The global `/api/org-units` tree + roll-up
+  reports run only `requireAuth` (no `:teamId`, so no membership on the request), which previously
+  made `portfolio.view`/`portfolio.manage` effectively **global-ADMIN-only**. New
+  `requirePermissionAnyTeam(...)` resolves the permission across **all** the caller's team roles, so
+  a PMO holding `portfolio.view` through its team role can view the cross-team portfolio roll-ups.
+- **Migration** `20260724120000_pmo_system_role` — data-only (no schema/enum change): creates a
+  `PMO` system `Role` (`pmo_<teamId>`) + its `RolePermission` rows for every existing team and adds
+  `project.read_all` to every existing Manager system role. Idempotent. Seeds + demo datasets create
+  the PMO role too.
+
 ## [2.5.53] — 2026-07-08
 
 **Hotfix: Projects list 500 (`orgUnit` missing from response) introduced in v2.5.52.**

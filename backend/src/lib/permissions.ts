@@ -40,6 +40,13 @@ export const PERMISSIONS = [
   // team-wide write is an explicit choice, never a side effect of edit
   // visibility. Default ON for the Manager system role.
   'project.write_all',
+  // v2.5.54: READ access (both view + nested scope) to EVERY project in the
+  // team — the read-only twin of `project.write_all`. Lets an oversight role
+  // (PMO) list and open any team project + its tasks without owning them and
+  // WITHOUT any edit capability: resolveProjectAccess caps this at READ and it
+  // can never escalate to WRITE. Distinct from `project.edit` (view/rename
+  // visibility, view-scope only). Default ON for the Manager system role.
+  'project.read_all',
 
   // v1.50: team user groups — create groups, assign members, grant projects.
   'group.manage',
@@ -147,7 +154,13 @@ export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
     'task.manage_dependencies',
   ],
   Comments: ['comment.delete_others'],
-  Projects: ['project.edit', 'project.delete', 'project.set_accountable', 'project.write_all'],
+  Projects: [
+    'project.edit',
+    'project.delete',
+    'project.set_accountable',
+    'project.write_all',
+    'project.read_all',
+  ],
   Groups: ['group.manage'],
   CustomFields: ['customfield.manage'],
   Forms: ['form.manage'],
@@ -210,4 +223,27 @@ export const DEFAULT_MEMBER_PERMISSIONS: readonly Permission[] = [
   // v1.90: members can view a project's letters register by default; managing
   // letters (create/refer/…) and contacts stays Manager-default.
   'correspondence.read',
+];
+
+// v2.5.54: default permission set for the seeded PMO (Project Management
+// Office) system role — the third system role alongside Manager / Member.
+// Oversight-first: READ across every team project (`project.read_all`),
+// profile/standards governance (`pmo.*`), baseline capture, portfolio roll-up
+// visibility + project attachment, and the two governance approval gates. It
+// deliberately EXCLUDES every project/task authoring write (`task.*`,
+// `project.write_all`, `cost.manage`, the `*.manage` module writes,
+// `portfolio.manage`) so a PMO stays read-only on project/task content. Widen
+// per team via the role matrix if a given PMO also needs to author.
+export const DEFAULT_PMO_PERMISSIONS: readonly Permission[] = [
+  'project.read_all',
+  'portfolio.view',
+  'portfolio.attach_project',
+  'pmo.manage_profiles',
+  'pmo.assign_profile',
+  'pmo.override_profile',
+  'pmo.set_team_defaults',
+  'pmo.set_group_defaults',
+  'core.capture_baseline',
+  'change.approve',
+  'timesheet.approve',
 ];

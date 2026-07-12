@@ -121,6 +121,9 @@ async function main(): Promise<void> {
     'project.delete',
     'project.set_accountable',
     'project.write_all',
+    // v2.5.54: read-only oversight of every team project (the PMO capability;
+    // Manager holds it too so Manager ⊇ PMO on read visibility).
+    'project.read_all',
     // v1.90: correspondence module + contacts directory.
     'correspondence.read',
     'correspondence.manage',
@@ -133,8 +136,28 @@ async function main(): Promise<void> {
     'trash.purge',
   ];
   const DEFAULT_MEMBER_PERMS = ['task.delete', 'task.modify_dates', 'correspondence.read'];
+  // v2.5.54: the seeded PMO oversight role's default permission set. Mirrors
+  // DEFAULT_PMO_PERMISSIONS in src/lib/permissions.ts — read-only on project/
+  // task content, with profile/standards governance + portfolio view + the two
+  // approval gates.
+  const DEFAULT_PMO_PERMS = [
+    'project.read_all',
+    'portfolio.view',
+    'portfolio.attach_project',
+    'pmo.manage_profiles',
+    'pmo.assign_profile',
+    'pmo.override_profile',
+    'pmo.set_team_defaults',
+    'pmo.set_group_defaults',
+    'core.capture_baseline',
+    'change.approve',
+    'timesheet.approve',
+  ];
 
-  async function ensureSystemRole(name: 'Manager' | 'Member', perms: string[]): Promise<string> {
+  async function ensureSystemRole(
+    name: 'Manager' | 'Member' | 'PMO',
+    perms: string[],
+  ): Promise<string> {
     const existing = await prisma.role.findUnique({
       where: { teamId_name: { teamId: team.id, name } },
     });
@@ -152,6 +175,9 @@ async function main(): Promise<void> {
   }
   const managerRoleId = await ensureSystemRole('Manager', DEFAULT_MANAGER_PERMS);
   const memberRoleId = await ensureSystemRole('Member', DEFAULT_MEMBER_PERMS);
+  // v2.5.54: seed the PMO oversight role so it exists in the demo team out of
+  // the box (assign a member to it from Team settings ▸ role dropdown).
+  await ensureSystemRole('PMO', DEFAULT_PMO_PERMS);
 
   // Memberships — admin + riley as MANAGERs so the demo exercises both roles.
   for (const [user, role] of [

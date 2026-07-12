@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { OrgUnitsService } from '../services/orgUnitsService.js';
 import { OrgUnitsController } from '../controllers/orgUnitsController.js';
 import { requireAuth, requireTeamRoleOrGrantedProject } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/requirePermission.js';
+import { requirePermission, requirePermissionAnyTeam } from '../middleware/requirePermission.js';
 import { requireProjectAccess } from '../middleware/requireProjectAccess.js';
 import { requireScope } from '../middleware/requireScope.js';
 import {
@@ -42,8 +42,14 @@ export async function orgUnitsRoutes(app: FastifyInstance): Promise<void> {
 
   r.addHook('preHandler', requireAuth);
 
-  const view = [requirePermission('portfolio.view'), requireScope('tasks:read')];
-  const manage = [requirePermission('portfolio.manage'), requireScope('admin')];
+  // v2.5.54: these are GLOBAL routes (no `:teamId`, so no `requireTeamRole` and
+  // no `request.membership`). Resolve the portfolio.* permission across ALL the
+  // caller's team roles via `requirePermissionAnyTeam` — otherwise only global
+  // ADMINs could ever pass, and a non-admin PMO holding `portfolio.view` through
+  // a per-team role would be wrongly denied. (The team-scoped project-attach
+  // route below keeps the ordinary `requirePermission`.)
+  const view = [requirePermissionAnyTeam('portfolio.view'), requireScope('tasks:read')];
+  const manage = [requirePermissionAnyTeam('portfolio.manage'), requireScope('admin')];
 
   r.get('/', {
     preHandler: view,

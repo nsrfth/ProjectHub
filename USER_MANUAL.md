@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.5.53** (2026-07-08)
+Version **v2.5.54** (2026-07-12)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -49,9 +49,11 @@ ProjectHub organises work in three layers:
 Two roles matter:
 
 - **Global** role — `ADMIN` or `MEMBER`. Set on the user account. `ADMIN` has instance-wide privileges (manage Directories, see all audit, etc.).
-- **Team** role — `MANAGER` or `MEMBER`. Set per-team. `MANAGER` can invite + remove members, configure webhooks, and see the team's audit log.
+- **Team** role — `MANAGER`, `MEMBER`, or `PMO`. Set per-team. `MANAGER` can invite + remove members, configure webhooks, and see the team's audit log.
 
 You can be a global `MEMBER` and a team `MANAGER` at the same time — these are independent.
+
+**PMO (Project Management Office)** — a third built-in team role (v2.5.54) for **read-only oversight**. A PMO sees **every project in the team** (all tasks, boards, reports, and portfolio roll-ups) **read-only** — they cannot create or edit tasks, or change project content, on projects they don't own. On top of that visibility, a PMO governs **standards**: project profiles and defaults, schedule baselines, and the change/timesheet approval gates. Assign it like any role — open the team, and in the member's **role** dropdown pick **PMO**. It's scoped to the team you assign it in (a PMO of one team has no visibility into another). To give someone read-only access to only *specific* projects instead of the whole team, use a **User group** with **Read only** access (see [User groups](#user-groups)) rather than the PMO role. Admins can broaden or narrow what PMO can do per team from **Settings ▸ Roles & permissions**.
 
 ---
 

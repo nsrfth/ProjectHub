@@ -109,3 +109,55 @@ export async function userHasPermission(
     m.role === 'MANAGER' ? DEFAULT_MANAGER_PERMISSIONS : DEFAULT_MEMBER_PERMISSIONS;
   return (defaults as readonly string[]).includes(permission);
 }
+
+// v2.5.54: permission check that is NOT tied to a single `:teamId` path param.
+// The portfolio / org-unit tree routes are global (they run only `requireAuth`,
+// with no `requireTeamRole`), so `request.membership` is never populated and the
+// standard `hasPermission` denies every non-admin. This variant asks "does the
+// caller hold `permission` via ANY of their team roles?" — the model for an
+// org-wide capability (e.g. a PMO viewing the cross-team portfolio roll-ups)
+// that a non-admin can legitimately hold through a per-team role assignment.
+export async function userHasPermissionAnyTeam(
+  userId: string,
+  globalRole: GlobalRole,
+  permission: Permission,
+): Promise<boolean> {
+  if (globalRole === 'ADMIN') return true;
+  const memberships = await prisma.teamMembership.findMany({
+    where: { userId },
+    select: { roleId: true, role: true },
+  });
+  if (!memberships.length) return false;
+
+  const roleIds = memberships.map((m) => m.roleId).filter((id): id is string => !!id);
+  if (roleIds.length) {
+    const row = await prisma.rolePermission.findFirst({
+      where: { roleId: { in: roleIds }, permission },
+      select: { roleId: true },
+    });
+    if (row) return true;
+  }
+
+  // Legacy fallback for any membership whose roleId was never backfilled.
+  return memberships.some(
+    (m) =>
+      !m.roleId &&
+      (
+        (m.role === 'MANAGER'
+          ? DEFAULT_MANAGER_PERMISSIONS
+          : DEFAULT_MEMBER_PERMISSIONS) as readonly string[]
+      ).includes(permission),
+  );
+}
+
+// preHandler factory for GLOBAL (non-team-scoped) routes — pairs with
+// `userHasPermissionAnyTeam`. Runs after `requireAuth`; needs no membership on
+// the request.
+export function requirePermissionAnyTeam(permission: Permission): preHandlerHookHandler {
+  return async (request) => {
+    if (!request.user) throw Errors.unauthorized();
+    if (!(await userHasPermissionAnyTeam(request.user.sub, request.user.globalRole, permission))) {
+      throw Errors.forbidden(`Missing permission: ${permission}`);
+    }
+  };
+}

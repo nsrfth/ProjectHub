@@ -187,8 +187,15 @@ const DEFAULT_MANAGER_PERMS = [
   'webhooks.manage', 'trash.purge',
 ];
 const DEFAULT_MEMBER_PERMS = ['task.delete', 'task.modify_dates'];
+// v2.5.54: PMO oversight role default permissions (see src/lib/permissions.ts).
+const DEFAULT_PMO_PERMS = [
+  'project.read_all', 'portfolio.view', 'portfolio.attach_project',
+  'pmo.manage_profiles', 'pmo.assign_profile', 'pmo.override_profile',
+  'pmo.set_team_defaults', 'pmo.set_group_defaults', 'core.capture_baseline',
+  'change.approve', 'timesheet.approve',
+];
 
-async function ensureSystemRole(teamId: string, name: 'Manager' | 'Member', perms: string[]): Promise<string> {
+async function ensureSystemRole(teamId: string, name: 'Manager' | 'Member' | 'PMO', perms: string[]): Promise<string> {
   const existing = await prisma.role.findUnique({
     where: { teamId_name: { teamId, name } },
   });
@@ -264,6 +271,7 @@ async function main(): Promise<void> {
 
     const managerRoleId = await ensureSystemRole(row.id, 'Manager', DEFAULT_MANAGER_PERMS);
     const memberRoleId = await ensureSystemRole(row.id, 'Member', DEFAULT_MEMBER_PERMS);
+    await ensureSystemRole(row.id, 'PMO', DEFAULT_PMO_PERMS);
 
     for (const u of USER_DEFS.filter((x) => x.team === t.slug)) {
       const userId = userByEmail.get(u.email)!.id;

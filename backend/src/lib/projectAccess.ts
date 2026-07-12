@@ -42,6 +42,24 @@ async function callerHasWriteAll(
   return perms.has('*') || perms.has('project.write_all');
 }
 
+// v2.5.54: does the caller's membership in `teamId` grant team-wide project
+// READ (`project.read_all`)? The read-only twin of `callerHasWriteAll` — a
+// holder (e.g. a PMO oversight role) gets READ to EVERY project in this team in
+// both view and nested scope, but never WRITE.
+async function callerHasReadAll(
+  teamId: string,
+  callerUserId: string,
+  callerGlobalRole: GlobalRole,
+): Promise<boolean> {
+  if (callerGlobalRole === 'ADMIN') return true;
+  const membership = await prisma.teamMembership.findUnique({
+    where: { userId_teamId: { userId: callerUserId, teamId } },
+  });
+  if (!membership) return false;
+  const perms = await listMembershipPermissions(membership, callerGlobalRole);
+  return perms.has('*') || perms.has('project.read_all');
+}
+
 async function groupAccessForProject(
   userId: string,
   projectId: string,
@@ -101,6 +119,7 @@ function maxAccess(a: ProjectAccessLevel, b: ProjectAccessLevel): ProjectAccessL
  * Unified project-access resolver.
  *   ADMIN / owner → WRITE
  *   project.write_all → WRITE in BOTH view and nested scope (v1.79)
+ *   project.read_all → READ in BOTH scopes (v2.5.54, PMO oversight; never WRITE)
  *   project.edit manager → READ in view scope only (list/rename visibility; not nested)
  *   ACCEPTED group grant → FULL=WRITE, READONLY=READ
  */
@@ -140,6 +159,15 @@ export async function resolveProjectAccess(
   if (delegateCaps.has('FULL')) return 'WRITE';
 
   let access: ProjectAccessLevel = delegateCaps.size > 0 ? 'READ' : 'NONE';
+
+  // v2.5.54: team-wide READ oversight (PMO). Unlike `project.edit` (view-scope
+  // only), `project.read_all` grants READ in BOTH scopes so a PMO can open any
+  // team project's nested tasks/comments read-only. `maxAccess` can never lower
+  // a WRITE — and owner / write_all / FULL-delegate already returned above — so
+  // in practice this only lifts NONE→READ. It never yields WRITE.
+  if (await callerHasReadAll(teamId, userId, globalRole)) {
+    access = maxAccess(access, 'READ');
+  }
 
   if (scope === 'view' && (await callerHasProjectEdit(teamId, userId, globalRole))) {
     access = maxAccess(access, 'READ');
@@ -274,6 +302,8 @@ export async function projectListWhereForCaller(
   // v1.79: a project.write_all holder can write to every team project, so it
   // must also see every team project in the list (independent of project.edit).
   if (await callerHasWriteAll(teamId, userId, globalRole)) return { teamId };
+  // v2.5.54: a project.read_all holder (PMO) sees every team project read-only.
+  if (await callerHasReadAll(teamId, userId, globalRole)) return { teamId };
 
   const groupIds = await groupGrantedProjectIdsInTeam(teamId, userId);
   return {
@@ -296,12 +326,18 @@ export async function projectListAllWhereForCaller(
     where: { userId },
   });
   const memberTeamIds = memberships.map((m) => m.teamId);
-  // Teams where the caller sees every project: project.edit (view visibility)
-  // OR project.write_all (team-wide write, v1.79) both qualify.
+  // Teams where the caller sees every project: project.edit (view visibility),
+  // project.write_all (team-wide write, v1.79), or project.read_all (read-only
+  // oversight / PMO, v2.5.54) all qualify.
   const editTeamIds: string[] = [];
   for (const m of memberships) {
     const perms = await listMembershipPermissions(m, globalRole);
-    if (perms.has('*') || perms.has('project.edit') || perms.has('project.write_all')) {
+    if (
+      perms.has('*') ||
+      perms.has('project.edit') ||
+      perms.has('project.write_all') ||
+      perms.has('project.read_all')
+    ) {
       editTeamIds.push(m.teamId);
     }
   }

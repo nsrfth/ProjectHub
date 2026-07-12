@@ -3,6 +3,7 @@ import { prisma } from '../data/prisma.js';
 import {
   DEFAULT_MANAGER_PERMISSIONS,
   DEFAULT_MEMBER_PERMISSIONS,
+  DEFAULT_PMO_PERMISSIONS,
 } from './permissions.js';
 
 // v1.30.6 (S-6 / S-7): every TeamMembership must carry a `roleId` that
@@ -24,6 +25,8 @@ import {
 export interface SystemRoleIds {
   managerId: string;
   memberId: string;
+  // v2.5.54: the seeded PMO oversight role. Third system role per team.
+  pmoId: string;
 }
 
 function managerIdFor(teamId: string): string {
@@ -34,9 +37,13 @@ function memberIdFor(teamId: string): string {
   return `mem_${teamId}`;
 }
 
+function pmoIdFor(teamId: string): string {
+  return `pmo_${teamId}`;
+}
+
 async function ensureOneSystemRole(
   teamId: string,
-  name: 'Manager' | 'Member',
+  name: 'Manager' | 'Member' | 'PMO',
   preferredId: string,
   perms: readonly string[],
 ): Promise<string> {
@@ -84,7 +91,14 @@ export async function ensureSystemRoles(teamId: string): Promise<SystemRoleIds> 
     memberIdFor(teamId),
     DEFAULT_MEMBER_PERMISSIONS,
   );
-  return { managerId, memberId };
+  // v2.5.54: PMO oversight role — seeded on every team, undeletable, editable.
+  const pmoId = await ensureOneSystemRole(
+    teamId,
+    'PMO',
+    pmoIdFor(teamId),
+    DEFAULT_PMO_PERMISSIONS,
+  );
+  return { managerId, memberId, pmoId };
 }
 
 // Map a legacy TeamRole enum value onto the team's system-role id.
