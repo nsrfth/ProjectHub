@@ -156,10 +156,20 @@ describe('activity log', () => {
       method: 'PATCH',
       url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${s.taskId}`,
       headers: { authorization: `Bearer ${s.token}` },
-      payload: { status: 'DONE' },
+      // v2.5.58: transitions into DONE require a statusComment, which is
+      // persisted as a comment + a comment.added activity row in the SAME
+      // transaction as task.status_changed (status_changed logged first).
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     const activity = await listActivity(s.token, s.teamId, s.projectId, s.taskId);
-    expect(activity[0].action).toBe('task.status_changed');
+    // The two rows from the DONE transition are the newest entries. They share
+    // a transaction, so don't depend on their relative sub-millisecond order —
+    // assert the newest pair as a set and task.created strictly oldest.
+    expect(activity).toHaveLength(3);
+    expect(activity.slice(0, 2).map((a) => a.action).sort()).toEqual([
+      'comment.added',
+      'task.status_changed',
+    ]);
     expect(activity[activity.length - 1].action).toBe('task.created');
   });
 

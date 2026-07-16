@@ -97,7 +97,11 @@ async function createTask(
       method: 'PATCH',
       url: `/api/teams/${teamId}/projects/${projectId}/tasks/${id}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { status: opts.status },
+      // v2.5.58: transitions into DONE require a statusComment.
+      payload:
+        opts.status === 'DONE'
+          ? { status: opts.status, statusComment: 'done (test)' }
+          : { status: opts.status },
     });
   }
   return id;

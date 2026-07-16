@@ -59,7 +59,10 @@ function listDeps(token: string, teamId: string, projectId: string, taskId: stri
   return app.inject({ method: 'GET', url: `/api/teams/${teamId}/projects/${projectId}/tasks/${taskId}/dependencies`, headers: H(token) });
 }
 function setStatus(token: string, teamId: string, projectId: string, taskId: string, status: string) {
-  return app.inject({ method: 'PATCH', url: `/api/teams/${teamId}/projects/${projectId}/tasks/${taskId}`, headers: H(token), payload: { status } });
+  // v2.5.58: transitions into DONE require a statusComment. Harmless on the
+  // 403 DEPENDENCY_BLOCKED assertions too — the dependency guard runs first.
+  const payload = status === 'DONE' ? { status, statusComment: 'done (test)' } : { status };
+  return app.inject({ method: 'PATCH', url: `/api/teams/${teamId}/projects/${projectId}/tasks/${taskId}`, headers: H(token), payload });
 }
 async function setEnforcement(value: 'off' | 'warn' | 'block', userId: string): Promise<void> {
   await prisma.instanceSetting.upsert({

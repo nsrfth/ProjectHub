@@ -237,7 +237,7 @@ describe('Task dependencies', () => {
       method: 'PATCH',
       url: `/api/teams/${teamId}/projects/${projectId}/tasks/${blocker}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     expect(finishBlocker.statusCode).toBe(200);
 
@@ -279,7 +279,7 @@ describe('Task dependencies', () => {
       method: 'PATCH',
       url: `/api/teams/${teamId}/projects/${projectId}/tasks/${blocked}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     expect(res.statusCode).toBe(200);
   });
@@ -316,7 +316,7 @@ describe('Task dependencies', () => {
       method: 'PATCH',
       url: `/api/teams/${teamId}/projects/${projectId}/tasks/${blocker}`,
       headers: { authorization: `Bearer ${a.token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     expect(done.statusCode).toBe(200);
 
@@ -355,7 +355,7 @@ describe('Task dependencies', () => {
       method: 'PATCH',
       url: `/api/teams/${teamId}/projects/${projectId}/tasks/${blocker1}`,
       headers: { authorization: `Bearer ${a.token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     const unblockBefore = await prisma.notification.findFirst({
       where: { userId: b.userId, type: 'TASK_UNBLOCKED' },
@@ -367,7 +367,7 @@ describe('Task dependencies', () => {
       method: 'PATCH',
       url: `/api/teams/${teamId}/projects/${projectId}/tasks/${blocker2}`,
       headers: { authorization: `Bearer ${a.token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     const unblockAfter = await prisma.notification.findFirst({
       where: { userId: b.userId, type: 'TASK_UNBLOCKED' },

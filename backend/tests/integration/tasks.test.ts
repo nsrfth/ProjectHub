@@ -306,7 +306,8 @@ describe('task completedAt field', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { status: 'DONE' },
+      // v2.5.58: transitions into DONE require a statusComment.
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     expect(moved.json().completedAt).toBeTypeOf('string');
   });
@@ -328,7 +329,7 @@ describe('task completedAt field', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { status: 'DONE', completedAt: backdate },
+      payload: { status: 'DONE', completedAt: backdate, statusComment: 'done (test)' },
     });
     expect(res.json().completedAt).toBe(backdate);
   });
@@ -358,7 +359,7 @@ describe('task completedAt field', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     // completedAt was non-null prior to this transition, so the auto-fill is skipped.
     expect(back.json().completedAt).toBe(backdate);
@@ -509,7 +510,7 @@ describe('PATCH /api/teams/:teamId/projects/:projectId/tasks/:taskId', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}/tasks/${todoTask.id}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     expect(moved.statusCode).toBe(200);
     expect(moved.json().status).toBe('DONE');

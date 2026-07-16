@@ -111,7 +111,9 @@ describe('Feature — task approval workflow (v1.87)', () => {
 
   it('a non-finalizer moving the task to DONE routes it to PENDING_APPROVAL (no completedAt)', async () => {
     const s = await setup();
-    const res = await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE' });
+    // v2.5.58: requesting DONE requires a statusComment (captured at claim
+    // time even though the task lands in PENDING_APPROVAL).
+    const res = await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE', statusComment: 'done (test)' });
     expect(res.statusCode).toBe(200);
     expect(res.json().status).toBe('PENDING_APPROVAL');
     expect(res.json().completedAt).toBeNull();
@@ -119,7 +121,7 @@ describe('Feature — task approval workflow (v1.87)', () => {
 
   it('the approver APPROVES a pending task → DONE with completedAt', async () => {
     const s = await setup();
-    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE' });
+    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE', statusComment: 'done (test)' });
     const res = await approve(s.approverToken, s.teamId, s.projectId, s.taskId);
     expect(res.statusCode).toBe(200);
     expect(res.json().status).toBe('DONE');
@@ -128,7 +130,7 @@ describe('Feature — task approval workflow (v1.87)', () => {
 
   it('the approver REJECTS a pending task (reason required) → IN_PROGRESS', async () => {
     const s = await setup();
-    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE' });
+    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE', statusComment: 'done (test)' });
     const res = await reject(s.approverToken, s.teamId, s.projectId, s.taskId, { reason: 'Needs more work' });
     expect(res.statusCode).toBe(200);
     expect(res.json().status).toBe('IN_PROGRESS');
@@ -137,14 +139,14 @@ describe('Feature — task approval workflow (v1.87)', () => {
 
   it('NEGATIVE: rejecting without a reason is 400', async () => {
     const s = await setup();
-    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE' });
+    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE', statusComment: 'done (test)' });
     expect((await reject(s.approverToken, s.teamId, s.projectId, s.taskId, { reason: '' })).statusCode).toBe(400);
     expect((await reject(s.approverToken, s.teamId, s.projectId, s.taskId, {})).statusCode).toBe(400);
   });
 
   it('NEGATIVE: a non-finalizer with project access cannot approve (403)', async () => {
     const s = await setup();
-    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE' });
+    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE', statusComment: 'done (test)' });
     // The owner has WRITE access (owns the project) but is not approver/manager/admin.
     const res = await approve(s.ownerToken, s.teamId, s.projectId, s.taskId);
     expect(res.statusCode).toBe(403);
@@ -158,7 +160,7 @@ describe('Feature — task approval workflow (v1.87)', () => {
 
   it('BYPASS: a team MANAGER moving the task to DONE completes it directly', async () => {
     const s = await setup();
-    const res = await patchTask(s.managerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE' });
+    const res = await patchTask(s.managerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE', statusComment: 'done (test)' });
     expect(res.statusCode).toBe(200);
     expect(res.json().status).toBe('DONE');
     expect(res.json().completedAt).not.toBeNull();
@@ -166,7 +168,7 @@ describe('Feature — task approval workflow (v1.87)', () => {
 
   it('NEGATIVE: a user from another team cannot touch / approve this task', async () => {
     const s = await setup();
-    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE' });
+    await patchTask(s.ownerToken, s.teamId, s.projectId, s.taskId, { status: 'DONE', statusComment: 'done (test)' });
     expect((await approve(s.crossToken, s.teamId, s.projectId, s.taskId)).statusCode).toBe(404);
     expect((await patchTask(s.crossToken, s.teamId, s.projectId, s.taskId, { status: 'TODO' })).statusCode).toBe(404);
   });

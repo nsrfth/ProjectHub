@@ -87,8 +87,8 @@ describe('GET project status report', () => {
     const t3 = await createTask(admin.token, team.id, project.id, 'wip-overdue');
     await createTask(admin.token, team.id, project.id, 'todo');
     // 2 done (one with a past due — must NOT count as overdue), 1 in-progress overdue, 1 todo.
-    await patchTask(admin.token, team.id, project.id, t1.id, { status: 'DONE', dueDate: yesterdayIso() });
-    await patchTask(admin.token, team.id, project.id, t2.id, { status: 'DONE' });
+    await patchTask(admin.token, team.id, project.id, t1.id, { status: 'DONE', dueDate: yesterdayIso(), statusComment: 'done (test)' });
+    await patchTask(admin.token, team.id, project.id, t2.id, { status: 'DONE', statusComment: 'done (test)' });
     await patchTask(admin.token, team.id, project.id, t3.id, { status: 'IN_PROGRESS', dueDate: yesterdayIso() });
 
     const res = await getStatus(admin.token, team.id, project.id);

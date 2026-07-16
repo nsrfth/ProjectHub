@@ -141,7 +141,7 @@ describe('v1.60 Automation rules', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}`,
       headers: { authorization: `Bearer ${mgr.token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
 
     const done = await inject({
@@ -176,7 +176,7 @@ describe('v1.60 Automation rules', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}`,
       headers: { authorization: `Bearer ${mgr.token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     let runs = await prisma.automationRun.findMany({ where: { ruleId: allId } });
     expect(runs.some((r) => r.status === 'SUCCESS')).toBe(false);
@@ -194,7 +194,7 @@ describe('v1.60 Automation rules', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}`,
       headers: { authorization: `Bearer ${mgr.token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     runs = await prisma.automationRun.findMany({ where: { ruleId: allId, status: 'SUCCESS' } });
     expect(runs.length).toBe(0);
@@ -401,7 +401,7 @@ describe('v1.60 Automation rules', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}`,
       headers: { authorization: `Bearer ${mgr.token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     expect(await prisma.automationRun.count({ where: { ruleId } })).toBe(0);
 
@@ -421,7 +421,7 @@ describe('v1.60 Automation rules', () => {
       method: 'PATCH',
       url: `/api/teams/${team.id}/projects/${project.id}/tasks/${task.id}`,
       headers: { authorization: `Bearer ${mgr.token}` },
-      payload: { status: 'DONE' },
+      payload: { status: 'DONE', statusComment: 'done (test)' },
     });
     const get = await inject({
       method: 'GET',
