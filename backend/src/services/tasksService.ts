@@ -325,6 +325,8 @@ function statusToPercent(status: TaskStatus): number {
   const map: Record<TaskStatus, number> = {
     TODO: 0,
     IN_PROGRESS: 50,
+    // v2.5.58: a held task keeps mid-flight progress — same as IN_PROGRESS.
+    ON_HOLD: 50,
     REVIEW: 75,
     PENDING_APPROVAL: 90,
     DONE: 100,
