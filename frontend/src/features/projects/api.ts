@@ -36,6 +36,12 @@ export interface Project {
   // admin in Settings → Correspondence module; the SPA gates the nav entry +
   // routes on it. Optional on the wire for forward-compat with older responses.
   correspondenceEnabled?: boolean;
+  // v2.5.58: plan freeze — all plan dates locked while true. Optional on the
+  // wire for forward-compat with older responses.
+  datesFrozen?: boolean;
+  // v2.5.58: cross-team list only (GET /projects) — any live task past TODO
+  // or with actualStart. Feeds the year timeline's "late to start" red gap.
+  hasStarted?: boolean;
   // v2.5.52: attached portfolio org unit (company). Null when unattached;
   // optional on the wire for forward-compat with older responses.
   orgUnit?: { id: string; name: string } | null;
@@ -117,6 +123,8 @@ export async function updateProject(
     startDate?: string | null;
     endDate?: string | null;
     labelIds?: string[];
+    // v2.5.58: plan-freeze toggle (owner/global-ADMIN only, server-gated).
+    datesFrozen?: boolean;
   },
 ): Promise<Project> {
   return normalizeProject(
@@ -212,4 +220,34 @@ export async function updateProjectHealth(
   return normalizeProject(
     (await api.put<Project>(`/teams/${teamId}/projects/${projectId}/health`, input)).data,
   );
+}
+
+// v2.5.58: whole-team project sharing (global ADMIN only). PUT is replace-set.
+export interface ProjectTeamShare {
+  teamId: string;
+  teamName: string;
+  teamSlug: string;
+  level: 'FULL' | 'READONLY';
+  createdAt: string;
+}
+
+export async function listTeamShares(
+  teamId: string,
+  projectId: string,
+): Promise<ProjectTeamShare[]> {
+  return (
+    await api.get<ProjectTeamShare[]>(`/teams/${teamId}/projects/${projectId}/team-shares`)
+  ).data;
+}
+
+export async function setTeamShares(
+  teamId: string,
+  projectId: string,
+  shares: Array<{ teamId: string; level: 'FULL' | 'READONLY' }>,
+): Promise<ProjectTeamShare[]> {
+  return (
+    await api.put<ProjectTeamShare[]>(`/teams/${teamId}/projects/${projectId}/team-shares`, {
+      shares,
+    })
+  ).data;
 }

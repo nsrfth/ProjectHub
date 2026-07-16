@@ -79,6 +79,10 @@ export const updateProjectBody = z
     startDate: calendarDateField,
     endDate: calendarDateField,
     labelIds: z.array(z.string()).optional(),
+    // v2.5.58: plan-freeze toggle. Owner/global-ADMIN only (non-name field);
+    // while true, all plan dates in the project are locked (403
+    // PROJECT_DATES_FROZEN).
+    datesFrozen: z.boolean().optional(),
   })
   .superRefine(refineCalendarDateRange)
   .refine(
@@ -93,7 +97,8 @@ export const updateProjectBody = z
       v.budgetCurrency !== undefined ||
       v.startDate !== undefined ||
       v.endDate !== undefined ||
-      v.labelIds !== undefined,
+      v.labelIds !== undefined ||
+      v.datesFrozen !== undefined,
     'Provide at least one field to update',
   );
 
@@ -157,6 +162,8 @@ export const projectResponse = z.object({
   // v1.90: whether the optional correspondence (دبیرخانه) module is enabled
   // for this project (admin-controlled). Lets the SPA gate the nav entry.
   correspondenceEnabled: z.boolean(),
+  // v2.5.58: plan freeze flag (see lib/projectFreeze.ts).
+  datesFrozen: z.boolean(),
   // v1.91 (PMIS R1): project health (RAG) for portfolio roll-up.
   ragStatus: ragStatusEnum,
   ragReason: z.string().nullable(),
@@ -174,9 +181,34 @@ export const updateProjectHealthBody = z.object({
   ragReason: z.string().max(500).trim().nullable().optional(),
 });
 
+// v2.5.58: whole-team shares (admin-managed). PUT is replace-set, like
+// group project grants and edit delegates.
+export const teamShareLevelEnum = z.enum(['FULL', 'READONLY']);
+export const setTeamSharesBody = z.object({
+  shares: z
+    .array(
+      z.object({
+        teamId: z.string().min(1),
+        level: teamShareLevelEnum,
+      }),
+    )
+    .max(100),
+});
+export const teamShareResponse = z.object({
+  teamId: z.string(),
+  teamName: z.string(),
+  teamSlug: z.string(),
+  level: teamShareLevelEnum,
+  createdAt: z.string(),
+});
+export const teamShareListResponse = z.array(teamShareResponse);
+
 export const projectCrossTeamResponse = projectResponse.extend({
   teamName: z.string(),
   teamSlug: z.string(),
+  // v2.5.58: any live task past TODO (or with actualStart) — feeds the
+  // year-timeline's "not started yet" red gap.
+  hasStarted: z.boolean(),
 });
 
 export type CreateProjectBody = z.infer<typeof createProjectBody>;

@@ -17,8 +17,10 @@ import {
 import {
   loadCollapsedBuckets,
   loadProjectsViewMode,
+  loadProjectsSelectedTeam,
   saveCollapsedBuckets,
   saveProjectsViewMode,
+  saveProjectsSelectedTeam,
   type ProjectsViewMode,
 } from '@/features/projectBuckets/storage';
 import CreateProjectForm from '@/features/projects/CreateProjectForm';
@@ -53,7 +55,11 @@ export default function ProjectsPage(): JSX.Element {
   const isAdmin = user?.globalRole === 'ADMIN';
 
   const [viewMode, setViewMode] = useState<ProjectsViewMode>(() => loadProjectsViewMode());
-  const [filters, setFilters] = useState<ProjectFilterState>({ owner: 'all' });
+  // v2.5.58: the team filter survives navigation/reload (projects.selectedTeam).
+  const [filters, setFilters] = useState<ProjectFilterState>(() => ({
+    owner: 'all',
+    teamId: loadProjectsSelectedTeam(),
+  }));
   const [createOpen, setCreateOpen] = useState(false);
   const [bucketModal, setBucketModal] = useState<
     { mode: 'create' } | { mode: 'edit'; bucket: bucketsApi.ProjectBucket } | null
@@ -86,6 +92,19 @@ export default function ProjectsPage(): JSX.Element {
     queryKey: ['projects', 'all'],
     queryFn: () => projectsApi.listAllProjects(),
   });
+
+  // Persist the team filter; drop a stored team that no longer appears in the
+  // visible project list (left team / project moved) so the page never looks
+  // stuck on an empty filter after membership changes.
+  useEffect(() => {
+    saveProjectsSelectedTeam(filters.teamId);
+  }, [filters.teamId]);
+  useEffect(() => {
+    if (isLoading || !filters.teamId) return;
+    if (!projects.some((p) => p.teamId === filters.teamId)) {
+      setFilters((f) => ({ ...f, teamId: undefined }));
+    }
+  }, [isLoading, projects, filters.teamId]);
 
   const { data: buckets = [], isLoading: bucketsLoading } = useQuery({
     queryKey: ['me', 'project-buckets'],
@@ -216,6 +235,8 @@ export default function ProjectsPage(): JSX.Element {
             startDate: values.startDate,
             endDate: values.endDate,
             labelIds: values.labelIds,
+            // v2.5.58: plan-freeze toggle (owner/admin only, server-gated).
+            datesFrozen: values.datesFrozen,
           };
       return projectsApi.updateProject(args.teamId, args.projectId, payload);
     },
@@ -406,6 +427,12 @@ export default function ProjectsPage(): JSX.Element {
               {exportLoading ? t('projects.export.generating') : t('projects.export.button')}
             </button>
           )}
+          <Link
+            to="/projects/timeline"
+            className="inline-flex items-center gap-1 rounded-md border border-border text-sm font-medium px-3 py-1.5"
+          >
+            {t('projects.timeline.link')}
+          </Link>
         </div>
       </div>
 

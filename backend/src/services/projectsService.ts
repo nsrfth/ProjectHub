@@ -12,6 +12,7 @@ import {
   resolveProjectAccess,
 } from '../lib/projectAccess.js';
 import { getDelegateCapabilities } from '../lib/delegateCaps.js';
+import { logActivity } from './activityLogger.js';
 import { listMembershipPermissions } from '../middleware/requirePermission.js';
 import { ProfilesService } from './profilesService.js';
 // Project visibility (additive):
@@ -43,6 +44,8 @@ export interface ProjectView {
   endDate: string | null;
   labels: ProjectLabelView[];
   correspondenceEnabled: boolean;
+  // v2.5.58: plan freeze — see lib/projectFreeze.ts.
+  datesFrozen: boolean;
   // v1.91 (PMIS R1): project health (RAG) for portfolio roll-up.
   ragStatus: RagStatus;
   ragReason: string | null;
@@ -98,6 +101,7 @@ function toView(p: ProjectRow): ProjectView {
     endDate: calendarDateToIso(p.endDate),
     labels: mapLabels(p),
     correspondenceEnabled: p.correspondenceEnabled,
+    datesFrozen: p.datesFrozen,
     ragStatus: p.ragStatus,
     ragReason: p.ragReason,
     // healthUpdatedAt is a true instant (UTC), unlike the zone-neutral
@@ -197,6 +201,7 @@ function updateTouchesNonNameFields(input: {
   startDate?: string | null;
   endDate?: string | null;
   labelIds?: string[];
+  datesFrozen?: boolean;
 }): boolean {
   return (
     input.code !== undefined
@@ -211,6 +216,8 @@ function updateTouchesNonNameFields(input: {
     || input.startDate !== undefined
     || input.endDate !== undefined
     || input.labelIds !== undefined
+    // v2.5.58: the plan-freeze toggle is owner/admin-only, like dates.
+    || input.datesFrozen !== undefined
   );
 }
 
@@ -363,11 +370,14 @@ export class ProjectsService {
       startDate?: string | null;
       endDate?: string | null;
       labelIds?: string[];
+      // v2.5.58: plan freeze toggle — only the owner/admin full-edit path
+      // reaches it (counted as a non-name field below).
+      datesFrozen?: boolean;
     },
   ): Promise<ProjectView> {
     const p = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { teamId: true, ownerId: true, startDate: true, endDate: true },
+      select: { teamId: true, ownerId: true, startDate: true, endDate: true, datesFrozen: true },
     });
     if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
 
@@ -407,6 +417,14 @@ export class ProjectsService {
     const nextEnd = endPatch !== undefined ? endPatch : p.endDate;
     assertDateRange(nextStart, nextEnd);
 
+    // v2.5.58: plan freeze. An unfreeze in the SAME request lifts the gate
+    // (so the edit modal can unfreeze + fix dates in one save); a freeze in
+    // the same request locks it immediately.
+    const effectiveFrozen = input.datesFrozen ?? p.datesFrozen;
+    if (effectiveFrozen && (startPatch !== undefined || endPatch !== undefined)) {
+      throw Errors.datesFrozen();
+    }
+
     try {
       const updated = await prisma.project.update({
         where: { id: projectId },
@@ -421,9 +439,18 @@ export class ProjectsService {
           ...(input.budgetCurrency !== undefined && { budgetCurrency: input.budgetCurrency }),
           ...(startPatch !== undefined && { startDate: startPatch }),
           ...(endPatch !== undefined && { endDate: endPatch }),
+          ...(input.datesFrozen !== undefined && { datesFrozen: input.datesFrozen }),
         },
         include: projectInclude,
       });
+      if (input.datesFrozen !== undefined && input.datesFrozen !== p.datesFrozen) {
+        await logActivity(prisma, {
+          teamId,
+          actorId: callerId,
+          action: input.datesFrozen ? 'project.dates_frozen' : 'project.dates_unfrozen',
+          meta: { projectId },
+        });
+      }
       if (input.labelIds !== undefined) {
         await syncProjectLabels(projectId, input.labelIds);
         const hydrated = await prisma.project.findUniqueOrThrow({
@@ -492,7 +519,7 @@ export class ProjectsService {
   async listAllVisible(
     callerUserId: string,
     callerGlobalRole: GlobalRole,
-  ): Promise<Array<ProjectView & { teamName: string; teamSlug: string }>> {
+  ): Promise<Array<ProjectView & { teamName: string; teamSlug: string; hasStarted: boolean }>> {
     const where = await projectListAllWhereForCaller(callerUserId, callerGlobalRole);
     const rows = await prisma.project.findMany({
       where,
@@ -502,11 +529,93 @@ export class ProjectsService {
         team: { select: { name: true, slug: true } },
       },
     });
+    // v2.5.58: "has this project actually started?" for the year-timeline
+    // page — one indexed groupBy instead of loading task rows. Started = any
+    // live task past TODO, or with a recorded actual start.
+    const startedGroups = rows.length
+      ? await prisma.task.groupBy({
+          by: ['projectId'],
+          where: {
+            projectId: { in: rows.map((p) => p.id) },
+            deletedAt: null,
+            OR: [{ status: { not: 'TODO' } }, { actualStart: { not: null } }],
+          },
+          _count: { _all: true },
+        })
+      : [];
+    const startedIds = new Set(startedGroups.map((g) => g.projectId));
     return rows.map((p) => ({
       ...toView(p),
       teamName: p.team.name,
       teamSlug: p.team.slug,
+      hasStarted: startedIds.has(p.id),
     }));
+  }
+
+  // v2.5.58: whole-team shares (ProjectTeamShare) — global-ADMIN managed.
+  // The route layer enforces the ADMIN gate; these methods validate shape.
+  async listTeamShares(
+    teamId: string,
+    projectId: string,
+  ): Promise<Array<{ teamId: string; teamName: string; teamSlug: string; level: 'FULL' | 'READONLY'; createdAt: Date }>> {
+    const p = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } });
+    if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
+    const rows = await prisma.projectTeamShare.findMany({
+      where: { projectId },
+      include: { team: { select: { name: true, slug: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => ({
+      teamId: r.teamId,
+      teamName: r.team.name,
+      teamSlug: r.team.slug,
+      level: r.level,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  async setTeamShares(
+    teamId: string,
+    projectId: string,
+    actorId: string,
+    shares: Array<{ teamId: string; level: 'FULL' | 'READONLY' }>,
+  ): Promise<Array<{ teamId: string; teamName: string; teamSlug: string; level: 'FULL' | 'READONLY'; createdAt: Date }>> {
+    const p = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } });
+    if (!p || p.teamId !== teamId) throw Errors.notFound('Project not found');
+
+    const guestIds = shares.map((s) => s.teamId);
+    if (new Set(guestIds).size !== guestIds.length) {
+      throw Errors.badRequest('Duplicate team in shares');
+    }
+    if (guestIds.includes(teamId)) {
+      throw Errors.badRequest('Cannot share a project with its own team');
+    }
+    if (guestIds.length > 0) {
+      const found = await prisma.team.count({ where: { id: { in: guestIds } } });
+      if (found !== guestIds.length) throw Errors.badRequest('Unknown team in shares');
+    }
+
+    // Replace-set in one tx, mirroring group grants / edit delegates.
+    await prisma.$transaction(async (tx) => {
+      await tx.projectTeamShare.deleteMany({ where: { projectId } });
+      if (shares.length > 0) {
+        await tx.projectTeamShare.createMany({
+          data: shares.map((s) => ({
+            projectId,
+            teamId: s.teamId,
+            level: s.level,
+            createdById: actorId,
+          })),
+        });
+      }
+      await logActivity(tx, {
+        teamId,
+        actorId,
+        action: 'project.team_shares_updated',
+        meta: { projectId, shares: shares.map((s) => ({ teamId: s.teamId, level: s.level })) },
+      });
+    });
+    return this.listTeamShares(teamId, projectId);
   }
 
   async assertCallerCanAccess(

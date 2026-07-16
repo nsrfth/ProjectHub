@@ -13,6 +13,7 @@ import ProjectFormFields, {
   type ProjectFormValues,
 } from '@/features/projects/ProjectFormFields';
 import ProjectDelegatesField from '@/features/projects/ProjectDelegatesField';
+import ProjectTeamSharesPanel from '@/features/projects/ProjectTeamSharesPanel';
 import ProjectProfilePanel from '@/features/projects/ProjectProfilePanel';
 import ProjectOrgUnitPanel from '@/features/projects/ProjectOrgUnitPanel';
 import ProjectCostPanel from '@/features/projects/ProjectCostPanel';
@@ -119,6 +120,10 @@ export default function ProjectEditModal({
             projectId={project.id}
             members={members}
           />
+        )}
+        {/* v2.5.58: whole-team shares — global ADMIN only. */}
+        {!nameOnly && user?.globalRole === 'ADMIN' && (
+          <ProjectTeamSharesPanel teamId={project.teamId} projectId={project.id} />
         )}
         {!nameOnly && (
           <ProjectProfilePanel

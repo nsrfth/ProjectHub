@@ -609,6 +609,7 @@ function Panel({
 const STATUS_COLORS: Record<string, string> = {
   TODO: '#94a3b8',
   IN_PROGRESS: '#f59e0b',
+  ON_HOLD: '#d97706',
   REVIEW: '#06b6d4',
   PENDING_APPROVAL: '#a855f7',
   DONE: '#10b981',
@@ -621,13 +622,14 @@ function StatusList({
   byStatus: {
     TODO: number;
     IN_PROGRESS: number;
+    ON_HOLD: number;
     REVIEW: number;
     PENDING_APPROVAL: number;
     DONE: number;
   };
   t: (k: string) => string;
 }): JSX.Element {
-  const order = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL', 'DONE'] as const;
+  const order = ['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL', 'DONE'] as const;
   const total = order.reduce((s, k) => s + byStatus[k], 0) || 1;
   return (
     <ul className="space-y-3">
@@ -938,7 +940,7 @@ function mergeSummaries(rows: SummaryReport[]): SummaryReport | undefined {
     doneLast7Days: 0,
     overdueCount: 0,
     openCount: 0,
-    byStatus: { TODO: 0, IN_PROGRESS: 0, REVIEW: 0, PENDING_APPROVAL: 0, DONE: 0 },
+    byStatus: { TODO: 0, IN_PROGRESS: 0, ON_HOLD: 0, REVIEW: 0, PENDING_APPROVAL: 0, DONE: 0 },
   };
   for (const s of rows) {
     merged.doneLast7Days += s.doneLast7Days;
@@ -946,6 +948,7 @@ function mergeSummaries(rows: SummaryReport[]): SummaryReport | undefined {
     merged.openCount += s.openCount;
     merged.byStatus.TODO += s.byStatus.TODO;
     merged.byStatus.IN_PROGRESS += s.byStatus.IN_PROGRESS;
+    merged.byStatus.ON_HOLD += s.byStatus.ON_HOLD;
     merged.byStatus.REVIEW += s.byStatus.REVIEW;
     merged.byStatus.PENDING_APPROVAL += s.byStatus.PENDING_APPROVAL;
     merged.byStatus.DONE += s.byStatus.DONE;

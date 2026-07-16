@@ -28,6 +28,10 @@ export const Errors = {
     new AppError(403, 'module_disabled', `The "${moduleKey}" module is not enabled for this project`, {
       moduleKey,
     }),
+  // v2.5.58: plan-date writes rejected while Project.datesFrozen is true.
+  // 403 (not 404): the project is visible; only its schedule is locked.
+  datesFrozen: () =>
+    new AppError(403, 'PROJECT_DATES_FROZEN', 'Project dates are frozen — unfreeze the project to edit its schedule'),
   internal: (msg = 'Internal server error') => new AppError(500, 'INTERNAL', msg),
   serviceUnavailable: (msg = 'Service temporarily unavailable') =>
     new AppError(503, 'SERVICE_UNAVAILABLE', msg),

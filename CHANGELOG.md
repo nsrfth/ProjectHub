@@ -13,6 +13,55 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.58] — 2026-07-17
+
+**Feature epic: multi-team sharing, Hold column with mandatory comments, plan freeze, persistent
+team filter, and an all-projects year timeline.**
+
+- **Whole-team project sharing (admin-managed).** New `ProjectTeamShare` model: a global ADMIN
+  shares a project with other teams at **Full** (write) or **Read-only** level from the project
+  edit modal. The project stays owned by its home team — `Project.teamId`, `@@unique([teamId,
+  code])`, and the `Task.teamId` denormalization are untouched; access flows through the home
+  team's URLs via a new rung in `resolveProjectAccess` (like group grants). Shared projects appear
+  in the guest team's project list and the cross-team list; guest members of Full-shared teams can
+  be task assignee/responsible/approver and see their tasks in *My Tasks*. Endpoints:
+  `GET/PUT /api/teams/:teamId/projects/:projectId/team-shares` (replace-set, ADMIN-only).
+  Note: the *My Tasks* per-team filter matches the task's home team, and cross-team
+  reports/dashboards keep home-team scoping in this release.
+- **Hold column + mandatory status comments.** New `ON_HOLD` task status (board order: To do → In
+  progress → **On hold** → Review → Pending approval → Done). Moving a task **into On hold**
+  requires a hold-reason comment; moving **into Done** requires a completion-summary comment —
+  enforced server-side (400 `STATUS_COMMENT_REQUIRED`) on both PATCH and the drag-and-drop
+  reorder endpoint, with the comment stored as a **real task comment in the same transaction**
+  as the status change (visible in the comments feed, notifications + `comment.added` webhook
+  included). The board/list/grid/My-Tasks surfaces open a comment dialog on gated moves; cancel
+  leaves the task untouched. Exits from Hold, reopening Done, and the approve/reject decision
+  flow stay comment-free (approval carries its own audit); a require-approval task claimed Done
+  by a non-finalizer captures its completion comment at claim time. Automation `set_status`
+  rules stamp a standard note. `ON_HOLD` counts as an open status across reports, workload,
+  widgets, dashboards, and search.
+- **Project plan freeze.** New `Project.datesFrozen` flag (owner/global-ADMIN toggle in the edit
+  modal; ❄ chip on the projects list). While frozen, every **plan** date is locked with 403
+  `PROJECT_DATES_FROZEN`: project window, task start/due/planned/baseline dates (edit and
+  create), subtask dates, and recurrence spawning (templates pause and catch up after unfreeze).
+  Reality capture stays open: completing tasks (`completedAt` auto-fill and approval decisions),
+  actual start/end dates, status and progress. Unfreezing and fixing dates in one save is
+  allowed.
+- **Projects page remembers the team filter.** The team dropdown persists to
+  `projects.selectedTeam` (localStorage, Calendar/Reports pattern) and survives navigation and
+  reloads, with a stale-team fallback.
+- **All-projects year timeline** at `/projects/timeline` (linked from the Projects page): every
+  visible project on a single 12-month axis (reusing the Gantt year scale, theme-token SVG,
+  Shamsi-aware labels), planned start→end bars, today line, year navigation, team/status
+  filters, and an unscheduled list. **If a project hasn't started by its planned start date, the
+  gap from planned start to today renders in red** — `GET /api/projects` now returns
+  `hasStarted` (any live task past To-do or with an actual start), computed with one indexed
+  groupBy.
+- Migrations: `task_on_hold_status` (enum value), `project_dates_frozen` (column),
+  `project_team_shares` (table) — all additive/idempotent. New integration suites:
+  `statusCommentHold.test.ts`, `teamSharesFreeze.test.ts`; new frontend logic tests:
+  `statusComment.test.ts`, `timelineLogic.test.ts`.
+
 ## [2.5.57] — 2026-07-17
 
 **UI/UX baseline redesign — design tokens, accessibility, and one button recipe.**

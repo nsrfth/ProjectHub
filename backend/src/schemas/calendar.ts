@@ -14,7 +14,7 @@ export const calendarQuery = z.object({
 export const calendarTaskResponse = z.object({
   id: z.string(),
   title: z.string(),
-  status: z.enum(['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL', 'DONE']),
+  status: z.enum(['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL', 'DONE']),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
   dueDate: z.string().nullable(),
   plannedDate: z.string().nullable(),

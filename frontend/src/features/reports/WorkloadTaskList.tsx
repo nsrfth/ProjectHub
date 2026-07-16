@@ -12,6 +12,7 @@ const PRIORITY_CLASS: Record<WorkloadDrillRow['priority'], string> = {
 const STATUS_LABEL: Record<WorkloadDrillRow['status'], string> = {
   TODO: 'To Do',
   IN_PROGRESS: 'In Progress',
+  ON_HOLD: 'On Hold',
   REVIEW: 'Review',
   PENDING_APPROVAL: 'Pending',
 };

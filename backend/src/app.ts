@@ -6,6 +6,7 @@ import { registerErrorHandler } from './middleware/errorHandler.js';
 import { authRoutes } from './routes/auth.js';
 import { teamsRoutes } from './routes/teams.js';
 import { projectsCrossTeamRoutes, projectsRoutes } from './routes/projects.js';
+import { projectTeamSharesRoutes } from './routes/projectTeamShares.js';
 import { ganttRoutes, scheduleVarianceRoutes } from './routes/gantt.js';
 import { projectStatusRoutes } from './routes/projectStatus.js';
 import { projectBaselinesRoutes } from './routes/projectBaselines.js';
@@ -151,6 +152,10 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     await api.register(projectsRoutes, { prefix: '/teams/:teamId/projects' });
     // v1.40: cross-team list — same service, no :teamId in the URL.
     await api.register(projectsCrossTeamRoutes, { prefix: '/projects' });
+    // v2.5.58: whole-team shares (global-ADMIN managed).
+    await api.register(projectTeamSharesRoutes, {
+      prefix: '/teams/:teamId/projects/:projectId/team-shares',
+    });
     // Tasks nest under projects for the same reason — and to keep the URL
     // self-describing about the parent chain.
     await api.register(tasksRoutes, { prefix: '/teams/:teamId/projects/:projectId/tasks' });

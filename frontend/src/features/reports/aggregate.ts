@@ -21,7 +21,7 @@ export function mergeSummaries(rows: SummaryReport[]): SummaryReport {
     doneLast7Days: 0,
     overdueCount: 0,
     openCount: 0,
-    byStatus: { TODO: 0, IN_PROGRESS: 0, REVIEW: 0, PENDING_APPROVAL: 0, DONE: 0 },
+    byStatus: { TODO: 0, IN_PROGRESS: 0, ON_HOLD: 0, REVIEW: 0, PENDING_APPROVAL: 0, DONE: 0 },
   };
   for (const s of rows) {
     merged.doneLast7Days += s.doneLast7Days;
@@ -29,6 +29,7 @@ export function mergeSummaries(rows: SummaryReport[]): SummaryReport {
     merged.openCount += s.openCount;
     merged.byStatus.TODO += s.byStatus.TODO;
     merged.byStatus.IN_PROGRESS += s.byStatus.IN_PROGRESS;
+    merged.byStatus.ON_HOLD += s.byStatus.ON_HOLD;
     merged.byStatus.REVIEW += s.byStatus.REVIEW;
     merged.byStatus.PENDING_APPROVAL += s.byStatus.PENDING_APPROVAL;
     merged.byStatus.DONE += s.byStatus.DONE;
@@ -66,6 +67,7 @@ export function mergeWorkload(reports: { items: WorkloadRow[] }[]): { items: Wor
         ex.total += row.total;
         ex.byStatus.TODO += row.byStatus.TODO;
         ex.byStatus.IN_PROGRESS += row.byStatus.IN_PROGRESS;
+        ex.byStatus.ON_HOLD += row.byStatus.ON_HOLD;
         ex.byStatus.REVIEW += row.byStatus.REVIEW;
         ex.byStatus.PENDING_APPROVAL += row.byStatus.PENDING_APPROVAL;
         if (!ex.assigneeName && row.assigneeName) ex.assigneeName = row.assigneeName;

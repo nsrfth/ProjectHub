@@ -17,6 +17,7 @@ import {
 const STATUS_LABEL: Record<TaskStatus, string> = {
   TODO: 'To do',
   IN_PROGRESS: 'In progress',
+  ON_HOLD: 'On hold',
   REVIEW: 'Review',
   PENDING_APPROVAL: 'Pending approval',
   DONE: 'Done',
@@ -349,7 +350,7 @@ function renderCell(
           className="rounded px-1 py-0.5 text-xs border dark:bg-slate-700"
           onClick={(e) => e.stopPropagation()}
         >
-          {(['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'] as TaskStatus[]).map((s) => (
+          {(['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'DONE'] as TaskStatus[]).map((s) => (
             <option key={s} value={s}>
               {STATUS_LABEL[s]}
             </option>

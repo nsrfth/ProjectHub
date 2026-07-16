@@ -60,6 +60,43 @@ async function callerHasReadAll(
   return perms.has('*') || perms.has('project.read_all');
 }
 
+// v2.5.58: whole-team project sharing (ProjectTeamShare). A share mounts the
+// project into a guest team: EVERY member of that team gets READ (READONLY) or
+// WRITE (FULL). Access flows through the project's HOME-team URLs — like group
+// grants — so Task.teamId denormalization and all task services stay untouched.
+async function teamShareAccessForProject(
+  userId: string,
+  projectId: string,
+): Promise<'NONE' | 'READ' | 'WRITE'> {
+  const shares = await prisma.projectTeamShare.findMany({
+    where: { projectId },
+    select: { teamId: true, level: true },
+  });
+  if (!shares.length) return 'NONE';
+  const memberships = await prisma.teamMembership.findMany({
+    where: { userId, teamId: { in: shares.map((s) => s.teamId) } },
+    select: { teamId: true },
+  });
+  const memberTeamIds = new Set(memberships.map((m) => m.teamId));
+  let access: 'NONE' | 'READ' | 'WRITE' = 'NONE';
+  for (const s of shares) {
+    if (!memberTeamIds.has(s.teamId)) continue;
+    if (s.level === 'FULL') return 'WRITE';
+    access = 'READ';
+  }
+  return access;
+}
+
+/** Project ids shared (ProjectTeamShare) to any of the given teams. */
+export async function teamSharedProjectIds(teamIds: string[]): Promise<string[]> {
+  if (!teamIds.length) return [];
+  const rows = await prisma.projectTeamShare.findMany({
+    where: { teamId: { in: teamIds } },
+    select: { projectId: true },
+  });
+  return [...new Set(rows.map((r) => r.projectId))];
+}
+
 async function groupAccessForProject(
   userId: string,
   projectId: string,
@@ -176,6 +213,11 @@ export async function resolveProjectAccess(
   const groupAccess = await groupAccessForProject(userId, projectId, teamId);
   access = maxAccess(access, groupAccess);
 
+  // v2.5.58: whole-team shares — a member of any guest team this project is
+  // shared with gets FULL=WRITE / READONLY=READ, in both scopes.
+  const shareAccess = await teamShareAccessForProject(userId, projectId);
+  access = maxAccess(access, shareAccess);
+
   return access;
 }
 
@@ -251,6 +293,25 @@ export async function listEligibleTaskResponsibleCandidates(
     }
   }
 
+  // v2.5.58: members of FULL-shared guest teams can hold task roles too
+  // (READONLY teams stay read-only, so their members are not offered).
+  const sharedMembers = await prisma.teamMembership.findMany({
+    where: {
+      user: { isSystemUser: false },
+      team: { projectShares: { some: { projectId, level: 'FULL' } } },
+    },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
+  for (const sm of sharedMembers) {
+    if (!byUserId.has(sm.userId)) {
+      byUserId.set(sm.userId, {
+        userId: sm.user.id,
+        name: sm.user.name,
+        email: sm.user.email,
+      });
+    }
+  }
+
   return [...byUserId.values()].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
   );
@@ -277,7 +338,17 @@ export async function isUserEligibleTaskResponsible(
       },
     },
   });
-  return !!groupMember;
+  if (groupMember) return true;
+
+  // v2.5.58: member of a FULL-shared guest team.
+  const sharedMember = await prisma.teamMembership.findFirst({
+    where: {
+      userId,
+      user: { isSystemUser: false },
+      team: { projectShares: { some: { projectId, level: 'FULL' } } },
+    },
+  });
+  return !!sharedMember;
 }
 
 export async function assertCanWriteProject(
@@ -297,20 +368,30 @@ export async function projectListWhereForCaller(
   userId: string,
   globalRole: GlobalRole,
 ): Promise<Prisma.ProjectWhereInput> {
-  if (globalRole === 'ADMIN') return { teamId };
-  if (await callerHasProjectEdit(teamId, userId, globalRole)) return { teamId };
+  // v2.5.58: projects shared TO this team appear in its list for every team
+  // member (that's the whole point of a whole-team share). The caller already
+  // passed requireTeamRole for `teamId`, so membership is established.
+  const sharedClause: Prisma.ProjectWhereInput = { teamShares: { some: { teamId } } };
+
+  if (globalRole === 'ADMIN') return { OR: [{ teamId }, sharedClause] };
+  if (await callerHasProjectEdit(teamId, userId, globalRole)) return { OR: [{ teamId }, sharedClause] };
   // v1.79: a project.write_all holder can write to every team project, so it
   // must also see every team project in the list (independent of project.edit).
-  if (await callerHasWriteAll(teamId, userId, globalRole)) return { teamId };
+  if (await callerHasWriteAll(teamId, userId, globalRole)) return { OR: [{ teamId }, sharedClause] };
   // v2.5.54: a project.read_all holder (PMO) sees every team project read-only.
-  if (await callerHasReadAll(teamId, userId, globalRole)) return { teamId };
+  if (await callerHasReadAll(teamId, userId, globalRole)) return { OR: [{ teamId }, sharedClause] };
 
   const groupIds = await groupGrantedProjectIdsInTeam(teamId, userId);
   return {
-    teamId,
     OR: [
-      { ownerId: userId },
-      ...(groupIds.length ? [{ id: { in: groupIds } }] : []),
+      {
+        teamId,
+        OR: [
+          { ownerId: userId },
+          ...(groupIds.length ? [{ id: { in: groupIds } }] : []),
+        ],
+      },
+      sharedClause,
     ],
   };
 }
@@ -348,5 +429,9 @@ export async function projectListAllWhereForCaller(
   ];
   if (editTeamIds.length) orClauses.push({ teamId: { in: editTeamIds } });
   if (groupIds.length) orClauses.push({ id: { in: groupIds } });
+  // v2.5.58: whole-team shares — projects shared to any of the caller's teams.
+  if (memberTeamIds.length) {
+    orClauses.push({ teamShares: { some: { teamId: { in: memberTeamIds } } } });
+  }
   return { OR: orClauses };
 }

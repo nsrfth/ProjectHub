@@ -21,6 +21,8 @@ export interface ProjectFormValues {
   startDate: string | null;
   endDate: string | null;
   labelIds: string[];
+  // v2.5.58: plan freeze — locks all plan dates project-wide (server-enforced).
+  datesFrozen: boolean;
 }
 
 interface ProjectFormFieldsProps {
@@ -50,6 +52,7 @@ export function projectFormValuesFromProject(p: {
   startDate: string | null;
   endDate: string | null;
   labels?: Array<{ id: string }>;
+  datesFrozen?: boolean;
 }): ProjectFormValues {
   return {
     name: p.name,
@@ -63,6 +66,7 @@ export function projectFormValuesFromProject(p: {
     startDate: p.startDate,
     endDate: p.endDate,
     labelIds: p.labels?.map((l) => l.id) ?? [],
+    datesFrozen: p.datesFrozen ?? false,
   };
 }
 
@@ -155,7 +159,7 @@ export default function ProjectFormFields({
           <ShamsiDatePicker
             value={values.startDate}
             onChange={(v) => onChange({ startDate: v })}
-            disabled={locked}
+            disabled={locked || values.datesFrozen}
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
@@ -163,7 +167,7 @@ export default function ProjectFormFields({
           <ShamsiDatePicker
             value={values.endDate}
             onChange={(v) => onChange({ endDate: v })}
-            disabled={locked}
+            disabled={locked || values.datesFrozen}
           />
         </label>
       </div>
@@ -171,6 +175,22 @@ export default function ProjectFormFields({
         <p className="text-xs text-danger" role="alert">
           {t('projects.dateRange.invalid')}
         </p>
+      )}
+      {/* v2.5.58: plan freeze. Owner/admin only — the server rejects the
+          toggle (and all plan-date writes while frozen) for everyone else. */}
+      {!locked && isOwnerOrAdmin && (
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={values.datesFrozen}
+            onChange={(e) => onChange({ datesFrozen: e.target.checked })}
+            className="mt-0.5"
+          />
+          <span className="flex flex-col">
+            <span>{t('projects.freeze.label')}</span>
+            <span className="text-xs text-text-muted">{t('projects.freeze.hint')}</span>
+          </span>
+        </label>
       )}
 
       {/* v1.86: reassignable owner — only shown in full-edit (owner/admin) mode. */}

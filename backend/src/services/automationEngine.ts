@@ -205,7 +205,12 @@ async function executeAction(
   switch (action.actionType) {
     case 'set_status': {
       const status = v?.status as TaskStatus;
-      await tasksSvc.update(teamId, projectId, task.id, actorId, 'MANAGER', 'ADMIN', { status });
+      // v2.5.58: transitions into ON_HOLD / DONE require a status comment;
+      // rules have no human to ask, so stamp a standard automation note.
+      await tasksSvc.update(teamId, projectId, task.id, actorId, 'MANAGER', 'ADMIN', {
+        status,
+        statusComment: `Status set to ${status} by an automation rule.`,
+      });
       return;
     }
     case 'set_priority': {

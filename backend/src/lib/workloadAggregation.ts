@@ -3,6 +3,7 @@ import type { Prisma, SubtaskStatus, TaskPriority, TaskStatus } from '@prisma/cl
 export const OPEN_WORKLOAD_STATUSES: TaskStatus[] = [
   'TODO',
   'IN_PROGRESS',
+  'ON_HOLD',
   'REVIEW',
   'PENDING_APPROVAL',
 ];
@@ -30,6 +31,7 @@ export interface WorkloadDueBucketCounts {
 export interface WorkloadOpenByStatus {
   TODO: number;
   IN_PROGRESS: number;
+  ON_HOLD: number;
   REVIEW: number;
   PENDING_APPROVAL: number;
 }
@@ -47,7 +49,7 @@ export function emptyDueBuckets(): WorkloadDueBucketCounts {
 }
 
 export function emptyOpenByStatus(): WorkloadOpenByStatus {
-  return { TODO: 0, IN_PROGRESS: 0, REVIEW: 0, PENDING_APPROVAL: 0 };
+  return { TODO: 0, IN_PROGRESS: 0, ON_HOLD: 0, REVIEW: 0, PENDING_APPROVAL: 0 };
 }
 
 export function getDueWindowBounds(now = new Date()) {
@@ -167,6 +169,7 @@ export function aggregateWorkloadList(tasks: WorkloadTaskSlice[]): WorkloadListR
     if (
       t.status === 'TODO' ||
       t.status === 'IN_PROGRESS' ||
+      t.status === 'ON_HOLD' ||
       t.status === 'REVIEW' ||
       t.status === 'PENDING_APPROVAL'
     ) {
@@ -199,6 +202,7 @@ export function aggregateWorkloadDetail(
     if (
       t.status === 'TODO' ||
       t.status === 'IN_PROGRESS' ||
+      t.status === 'ON_HOLD' ||
       t.status === 'REVIEW' ||
       t.status === 'PENDING_APPROVAL'
     ) {

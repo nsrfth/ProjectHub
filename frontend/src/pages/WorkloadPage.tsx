@@ -34,12 +34,13 @@ const BUCKET_COLORS: Record<(typeof BUCKET_KEYS)[number], string> = {
   no_due: '#64748b',
 };
 
-const STATUS_KEYS = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL'] as const;
+const STATUS_KEYS = ['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL'] as const;
 type OpenStatus = (typeof STATUS_KEYS)[number];
 
 const STATUS_COLORS: Record<OpenStatus, string> = {
   TODO: '#94a3b8',
   IN_PROGRESS: '#3b82f6',
+  ON_HOLD: '#d97706',
   REVIEW: '#f59e0b',
   PENDING_APPROVAL: '#a855f7',
 };
@@ -153,6 +154,7 @@ export default function WorkloadPage(): JSX.Element {
           m.weightedTotal += item.weightedTotal;
           m.openByStatus.TODO += item.openByStatus.TODO;
           m.openByStatus.IN_PROGRESS += item.openByStatus.IN_PROGRESS;
+          m.openByStatus.ON_HOLD += item.openByStatus.ON_HOLD;
           m.openByStatus.REVIEW += item.openByStatus.REVIEW;
           m.openByStatus.PENDING_APPROVAL += item.openByStatus.PENDING_APPROVAL;
           m.byDueBucket.overdue += item.byDueBucket.overdue;
@@ -222,6 +224,7 @@ export default function WorkloadPage(): JSX.Element {
         name: r.name ?? t('workload.unassigned'),
         TODO: r.openByStatus.TODO,
         IN_PROGRESS: r.openByStatus.IN_PROGRESS,
+        ON_HOLD: r.openByStatus.ON_HOLD,
         REVIEW: r.openByStatus.REVIEW,
         PENDING_APPROVAL: r.openByStatus.PENDING_APPROVAL,
       }));

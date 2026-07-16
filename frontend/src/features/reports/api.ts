@@ -23,7 +23,13 @@ export interface WorkloadRow {
   assigneeId: string | null;
   assigneeName: string | null;
   total: number;
-  byStatus: { TODO: number; IN_PROGRESS: number; REVIEW: number; PENDING_APPROVAL: number };
+  byStatus: {
+    TODO: number;
+    IN_PROGRESS: number;
+    ON_HOLD: number;
+    REVIEW: number;
+    PENDING_APPROVAL: number;
+  };
 }
 
 export async function fetchWorkload(teamId: string): Promise<{ items: WorkloadRow[] }> {
@@ -43,7 +49,13 @@ export interface WorkloadDueBucketCounts {
 export interface WorkloadDetailRow {
   userId: string | null;
   name: string | null;
-  openByStatus: { TODO: number; IN_PROGRESS: number; REVIEW: number; PENDING_APPROVAL: number };
+  openByStatus: {
+    TODO: number;
+    IN_PROGRESS: number;
+    ON_HOLD: number;
+    REVIEW: number;
+    PENDING_APPROVAL: number;
+  };
   byDueBucket: WorkloadDueBucketCounts;
   total: number;
   weightedTotal: number;
@@ -124,6 +136,7 @@ export interface SummaryReport {
   byStatus: {
     TODO: number;
     IN_PROGRESS: number;
+    ON_HOLD: number;
     REVIEW: number;
     PENDING_APPROVAL: number;
     DONE: number;
@@ -236,7 +249,7 @@ export interface WorkloadDrillRow {
   title: string;
   projectId: string;
   projectName: string;
-  status: 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'PENDING_APPROVAL';
+  status: 'TODO' | 'IN_PROGRESS' | 'ON_HOLD' | 'REVIEW' | 'PENDING_APPROVAL';
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   dueDate: string | null;
 }

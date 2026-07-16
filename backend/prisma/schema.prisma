@@ -44,6 +44,9 @@ enum RagStatus {
 enum TaskStatus {
   TODO
   IN_PROGRESS
+  // v2.5.58: parked/blocked. Entering ON_HOLD requires an explanatory comment
+  // (enforced in tasksService via statusCommentRequirement).
+  ON_HOLD
   REVIEW
   // v1.87: a task that requires approval lands here when "completed" (moved to
   // DONE) by a non-finalizer — it waits for the designated approver (or a
@@ -634,6 +637,8 @@ model Team {
   activities    Activity[]       @relation("TeamActivity")
   webhooks      Webhook[]
   userGroups    UserGroup[]
+  // v2.5.58: projects shared INTO this team (whole-team shares).
+  projectShares ProjectTeamShare[] @relation("ProjectSharesForTeam")
   customFields  CustomFieldDefinition[]
   automationRules AutomationRule[]
   dashboards    Dashboard[]
@@ -759,6 +764,11 @@ model Project {
   // v1.90: correspondence (دبیرخانه) module toggle — a global admin enables the
   // per-project letters register from Settings → Correspondence module.
   correspondenceEnabled Boolean @default(false)
+  // v2.5.58: freeze the project PLAN. While true, plan dates are locked for
+  // everyone (project start/end, task start/due/planned/baseline, subtask
+  // start/end, recurrence spawning); reality capture stays open (completedAt,
+  // actualStart/actualEnd, status, progress). Toggled by owner / global ADMIN.
+  datesFrozen Boolean @default(false)
   // v1.91 (PMIS R1 — neutral core): project health for portfolio roll-up.
   // ragStatus defaults GREEN (no backfill needed); ragReason is an optional
   // free-text note. healthUpdatedAt is stamped whenever the health is set so
@@ -797,6 +807,8 @@ model Project {
   accountable   User?         @relation("ProjectAccountable", fields: [accountableId], references: [id], onDelete: SetNull)
   tasks         Task[]
   groupGrants   ProjectGroupGrant[]
+  // v2.5.58: whole-team shares (guest teams this project is mounted into).
+  teamShares    ProjectTeamShare[]
   editDelegates ProjectEditDelegate[]
   intakeForms   IntakeForm[]
   labels        ProjectLabel[]
@@ -1126,6 +1138,25 @@ model ProjectGroupGrant {
 
   @@id([projectId, groupId])
   @@index([groupId])
+}
+
+// v2.5.58: whole-team project sharing. The project stays owned by its home
+// team (Project.teamId and the Task.teamId denormalization are untouched); a
+// share mounts it into a guest team — the project appears in that team's list
+// and EVERY member gets READONLY=READ or FULL=WRITE via resolveProjectAccess.
+// Managed by global ADMINs only (PUT /teams/:teamId/projects/:projectId/team-shares).
+model ProjectTeamShare {
+  projectId   String
+  teamId      String
+  level       GroupAccessLevel
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team    Team    @relation("ProjectSharesForTeam", fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, teamId])
+  @@index([teamId])
 }
 
 // v1.86: per-project "full-edit" delegation. The project owner (or a global

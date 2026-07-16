@@ -32,6 +32,7 @@ export const workloadRow = z.object({
   byStatus: z.object({
     TODO: z.number().int().nonnegative(),
     IN_PROGRESS: z.number().int().nonnegative(),
+    ON_HOLD: z.number().int().nonnegative(),
     REVIEW: z.number().int().nonnegative(),
   }),
 });
@@ -65,6 +66,7 @@ export const workloadDetailRow = z.object({
   openByStatus: z.object({
     TODO: z.number().int().nonnegative(),
     IN_PROGRESS: z.number().int().nonnegative(),
+    ON_HOLD: z.number().int().nonnegative(),
     REVIEW: z.number().int().nonnegative(),
     PENDING_APPROVAL: z.number().int().nonnegative(),
   }),
@@ -109,7 +111,7 @@ export const overdueTaskRow = z.object({
   taskTitle: z.string(),
   projectId: z.string(),
   projectName: z.string(),
-  status: z.enum(['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL', 'DONE']),
+  status: z.enum(['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL', 'DONE']),
   assigneeId: z.string().nullable(),
   assigneeName: z.string().nullable(),
   dueDate: z.string(),
@@ -129,6 +131,7 @@ export const summaryResponse = z.object({
   byStatus: z.object({
     TODO: z.number().int().nonnegative(),
     IN_PROGRESS: z.number().int().nonnegative(),
+    ON_HOLD: z.number().int().nonnegative(),
     REVIEW: z.number().int().nonnegative(),
     PENDING_APPROVAL: z.number().int().nonnegative(),
     DONE: z.number().int().nonnegative(),
@@ -165,7 +168,7 @@ export const upcomingTaskRow = z.object({
   taskTitle: z.string(),
   projectId: z.string(),
   projectName: z.string(),
-  status: z.enum(['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL', 'DONE']),
+  status: z.enum(['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL', 'DONE']),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
   dueDate: z.string(),
   // Negative when the due date already passed today (caller normally hides

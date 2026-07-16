@@ -4,7 +4,7 @@ import { Errors } from '../lib/errors.js';
 import type { MeTasksQuery } from '../schemas/meTasks.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL'];
+const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL'];
 
 const TASK_INCLUDE = {
   project: {
@@ -154,7 +154,16 @@ export class MeTasksService {
     const where: Prisma.TaskWhereInput = {
       deletedAt: null,
       assigneeId: userId,
-      teamId: query.teamId ? query.teamId : { in: teamIds },
+      // v2.5.58: my tasks live in my teams OR in projects whole-team-shared to
+      // one of my teams (guest assignees must see their own tasks here).
+      ...(query.teamId
+        ? { teamId: query.teamId }
+        : {
+            OR: [
+              { teamId: { in: teamIds } },
+              { project: { teamShares: { some: { teamId: { in: teamIds } } } } },
+            ],
+          }),
       ...(query.projectId && { projectId: query.projectId }),
       ...(query.status && { status: query.status }),
       ...(query.priority && { priority: query.priority }),

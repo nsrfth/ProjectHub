@@ -6,6 +6,8 @@ import * as projectsApi from '@/features/projects/api';
 import * as tasksApi from '@/features/tasks/api';
 import GroupedBoard from '@/features/planner/GroupedBoard';
 import TaskGrid from '@/features/planner/TaskGrid';
+import { statusCommentRequirement } from '@/features/tasks/statusComment';
+import StatusCommentDialog from '@/features/tasks/StatusCommentDialog';
 import MyTasksCalendar from '@/features/planner/MyTasksCalendar';
 import PersonalTasksPanel from '@/features/standaloneTasks/PersonalTasksPanel';
 import {
@@ -75,9 +77,10 @@ export default function MyTasksPage(): JSX.Element {
   );
 
   const updateMut = useMutation({
-    mutationFn: (args: { task: MeTask; status: tasksApi.TaskStatus }) =>
+    mutationFn: (args: { task: MeTask; status: tasksApi.TaskStatus; statusComment?: string }) =>
       tasksApi.updateTask(args.task.teamId, args.task.projectId, args.task.id, {
         status: args.status,
+        statusComment: args.statusComment,
       }),
     onSuccess: async (_d, vars) => {
       await qc.invalidateQueries({ queryKey: ['me', 'tasks'] });
@@ -85,14 +88,21 @@ export default function MyTasksPage(): JSX.Element {
     },
   });
 
-  const markDoneMut = useMutation({
-    mutationFn: (task: MeTask) =>
-      tasksApi.updateTask(task.teamId, task.projectId, task.id, { status: 'DONE' }),
-    onSuccess: async (_d, task) => {
-      await qc.invalidateQueries({ queryKey: ['me', 'tasks'] });
-      await qc.invalidateQueries({ queryKey: ['tasks', task.teamId, task.projectId] });
-    },
-  });
+  // v2.5.58: ON_HOLD / DONE targets require a mandatory comment; the pending
+  // change waits here while the dialog collects it. Mark-done is just a DONE
+  // transition, so it flows through the same gate.
+  const [pendingStatus, setPendingStatus] = useState<{
+    task: MeTask;
+    status: tasksApi.TaskStatus;
+  } | null>(null);
+
+  function requestStatusChange(task: MeTask, status: tasksApi.TaskStatus): void {
+    if (statusCommentRequirement(task.status, status)) {
+      setPendingStatus({ task, status });
+    } else {
+      updateMut.mutate({ task, status });
+    }
+  }
 
   return (
     <div>
@@ -210,8 +220,8 @@ export default function MyTasksPage(): JSX.Element {
             if (task) nav(`/projects/${task.projectId}/tasks/${id}`);
           }}
           onViewProject={(task) => nav(`/projects/${task.projectId}/tasks`)}
-          onStatusChange={(task, status) => updateMut.mutate({ task: task as MeTask, status })}
-          onMarkDone={(task) => markDoneMut.mutate(task as MeTask)}
+          onStatusChange={(task, status) => requestStatusChange(task as MeTask, status)}
+          onMarkDone={(task) => requestStatusChange(task as MeTask, 'DONE')}
           projectNames={projectNames}
         />
       )}
@@ -231,7 +241,7 @@ export default function MyTasksPage(): JSX.Element {
           }
           onOpen={(task) => nav(`/projects/${task.projectId}/tasks/${task.id}`)}
           onViewProject={(task) => nav(`/projects/${task.projectId}/tasks`)}
-          onStatusChange={(task, status) => updateMut.mutate({ task: task as MeTask, status })}
+          onStatusChange={(task, status) => requestStatusChange(task as MeTask, status)}
         />
       )}
 
@@ -244,6 +254,23 @@ export default function MyTasksPage(): JSX.Element {
             {t('planner.nav.calendar')}
           </Link>
         </p>
+      )}
+
+      {pendingStatus && (
+        <StatusCommentDialog
+          reason={statusCommentRequirement(pendingStatus.task.status, pendingStatus.status) ?? 'DONE'}
+          taskTitle={pendingStatus.task.title}
+          busy={updateMut.isPending}
+          onCancel={() => setPendingStatus(null)}
+          onConfirm={(comment) => {
+            updateMut.mutate({
+              task: pendingStatus.task,
+              status: pendingStatus.status,
+              statusComment: comment,
+            });
+            setPendingStatus(null);
+          }}
+        />
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 import { Prisma, type Currency, type GlobalRole, type PercentCompleteMode, type TaskPriority, type TaskStatus, type TeamRole } from '@prisma/client';
 import { buildWbsPath, refreshIsSummary, repathDescendants } from '../lib/wbs.js';
 import { prisma } from '../data/prisma.js';
-import { Errors } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
 import {
   assertCanWriteProject,
   isProjectEditDelegate,
@@ -11,8 +11,10 @@ import {
   type TaskResponsibleCandidate,
 } from '../lib/projectAccess.js';
 import { getDelegateCapabilities, type DelegateCapability } from '../lib/delegateCaps.js';
+import { assertProjectDatesNotFrozen } from '../lib/projectFreeze.js';
 import { assertEndOnOrAfterStart, normalizeOptionalCalendarDate } from '../lib/calendarDate.js';
 import { logActivity } from './activityLogger.js';
+import { statusCommentRequirement } from '../lib/statusComment.js';
 import { bumpScheduleVersion } from '../lib/scheduleVersion.js';
 import { invalidateCpmCache } from '../lib/cpm.js';
 import { notifications } from './notificationsService.js';
@@ -408,12 +410,33 @@ export class TasksService {
     await this.ensureProjectInTeam(teamId, projectId);
 
     if (input.assigneeId) {
-      // Only allow assigning to a team member — otherwise the task would be
-      // assigned to someone who can't see it.
+      // Only allow assigning to someone who can see the task: a home-team
+      // member, or (v2.5.58) a member of a FULL-shared guest team.
       const membership = await prisma.teamMembership.findUnique({
         where: { userId_teamId: { userId: input.assigneeId, teamId } },
       });
-      if (!membership) throw Errors.badRequest('Assignee is not a member of this team');
+      if (!membership) {
+        const sharedMember = await prisma.teamMembership.findFirst({
+          where: {
+            userId: input.assigneeId,
+            team: { projectShares: { some: { projectId, level: 'FULL' } } },
+          },
+        });
+        if (!sharedMember) throw Errors.badRequest('Assignee is not a member of this team');
+      }
+    }
+
+    // v2.5.58: while the project plan is frozen, new tasks may be created but
+    // not with plan dates (that would change the schedule). Reality capture
+    // (completedAt) is deliberately not gated.
+    if (
+      input.startDate != null ||
+      input.dueDate != null ||
+      input.plannedDate != null ||
+      input.baselineStart != null ||
+      input.baselineEnd != null
+    ) {
+      await assertProjectDatesNotFrozen(projectId);
     }
 
     const startDate =
@@ -739,6 +762,9 @@ export class TasksService {
       // current labels alone; an array (incl. []) replaces the entire
       // set. Each id must belong to this team (cross-team → 400).
       labelIds?: string[];
+      // v2.5.58: explanatory comment persisted with the status change
+      // (required for transitions into ON_HOLD / DONE).
+      statusComment?: string;
     },
   ): Promise<TaskView> {
     // v1.88: capability-aware authorization. ADMIN / WRITE callers (owner,
@@ -767,7 +793,16 @@ export class TasksService {
       const membership = await prisma.teamMembership.findUnique({
         where: { userId_teamId: { userId: input.assigneeId, teamId } },
       });
-      if (!membership) throw Errors.badRequest('Assignee is not a member of this team');
+      if (!membership) {
+        // v2.5.58: members of FULL-shared guest teams are assignable too.
+        const sharedMember = await prisma.teamMembership.findFirst({
+          where: {
+            userId: input.assigneeId,
+            team: { projectShares: { some: { projectId, level: 'FULL' } } },
+          },
+        });
+        if (!sharedMember) throw Errors.badRequest('Assignee is not a member of this team');
+      }
     }
 
     // v1.87: approval-config change (toggle requiresApproval / set the approver).
@@ -803,6 +838,17 @@ export class TasksService {
       input.baselineEnd !== undefined ||
       input.actualStart !== undefined ||
       input.actualEnd !== undefined;
+    // v2.5.58: plan freeze — blocks PLAN dates only. completedAt and
+    // actualStart/actualEnd record reality and stay editable while frozen.
+    const touchesPlanDates =
+      input.startDate !== undefined ||
+      input.dueDate !== undefined ||
+      input.plannedDate !== undefined ||
+      input.baselineStart !== undefined ||
+      input.baselineEnd !== undefined;
+    if (touchesPlanDates) {
+      await assertProjectDatesNotFrozen(projectId);
+    }
     const touchesResponsible =
       input.responsibleId !== undefined && input.responsibleId !== existing.responsibleId;
     const touchesDetails =
@@ -921,6 +967,22 @@ export class TasksService {
       await _deps.assertStatusTransitionAllowed(taskId, input.status);
     }
 
+    // v2.5.58: mandatory explanatory comment on gated transitions — entering
+    // ON_HOLD (hold reason) or requesting DONE (completion summary). Evaluated
+    // on the REQUESTED status, before the approval reroute below, so the
+    // summary is captured at claim time even when the task lands in
+    // PENDING_APPROVAL. The comment row itself is written inside the
+    // transaction further down, next to the status-change activity entry.
+    const commentRequirement =
+      input.status !== undefined && input.status !== existing.status
+        ? statusCommentRequirement(existing.status, input.status)
+        : null;
+    if (commentRequirement && !input.statusComment) {
+      throw new AppError(400, 'STATUS_COMMENT_REQUIRED', 'A comment is required for this status change', {
+        requiredFor: commentRequirement,
+      });
+    }
+
     // v1.87: approval gate on "completion". Moving a require-approval task to
     // DONE routes it to PENDING_APPROVAL instead — unless the actor is a
     // finalizer (the designated approver, a team MANAGER, a global ADMIN, or a
@@ -1002,6 +1064,10 @@ export class TasksService {
       input.dueDate !== undefined && input.dueDate !== null
         ? await resolveDueDateForScheduling(input.dueDate)
         : null;
+
+    // v2.5.58: set inside the tx when a status comment is persisted; used for
+    // the post-commit comment.added webhook (parity with CommentsService).
+    let createdCommentId: string | null = null;
 
     try {
       const result = await prisma.$transaction(async (tx) => {
@@ -1107,6 +1173,35 @@ export class TasksService {
               meta: { approverId: nextApproverId },
             });
           }
+          // v2.5.58: persist the status comment as a REAL Comment row in the
+          // same tx — hold reasons / completion summaries appear in the task's
+          // comment feed, not just the activity log. Also written when the
+          // caller volunteers a comment on a non-gated transition.
+          if (input.statusComment) {
+            const c = await tx.comment.create({
+              data: { taskId, authorId: actorId, body: input.statusComment },
+            });
+            await logActivity(tx, {
+              taskId,
+              actorId,
+              action: 'comment.added',
+              meta: {
+                commentId: c.id,
+                excerpt: input.statusComment.slice(0, 120),
+                statusContext: { from: existing.status, to: newStatus },
+              },
+            });
+            await notifications.onCommentAdded(tx, {
+              taskId,
+              projectId: existing.projectId,
+              teamId: existing.teamId,
+              actorId,
+              commentId: c.id,
+              excerpt: input.statusComment.slice(0, 120),
+              taskTitle: updated.title,
+            });
+            createdCommentId = c.id;
+          }
           await notifications.onStatusChanged(tx, {
             taskId,
             projectId: existing.projectId,
@@ -1189,6 +1284,17 @@ export class TasksService {
       if (result.statusChanged) {
         await _webhooks.emit(result.view.teamId, 'task.status_changed', {
           task: result.view, from: result.fromStatus, to: result.view.status,
+        });
+      }
+      // v2.5.58: status comments fan out to comment.added subscribers too, so
+      // integrations see hold reasons / completion summaries like any comment.
+      if (createdCommentId) {
+        await _webhooks.emit(result.view.teamId, 'comment.added', {
+          commentId: createdCommentId,
+          taskId: result.view.id,
+          taskTitle: result.view.title,
+          teamId: result.view.teamId,
+          statusContext: { from: result.fromStatus, to: result.view.status },
         });
       }
       if (result.changedNonStatusFields.length > 0) {
@@ -1372,12 +1478,23 @@ export class TasksService {
     taskId: string,
     actorId: string,
     actorGlobalRole: GlobalRole,
-    input: { status: TaskStatus; beforeTaskId: string | null },
+    input: { status: TaskStatus; beforeTaskId: string | null; statusComment?: string },
   ): Promise<TaskView> {
     await assertCanWriteProject(projectId, teamId, actorId, actorGlobalRole);
     const existing = await this.get(teamId, projectId, taskId);
     if (input.beforeTaskId === taskId) {
       throw Errors.badRequest('Cannot reorder a task before itself');
+    }
+
+    // v2.5.58: drag-and-drop cannot sidestep the mandatory-comment gate.
+    const commentRequirement =
+      input.status !== existing.status
+        ? statusCommentRequirement(existing.status, input.status)
+        : null;
+    if (commentRequirement && !input.statusComment) {
+      throw new AppError(400, 'STATUS_COMMENT_REQUIRED', 'A comment is required for this status change', {
+        requiredFor: commentRequirement,
+      });
     }
 
     return prisma.$transaction(async (tx) => {
@@ -1435,6 +1552,32 @@ export class TasksService {
           action: 'task.status_changed',
           meta: { from: existing.status, to: input.status },
         });
+        // v2.5.58: persist the drag's status comment as a real Comment row in
+        // the same tx (see update() for the rationale).
+        if (input.statusComment) {
+          const c = await tx.comment.create({
+            data: { taskId, authorId: actorId, body: input.statusComment },
+          });
+          await logActivity(tx, {
+            taskId,
+            actorId,
+            action: 'comment.added',
+            meta: {
+              commentId: c.id,
+              excerpt: input.statusComment.slice(0, 120),
+              statusContext: { from: existing.status, to: input.status },
+            },
+          });
+          await notifications.onCommentAdded(tx, {
+            taskId,
+            projectId: existing.projectId,
+            teamId: existing.teamId,
+            actorId,
+            commentId: c.id,
+            excerpt: input.statusComment.slice(0, 120),
+            taskTitle: updated.title,
+          });
+        }
         await notifications.onStatusChanged(tx, {
           taskId,
           projectId: existing.projectId,

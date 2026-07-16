@@ -177,6 +177,15 @@ export class TaskTemplatesService {
         continue;
       }
 
+      // v2.5.58: don't spawn dated tasks into a frozen plan. The template
+      // stays active with nextRunAt unchanged, so owed periods spawn as soon
+      // as the project is unfrozen.
+      const frozenCheck = await prisma.project.findUnique({
+        where: { id: t.sourceTask.projectId },
+        select: { datesFrozen: true },
+      });
+      if (frozenCheck?.datesFrozen) continue;
+
       const spawnDate = utcMidnight(t.nextRunAt);
       const key = periodKey(spawnDate);
       const next = nextOccurrenceAfter(

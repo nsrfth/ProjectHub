@@ -38,6 +38,7 @@ function serialize(p: {
   endDate: string | null;
   labels: Array<{ id: string; name: string; color: string }>;
   correspondenceEnabled: boolean;
+  datesFrozen: boolean;
   ragStatus: string;
   ragReason: string | null;
   healthUpdatedAt: string | null;
@@ -62,6 +63,7 @@ function serialize(p: {
     endDate: p.endDate,
     labels: p.labels,
     correspondenceEnabled: p.correspondenceEnabled,
+    datesFrozen: p.datesFrozen,
     ragStatus: p.ragStatus,
     ragReason: p.ragReason,
     healthUpdatedAt: p.healthUpdatedAt,
@@ -95,6 +97,7 @@ export class ProjectsController {
         ...serialize(p),
         teamName: p.teamName,
         teamSlug: p.teamSlug,
+        hasStarted: p.hasStarted,
       })),
     );
   };

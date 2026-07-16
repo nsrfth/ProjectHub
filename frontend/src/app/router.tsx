@@ -3,6 +3,7 @@ import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import TeamsPage from '@/pages/TeamsPage';
 import ProjectsPage from '@/pages/ProjectsPage';
+import ProjectsTimelinePage from '@/pages/ProjectsTimelinePage';
 import TasksPage from '@/pages/TasksPage';
 import TaskDetailPage from '@/pages/TaskDetailPage';
 import ProjectGanttPage from '@/pages/ProjectGanttPage';
@@ -71,6 +72,9 @@ export const router = createBrowserRouter([
       { path: '/dashboard', element: <DashboardPage /> },
       { path: '/teams', element: <TeamsPage /> },
       { path: '/projects', element: <ProjectsPage /> },
+      // v2.5.58: all-projects one-year timeline. Registered before the
+      // /projects/:projectId/* param routes so the static segment wins.
+      { path: '/projects/timeline', element: <ProjectsTimelinePage /> },
       { path: '/portfolio', element: <PortfolioPage /> },
       { path: '/timesheets', element: <TimesheetsPage /> },
       { path: '/projects/:projectId/tasks', element: <TasksPage /> },

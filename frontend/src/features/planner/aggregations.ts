@@ -12,6 +12,7 @@ export interface StatusSlice {
 const STATUS_LABEL: Record<TaskStatus, string> = {
   TODO: 'Open',
   IN_PROGRESS: 'In Progress',
+  ON_HOLD: 'On Hold',
   REVIEW: 'Review',
   PENDING_APPROVAL: 'Pending approval',
   DONE: 'Completed',
@@ -22,6 +23,7 @@ export function statusDistributionFromTasks(tasks: Task[]): StatusSlice[] {
   const counts: Record<TaskStatus, number> = {
     TODO: 0,
     IN_PROGRESS: 0,
+    ON_HOLD: 0,
     REVIEW: 0,
     PENDING_APPROVAL: 0,
     DONE: 0,
@@ -33,7 +35,7 @@ export function statusDistributionFromTasks(tasks: Task[]): StatusSlice[] {
   }
   const total = tasks.length || 1;
   const slices: StatusSlice[] = (
-    ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL', 'DONE'] as TaskStatus[]
+    ['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL', 'DONE'] as TaskStatus[]
   ).map(
     (s) => ({
       status: s,

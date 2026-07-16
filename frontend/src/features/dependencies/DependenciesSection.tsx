@@ -36,6 +36,7 @@ function errorMessage(err: unknown, fallback: string): string {
 const STATUS_LABEL: Record<string, string> = {
   TODO: 'To do',
   IN_PROGRESS: 'In progress',
+  ON_HOLD: 'On hold',
   REVIEW: 'Review',
   DONE: 'Done',
 };

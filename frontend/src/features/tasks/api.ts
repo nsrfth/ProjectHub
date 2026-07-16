@@ -5,7 +5,7 @@ import type { TaskCustomFieldValue } from '@/features/customFields/api';
 // v1.87: PENDING_APPROVAL is system-managed (a require-approval task lands here
 // when "completed" by a non-finalizer). It is shown but NOT offered in the
 // manual status picker.
-export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'PENDING_APPROVAL' | 'DONE';
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'ON_HOLD' | 'REVIEW' | 'PENDING_APPROVAL' | 'DONE';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
 export interface TaskLabel {
@@ -173,6 +173,10 @@ export async function updateTask(
     // alone; an array (incl. []) replaces the entire set. The per-id
     // attachLabel/detachLabel calls remain available for fine-grained edits.
     labelIds: string[];
+    // v2.5.58: mandatory for transitions into ON_HOLD / DONE — stored as a
+    // real comment in the same transaction (400 STATUS_COMMENT_REQUIRED
+    // when a gated transition arrives without it).
+    statusComment: string;
   }>,
 ): Promise<Task> {
   return (
@@ -192,7 +196,7 @@ export async function reorderTask(
   teamId: string,
   projectId: string,
   taskId: string,
-  input: { status: TaskStatus; beforeTaskId: string | null },
+  input: { status: TaskStatus; beforeTaskId: string | null; statusComment?: string },
 ): Promise<Task> {
   return (
     await api.post<Task>(

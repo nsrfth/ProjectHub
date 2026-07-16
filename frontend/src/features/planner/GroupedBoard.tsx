@@ -18,10 +18,12 @@ import { formatShamsiDate } from '@/lib/shamsi';
 import { taskProgressPercent } from './progress';
 import type { BoardColumn } from './grouping';
 
-const STATUS_ORDER: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL', 'DONE'];
+const STATUS_ORDER: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL', 'DONE'];
 const STATUS_LABEL: Record<TaskStatus, string> = {
   TODO: 'To do',
   IN_PROGRESS: 'In progress',
+  // v2.5.58: parked/blocked — entering it prompts for a mandatory hold reason.
+  ON_HOLD: 'On hold',
   REVIEW: 'Review',
   // v1.87: system-managed approval state — resolved via approve/reject, not the picker.
   PENDING_APPROVAL: 'Pending approval',

@@ -61,6 +61,7 @@ export default function CreateProjectForm({
     endDate: null,
     labelIds: [],
     code: '',
+    datesFrozen: false,
   });
   const [dateError, setDateError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);

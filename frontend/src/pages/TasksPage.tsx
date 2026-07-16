@@ -5,6 +5,8 @@ import axios from 'axios';
 import { useProjectTeam } from '@/features/projects/useProjectTeam';
 import * as tasksApi from '@/features/tasks/api';
 import { toggleExpandedTaskIds } from '@/features/tasks/taskListCollapse';
+import { statusCommentRequirement } from '@/features/tasks/statusComment';
+import StatusCommentDialog from '@/features/tasks/StatusCommentDialog';
 import { parseTaskViewMode, type TaskViewMode } from '@/features/tasks/taskViewMode';
 import * as labelsApi from '@/features/labels/api';
 import { formatShamsiDate, formatShamsiTimestampDate } from '@/lib/shamsi';
@@ -23,10 +25,11 @@ import { loadBoardGroupBy, saveBoardGroupBy } from '@/features/planner/storage';
 import { listTeamMembersForAssignees } from '@/features/teams/api';
 import { visibleTeamMembers } from '@/lib/systemUser';
 import { ShamsiDatePicker } from '@/lib/ShamsiDatePicker';
-const STATUS_ORDER: tasksApi.TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL', 'DONE'];
+const STATUS_ORDER: tasksApi.TaskStatus[] = ['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL', 'DONE'];
 const STATUS_LABEL: Record<tasksApi.TaskStatus, string> = {
   TODO: 'To do',
   IN_PROGRESS: 'In progress',
+  ON_HOLD: 'On hold',
   REVIEW: 'Review',
   PENDING_APPROVAL: 'Pending approval',
   DONE: 'Done',
@@ -172,7 +175,7 @@ export default function TasksPage(): JSX.Element {
   });
 
   const updateMut = useMutation({
-    mutationFn: (input: { taskId: string; patch: Partial<tasksApi.Task> }) =>
+    mutationFn: (input: { taskId: string; patch: Partial<tasksApi.Task> & { statusComment?: string } }) =>
       tasksApi.updateTask(
         teamId!,
         projectId!,
@@ -183,6 +186,25 @@ export default function TasksPage(): JSX.Element {
       await qc.invalidateQueries({ queryKey: ['tasks', teamId, projectId] });
     },
   });
+
+  // v2.5.58: transitions into ON_HOLD / DONE need a mandatory comment. The
+  // pending change is parked here while the StatusCommentDialog collects it;
+  // cancel = no mutation (the board snaps back on its own — server state
+  // never changed).
+  const [pendingStatus, setPendingStatus] = useState<{
+    task: tasksApi.Task;
+    status: tasksApi.TaskStatus;
+    beforeTaskId: string | null;
+    kind: 'update' | 'reorder';
+  } | null>(null);
+
+  function requestStatusChange(task: tasksApi.Task, status: tasksApi.TaskStatus): void {
+    if (statusCommentRequirement(task.status, status)) {
+      setPendingStatus({ task, status, beforeTaskId: null, kind: 'update' });
+    } else {
+      updateMut.mutate({ taskId: task.id, patch: { status } });
+    }
+  }
 
   const deleteMut = useMutation({
     mutationFn: (taskId: string) => tasksApi.deleteTask(teamId!, projectId!, taskId),
@@ -196,15 +218,26 @@ export default function TasksPage(): JSX.Element {
       taskId: string;
       status: tasksApi.TaskStatus;
       beforeTaskId: string | null;
+      statusComment?: string;
     }) =>
       tasksApi.reorderTask(teamId!, projectId!, input.taskId, {
         status: input.status,
         beforeTaskId: input.beforeTaskId,
+        statusComment: input.statusComment,
       }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['tasks', teamId, projectId] });
     },
   });
+
+  function requestReorder(taskId: string, status: tasksApi.TaskStatus, beforeTaskId: string | null): void {
+    const task = tasks.find((x) => x.id === taskId);
+    if (task && statusCommentRequirement(task.status, status)) {
+      setPendingStatus({ task, status, beforeTaskId, kind: 'reorder' });
+    } else {
+      reorderMut.mutate({ taskId, status, beforeTaskId });
+    }
+  }
 
   // v1.20: alternative view modes. Persisted in localStorage so the user's
   // preference survives page reloads.
@@ -501,12 +534,8 @@ export default function TasksPage(): JSX.Element {
           onDelete={(task) => {
             if (window.confirm(`Delete task "${task.title}"?`)) deleteMut.mutate(task.id);
           }}
-          onStatusChange={(task, s) =>
-            updateMut.mutate({ taskId: task.id, patch: { status: s } })
-          }
-          onReorder={(taskId, status, beforeTaskId) =>
-            reorderMut.mutate({ taskId, status, beforeTaskId })
-          }
+          onStatusChange={requestStatusChange}
+          onReorder={requestReorder}
         />
       )}
 
@@ -515,9 +544,7 @@ export default function TasksPage(): JSX.Element {
           tasks={filteredTasks}
           t={t}
           onOpen={(id) => nav(`/projects/${projectId}/tasks/${id}`)}
-          onStatusChange={(task, s) =>
-            updateMut.mutate({ taskId: task.id, patch: { status: s } })
-          }
+          onStatusChange={requestStatusChange}
           onDelete={(task) => {
             if (window.confirm(`Delete task "${task.title}"?`)) deleteMut.mutate(task.id);
           }}
@@ -538,6 +565,31 @@ export default function TasksPage(): JSX.Element {
             />
           ))}
         </section>
+      )}
+
+      {pendingStatus && (
+        <StatusCommentDialog
+          reason={statusCommentRequirement(pendingStatus.task.status, pendingStatus.status) ?? 'DONE'}
+          taskTitle={pendingStatus.task.title}
+          busy={updateMut.isPending || reorderMut.isPending}
+          onCancel={() => setPendingStatus(null)}
+          onConfirm={(comment) => {
+            if (pendingStatus.kind === 'reorder') {
+              reorderMut.mutate({
+                taskId: pendingStatus.task.id,
+                status: pendingStatus.status,
+                beforeTaskId: pendingStatus.beforeTaskId,
+                statusComment: comment,
+              });
+            } else {
+              updateMut.mutate({
+                taskId: pendingStatus.task.id,
+                patch: { status: pendingStatus.status, statusComment: comment },
+              });
+            }
+            setPendingStatus(null);
+          }}
+        />
       )}
     </div>
   );
@@ -567,13 +619,15 @@ const PRIORITY_RANK: Record<tasksApi.TaskPriority, number> = {
 const STATUS_RANK: Record<tasksApi.TaskStatus, number> = {
   TODO: 0,
   IN_PROGRESS: 1,
-  REVIEW: 2,
-  PENDING_APPROVAL: 3,
-  DONE: 4,
+  ON_HOLD: 2,
+  REVIEW: 3,
+  PENDING_APPROVAL: 4,
+  DONE: 5,
 };
 const STATUS_BADGE: Record<tasksApi.TaskStatus, string> = {
   TODO: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
   IN_PROGRESS: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200',
+  ON_HOLD: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200',
   REVIEW: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200',
   PENDING_APPROVAL: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200',
   DONE: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200',

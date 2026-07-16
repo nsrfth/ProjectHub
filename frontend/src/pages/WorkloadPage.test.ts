@@ -5,7 +5,7 @@ import type { WorkloadDetailRow } from '@/features/reports/api';
 const row = (total: number, weightedTotal: number): WorkloadDetailRow => ({
   userId: 'u1',
   name: 'Alice',
-  openByStatus: { TODO: total, IN_PROGRESS: 0, REVIEW: 0, PENDING_APPROVAL: 0 },
+  openByStatus: { TODO: total, IN_PROGRESS: 0, ON_HOLD: 0, REVIEW: 0, PENDING_APPROVAL: 0 },
   byDueBucket: { overdue: 0, this_week: total, next_week: 0, later: 0, no_due: 0 },
   total,
   weightedTotal,

@@ -62,9 +62,10 @@ export type TaskSortKey =
 const STATUS_RANK: Record<TaskStatus, number> = {
   TODO: 0,
   IN_PROGRESS: 1,
-  REVIEW: 2,
-  PENDING_APPROVAL: 3,
-  DONE: 4,
+  ON_HOLD: 2,
+  REVIEW: 3,
+  PENDING_APPROVAL: 4,
+  DONE: 5,
 };
 const PRIORITY_RANK: Record<TaskPriority, number> = {
   LOW: 0,

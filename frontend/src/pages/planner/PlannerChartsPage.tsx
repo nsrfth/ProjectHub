@@ -144,7 +144,7 @@ export default function PlannerChartsPage(): JSX.Element {
   const memberBars = useMemo(() => {
     if (useTaskAggregation) {
       const openTasks = scopedTasks.filter(
-        (t) => t.status === 'TODO' || t.status === 'IN_PROGRESS' || t.status === 'REVIEW' || t.status === 'PENDING_APPROVAL',
+        (t) => t.status === 'TODO' || t.status === 'IN_PROGRESS' || t.status === 'ON_HOLD' || t.status === 'REVIEW' || t.status === 'PENDING_APPROVAL',
       );
       return memberBarFromTasks(openTasks, assigneeNames);
     }

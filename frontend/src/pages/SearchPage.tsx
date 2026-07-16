@@ -22,6 +22,7 @@ import { useT } from '@/lib/i18n';
 const STATUS_LABEL: Record<TaskHit['status'], string> = {
   TODO: 'To do',
   IN_PROGRESS: 'In progress',
+  ON_HOLD: 'On hold',
   REVIEW: 'Review',
   DONE: 'Done',
 };

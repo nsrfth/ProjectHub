@@ -77,6 +77,7 @@ export interface SummaryReport {
   byStatus: {
     TODO: number;
     IN_PROGRESS: number;
+    ON_HOLD: number;
     REVIEW: number;
     PENDING_APPROVAL: number;
     DONE: number;
@@ -142,7 +143,7 @@ export interface BudgetReport {
 
 export type { BudgetCurrencyRollup };
 
-const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'PENDING_APPROVAL'];
+const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL'];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export class ReportsService {
@@ -309,6 +310,7 @@ export class ReportsService {
     const byStatus = {
       TODO: 0,
       IN_PROGRESS: 0,
+      ON_HOLD: 0,
       REVIEW: 0,
       PENDING_APPROVAL: 0,
       DONE: 0,
@@ -324,6 +326,7 @@ export class ReportsService {
       openCount:
         byStatus.TODO +
         byStatus.IN_PROGRESS +
+        byStatus.ON_HOLD +
         byStatus.REVIEW +
         byStatus.PENDING_APPROVAL,
       byStatus,

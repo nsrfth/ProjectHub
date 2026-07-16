@@ -4,6 +4,7 @@ import { Errors } from '../lib/errors.js';
 import { userHasPermission } from '../middleware/requirePermission.js';
 import { resolveProjectAccess } from '../lib/projectAccess.js';
 import { getDelegateCapabilities, type DelegateCapability } from '../lib/delegateCaps.js';
+import { assertProjectDatesNotFrozen } from '../lib/projectFreeze.js';
 import { logActivity } from './activityLogger.js';
 
 // Subtasks are checklist items inside a task. The route layer already verifies
@@ -117,6 +118,10 @@ export class SubtasksService {
     },
   ): Promise<SubtaskView> {
     await this.ensureTaskInChain(teamId, projectId, taskId);
+    // v2.5.58: no new plan dates while the project plan is frozen.
+    if (input.startDate != null || input.endDate != null) {
+      await assertProjectDatesNotFrozen(projectId);
+    }
     // v1.41: date range validation. Zod has already enforced this on the
     // body, but the service is also called from tests/seed/etc. — keep
     // the rule here as the canonical guard.
@@ -208,6 +213,10 @@ export class SubtasksService {
     }
     if ((input.startDate !== undefined || input.endDate !== undefined) && !can('EDIT_DATES')) {
       throw Errors.forbidden('Missing capability to edit subtask dates');
+    }
+    // v2.5.58: plan freeze — subtask start/end are plan dates.
+    if (input.startDate !== undefined || input.endDate !== undefined) {
+      await assertProjectDatesNotFrozen(projectId);
     }
     if (
       input.responsibleId !== undefined &&

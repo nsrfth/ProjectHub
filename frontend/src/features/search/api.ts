@@ -1,7 +1,7 @@
 import { api } from '@/lib/api';
 
 export type SearchType = 'task' | 'comment' | 'project';
-export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'ON_HOLD' | 'REVIEW' | 'DONE';
 
 interface BaseHit {
   rank: number;

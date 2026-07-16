@@ -7,6 +7,8 @@ import { currencyEnum } from './currency.js';
 export const taskStatusEnum = z.enum([
   'TODO',
   'IN_PROGRESS',
+  // v2.5.58: parked/blocked. Moving a task here requires `statusComment`.
+  'ON_HOLD',
   'REVIEW',
   // v1.87: system-managed approval gate. A task lands here when it is
   // "completed" (moved to DONE) by a non-finalizer while requiresApproval is on.
@@ -127,6 +129,12 @@ export const updateTaskBody = z
     // catalog-based POST .../labels/:labelId / DELETE remain available
     // for one-at-a-time edits from the LabelPicker.
     labelIds: z.array(z.string().min(1)).max(50).optional(),
+    // v2.5.58: mandatory explanatory comment for transitions into ON_HOLD
+    // (hold reason) and DONE (completion summary). Stored as a real Comment
+    // row in the same transaction as the status change. Optional here —
+    // the service 400s (STATUS_COMMENT_REQUIRED) when a gated transition
+    // arrives without it.
+    statusComment: z.string().min(1).max(10_000).trim().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'Provide at least one field to update');
 
@@ -140,6 +148,9 @@ export const listTasksQuery = z.object({
 export const reorderTaskBody = z.object({
   status: taskStatusEnum,
   beforeTaskId: z.string().nullable(),
+  // v2.5.58: same contract as updateTaskBody.statusComment — required by the
+  // service when the drag crosses into ON_HOLD or DONE.
+  statusComment: z.string().min(1).max(10_000).trim().optional(),
 });
 
 export type ReorderTaskBody = z.infer<typeof reorderTaskBody>;

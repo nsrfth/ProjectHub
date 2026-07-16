@@ -107,6 +107,15 @@ export default function ProjectListRow({
             <span className="text-xs uppercase tracking-wide text-slate-500 shrink-0">
               {statusLabel}
             </span>
+            {/* v2.5.58: plan-freeze chip — schedule is locked. */}
+            {project.datesFrozen && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded font-medium shrink-0 bg-sky-500/15 text-sky-600 dark:text-sky-300"
+                title={t('projects.freeze.hint')}
+              >
+                ❄ {t('projects.freeze.chip')}
+              </span>
+            )}
             {(project.labels?.length ?? 0) > 0 && (
               <span className="flex flex-wrap items-center gap-1" dir="ltr">
                 {(project.labels ?? []).map((l) => (
