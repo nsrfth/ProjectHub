@@ -86,7 +86,7 @@ export function RecordsRegister({
               <button
                 type="button"
                 onClick={() => setCreating(true)}
-                className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+                className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover"
               >
                 {t('records.new')}
               </button>
@@ -309,7 +309,7 @@ function RecordCreateModal({
           <button
             type="submit"
             disabled={!title.trim() || !typeId || createMut.isPending}
-            className="rounded bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50"
           >
             {t('records.form.create')}
           </button>

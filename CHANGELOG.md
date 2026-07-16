@@ -13,6 +13,45 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.57] — 2026-07-17
+
+**UI/UX baseline redesign — design tokens, accessibility, and one button recipe.**
+A frontend-wide audit found 23+ hand-rolled variants of the primary button, zero
+`focus-visible` styles across 142 styled files, hard-coded `text-white` /
+`hover:bg-indigo-*` / `bg-blue-600` that broke non-light themes (e.g. Nord, whose
+primary-contrast is dark), and a Modal missing the focus trap / scroll lock /
+backdrop-close that SlideOver half-had. Fixed at the system level so the whole app
+inherits the improvements:
+
+- **Derived interaction tokens** (`styles/themes.css`): `--color-surface-hover`,
+  `--color-primary-hover`, `--color-primary-soft`, `--color-ring`, computed per
+  theme via `color-mix()` against each palette's own `--color-text` — every current
+  and future theme gets correct hover/active shades with no hand-tuning (high
+  contrast pins explicit pure values). Exposed as Tailwind utilities
+  (`bg-surface-hover`, `bg-primary-hover`, `bg-primary-soft`, `ring`).
+- **Global accessibility base layer** (`index.css`): themed `:focus-visible`
+  outline everywhere (WCAG 2.4.7 — keyboard users finally get a visible, on-brand
+  focus ring app-wide), `prefers-reduced-motion` damper (WCAG 2.3.3), themed thin
+  scrollbars, and on-brand text selection.
+- **Shared component recipes + primitives**: `.btn / .btn-primary / .btn-secondary /
+  .btn-ghost / .btn-danger / .btn-sm`, `.input`, `.card`, `.badge` component classes,
+  plus `features/ui/Button.tsx` (defaults `type="button"`) and
+  `features/ui/EmptyState.tsx`. New code composes these instead of re-deriving
+  padding/radius/hover per call site.
+- **Dialog upgrade**: new `features/ui/useDialog.ts` hook shared by Modal and
+  SlideOver — full Tab/Shift+Tab focus trap, initial-focus + focus restore, Escape,
+  and body scroll lock. Both dialogs now close on backdrop click, and get subtle
+  entrance motion (fade/scale for Modal, RTL-aware slide for SlideOver) that
+  collapses to instant under reduced motion.
+- **Hard-coded colour sweep**: `text-white` → `text-primary-contrast` and
+  `hover:opacity-90` / `hover:bg-indigo-600/700` → `hover:bg-primary-hover` on all
+  solid-primary buttons (16 files); the off-palette `bg-blue-600` form buttons
+  (FormRenderer, FormsListPage, FormEditorPage) and the UserMenu avatar now use
+  primary tokens, so they follow the active theme.
+
+No API or behaviour changes beyond the above; all dialog call sites keep the same
+props.
+
 ## [2.5.56] — 2026-07-12
 
 **Self-destroying service worker — evict the stale PWA worker that blanked the app.**

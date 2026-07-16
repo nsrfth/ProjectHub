@@ -1,6 +1,6 @@
 {
   "name": "taskhub-frontend",
-  "version": "2.5.56",
+  "version": "2.5.57",
   "private": true,
   "type": "module",
   "scripts": {

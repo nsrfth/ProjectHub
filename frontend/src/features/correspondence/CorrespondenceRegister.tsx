@@ -90,7 +90,7 @@ export function CorrespondenceRegister({
           <button
             type="button"
             onClick={() => setEditing({ letter: null })}
-            className="ms-auto rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="ms-auto rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover"
           >
             {t('correspondence.new')}
           </button>

@@ -113,7 +113,7 @@ export function ContactPicker({
               type="button"
               onClick={() => createMut.mutate()}
               disabled={!newName.trim() || createMut.isPending}
-              className="text-xs rounded bg-primary text-white px-2 py-1 disabled:opacity-50"
+              className="text-xs rounded bg-primary text-primary-contrast px-2 py-1 disabled:opacity-50"
             >
               {t('common.save')}
             </button>

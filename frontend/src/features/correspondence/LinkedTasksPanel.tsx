@@ -115,7 +115,7 @@ export function LinkedTasksPanel({
             type="button"
             onClick={() => createMut.mutate()}
             disabled={!title.trim() || createMut.isPending}
-            className="text-xs rounded bg-primary text-white px-3 py-1.5 disabled:opacity-50"
+            className="text-xs rounded bg-primary text-primary-contrast px-3 py-1.5 disabled:opacity-50"
           >
             {t('correspondence.linkedTasks.submit')}
           </button>

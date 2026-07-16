@@ -17,6 +17,11 @@ const config: Config = {
         'text-muted': 'var(--color-text-muted)',
         primary: 'var(--color-primary)',
         'primary-contrast': 'var(--color-primary-contrast)',
+        // v2.5.57 derived interaction tokens — see styles/themes.css.
+        'surface-hover': 'var(--color-surface-hover)',
+        'primary-hover': 'var(--color-primary-hover)',
+        'primary-soft': 'var(--color-primary-soft)',
+        ring: 'var(--color-ring)',
         success: 'var(--color-success)',
         warning: 'var(--color-warning)',
         danger: 'var(--color-danger)',

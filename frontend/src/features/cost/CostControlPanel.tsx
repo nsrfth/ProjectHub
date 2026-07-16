@@ -320,7 +320,7 @@ function AccountsTab({
             </select>
           </label>
           <button type="submit" disabled={!code.trim() || !name.trim() || createMut.isPending}
-            className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+            className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50">
             {t('cost.accounts.add')}
           </button>
         </form>
@@ -781,7 +781,7 @@ function FxTab({
             <span className="ms-1 inline-block"><ShamsiDatePicker value={asOf} onChange={setAsOf} /></span>
           </label>
           <button type="submit" disabled={!rate.trim() || !asOf || createMut.isPending}
-            className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+            className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50">
             {t('cost.fx.add')}
           </button>
         </form>
@@ -834,7 +834,7 @@ function AmountForm({
       )}
       {extra}
       <button type="submit" disabled={disabled}
-        className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+        className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50">
         {submitLabel}
       </button>
     </form>

@@ -96,7 +96,7 @@ export function ContactsPanel({ teamId, canManage }: ContactsPanelProps): JSX.El
               setFormError(null);
               setEditing({ ...EMPTY });
             }}
-            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover"
           >
             {t('contacts.new')}
           </button>
@@ -230,7 +230,7 @@ export function ContactsPanel({ teamId, canManage }: ContactsPanelProps): JSX.El
               <button
                 type="submit"
                 disabled={!editing.name.trim() || saveMut.isPending}
-                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-contrast disabled:opacity-50"
               >
                 {t('common.save')}
               </button>

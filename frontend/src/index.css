@@ -17,6 +17,128 @@ html[lang='fa'] {
 }
 
 /*
+ * v2.5.57 UI/UX baseline. App-wide accessibility and consistency defaults that
+ * cascade to every feature without per-component migration:
+ *
+ *  1. Themed :focus-visible ring — keyboard users get a visible, on-brand
+ *     focus indicator everywhere (WCAG 2.4.7). Mouse clicks stay ring-free.
+ *  2. prefers-reduced-motion — all animation/transition collapse to instant
+ *     for users who asked the OS for less motion (WCAG 2.3.3).
+ *  3. Themed thin scrollbars + selection colour so long lists/tables match
+ *     the active palette instead of UA chrome.
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-primary);
+    color: var(--color-primary-contrast);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/*
+ * Shared component recipes — the single source of truth for interactive
+ * surfaces. The audit found 23+ hand-rolled variants of the primary button
+ * alone; new code should compose these (directly or via features/ui/Button)
+ * instead of re-deriving padding/radius/hover per call site.
+ */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2
+      text-sm font-medium transition-colors
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply px-2.5 py-1.5 text-xs;
+  }
+  .btn-primary {
+    @apply bg-primary text-primary-contrast hover:bg-primary-hover;
+  }
+  .btn-secondary {
+    @apply border border-border bg-surface text-text hover:bg-surface-hover;
+  }
+  .btn-ghost {
+    @apply text-text-muted hover:bg-surface-hover hover:text-text;
+  }
+  .btn-danger {
+    @apply bg-danger text-white hover:opacity-90;
+  }
+
+  .input {
+    @apply w-full rounded-md border border-border bg-surface px-3 py-2 text-sm
+      text-text placeholder:text-text-muted
+      focus:border-primary focus:outline-none;
+  }
+
+  .card {
+    @apply rounded-lg border border-border bg-surface;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs
+      font-medium;
+  }
+}
+
+/* Dialog entrance motion (Modal / SlideOver). Collapses to instant under
+   prefers-reduced-motion via the base-layer damper above. */
+@keyframes dialog-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dialog-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes slideover-panel-in-ltr {
+  from {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+}
+@keyframes slideover-panel-in-rtl {
+  from {
+    opacity: 0;
+    transform: translateX(-1.5rem);
+  }
+}
+
+.dialog-backdrop {
+  animation: dialog-backdrop-in 150ms ease-out;
+}
+.dialog-panel {
+  animation: dialog-panel-in 150ms ease-out;
+}
+.slideover-panel {
+  animation: slideover-panel-in-ltr 200ms ease-out;
+}
+[dir='rtl'] .slideover-panel {
+  animation-name: slideover-panel-in-rtl;
+}
+
+/*
  * v1.61: theme-aware safety net for legacy slate utilities.
  * Remaps bg/text/border classes to semantic CSS variables so unmigrated
  * components inherit the active palette. Explicit `dark:` overrides still

@@ -78,7 +78,7 @@ export function SkillCatalogModal({ teamId, onClose }: Props): JSX.Element {
           <button
             type="submit"
             disabled={!name.trim() || createMut.isPending}
-            className="rounded bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50"
           >
             {t('resources.skills.add')}
           </button>

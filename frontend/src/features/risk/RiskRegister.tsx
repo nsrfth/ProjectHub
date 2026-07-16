@@ -55,7 +55,7 @@ export function RiskRegister({ teamId, projectId, canManage }: RiskRegisterProps
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="ms-auto rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="ms-auto rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover"
           >
             {t('risk.new')}
           </button>
@@ -287,7 +287,7 @@ function RiskCreateModal({
           <button
             type="submit"
             disabled={!title.trim() || createMut.isPending}
-            className="rounded bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50"
           >
             {t('risk.form.create')}
           </button>

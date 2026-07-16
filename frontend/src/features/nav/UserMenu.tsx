@@ -60,7 +60,7 @@ export default function UserMenu(): JSX.Element | null {
         aria-expanded={open}
         aria-label="Account menu"
       >
-        <span className="w-8 h-8 rounded-full bg-blue-600 text-white text-xs font-semibold flex items-center justify-center">
+        <span className="w-8 h-8 rounded-full bg-primary text-primary-contrast text-xs font-semibold flex items-center justify-center">
           {initials(user.name, user.email)}
         </span>
         <span className="hidden sm:inline text-sm text-text">

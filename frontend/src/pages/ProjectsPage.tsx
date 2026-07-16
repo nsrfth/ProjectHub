@@ -373,7 +373,7 @@ export default function ProjectsPage(): JSX.Element {
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
-              className="inline-flex items-center gap-1 rounded-md bg-primary hover:bg-indigo-600 text-primary-contrast text-sm font-medium px-3 py-1.5"
+              className="inline-flex items-center gap-1 rounded-md bg-primary hover:bg-primary-hover text-primary-contrast text-sm font-medium px-3 py-1.5"
             >
               + New project
             </button>

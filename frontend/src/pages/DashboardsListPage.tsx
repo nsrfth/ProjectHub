@@ -50,7 +50,7 @@ export default function DashboardsListPage(): JSX.Element {
           type="button"
           onClick={() => createMut.mutate()}
           disabled={createMut.isPending}
-          className="px-3 py-1.5 text-sm rounded bg-primary text-primary-contrast hover:bg-indigo-700 disabled:opacity-50"
+          className="px-3 py-1.5 text-sm rounded bg-primary text-primary-contrast hover:bg-primary-hover disabled:opacity-50"
         >
           {t('dashboard.create')}
         </button>

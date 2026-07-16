@@ -43,7 +43,7 @@ export function WbsView({ teamId, projectId, canManage }: Props): JSX.Element {
           <button
             type="button"
             onClick={() => setAddParent({ id: null, title: t('wbs.root') })}
-            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover"
           >
             {t('wbs.addRoot')}
           </button>
@@ -194,7 +194,7 @@ function AddTaskModal({ teamId, projectId, parentId, parentTitle, onClose, onCre
           <button
             type="submit"
             disabled={!title.trim() || createMut.isPending}
-            className="rounded bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50"
           >
             {t('wbs.form.create')}
           </button>
@@ -281,7 +281,7 @@ function MoveTaskModal({ teamId, projectId, node, nodes, onClose, onMoved }: Mov
           <button
             type="submit"
             disabled={moveMut.isPending}
-            className="rounded bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50"
           >
             {t('wbs.moveConfirm')}
           </button>

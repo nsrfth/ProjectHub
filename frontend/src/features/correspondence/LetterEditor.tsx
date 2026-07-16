@@ -246,7 +246,7 @@ export function LetterEditor({
               <button
                 type="submit"
                 disabled={!subject.trim() || saveMut.isPending}
-                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-contrast disabled:opacity-50"
               >
                 {savedId ? t('common.save') : t('correspondence.editor.create')}
               </button>

@@ -183,7 +183,7 @@ export function RateCardsSection({ teamId, canManage }: Props): JSX.Element {
           {err && <p className="text-xs text-danger sm:col-span-2">{err}</p>}
           <div className="sm:col-span-2">
             <button type="submit" disabled={!valid || createMut.isPending}
-              className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+              className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-contrast disabled:opacity-50">
               {t('timesheets.rates.add')}
             </button>
           </div>

@@ -150,7 +150,7 @@ export function RecordDetailModal({
               <button
                 type="submit"
                 disabled={!title.trim() || saveMut.isPending}
-                className="rounded bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50"
               >
                 {t('common.save')}
               </button>
@@ -194,7 +194,7 @@ export function RecordDetailModal({
               <button
                 type="submit"
                 disabled={!commentBody.trim() || commentMut.isPending}
-                className="rounded bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-50"
               >
                 {t('records.comments.add')}
               </button>

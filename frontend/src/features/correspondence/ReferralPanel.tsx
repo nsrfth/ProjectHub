@@ -203,7 +203,7 @@ export function ReferralPanel({
             type="button"
             onClick={() => referMut.mutate()}
             disabled={selectedIds.length === 0 || referMut.isPending}
-            className="text-xs rounded bg-primary text-white px-3 py-1.5 disabled:opacity-50"
+            className="text-xs rounded bg-primary text-primary-contrast px-3 py-1.5 disabled:opacity-50"
           >
             {t('correspondence.referral.submit')}
           </button>
