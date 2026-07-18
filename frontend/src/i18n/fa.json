@@ -1065,6 +1065,7 @@
   "projects.timeline.allStatuses": "همه وضعیت‌ها",
   "projects.timeline.teamFilter": "تیم",
   "projects.timeline.statusFilter": "وضعیت",
+  "projects.timeline.progress": "پیشرفت",
 
   "common.save": "ذخیره",
   "common.cancel": "انصراف",

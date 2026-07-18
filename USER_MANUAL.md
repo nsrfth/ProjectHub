@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.5.58** (2026-07-17)
+Version **v2.5.59** (2026-07-18)
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -573,13 +573,34 @@ When PMIS modules are enabled on the project, a **Task schedule (WBS)** section 
 
 | Mode | Visible window | Navigation step |
 |------|----------------|-----------------|
-| **Year** | 12 month columns for the anchor year | ±1 year |
+| **Year** | 12 month columns for the anchor year, **in your calendar** (v2.5.59) | ±1 year |
 | **Month** | Full calendar month (day columns, week dividers) | ±1 month |
 | **Week** | 7 days from the configured week start | ±1 week |
 | **Working week** | Same week range but **off-days omitted** (only working-day columns) | ±1 week |
 | **Day** | **Fit** — spans the whole filtered project at day resolution (legacy default); prev/next switches to month windows | ±1 month when not fit |
 
 Use **‹ Today ›** to jump the anchor to the current period. The period label follows your Shamsi/Gregorian preference.
+
+### All-projects year timeline (v2.5.58, calendar-aware + progress v2.5.59)
+
+**Projects → Timeline** (`/projects/timeline`) puts every project you can see — across every team — on a single one-year chart, one row per project. Filter by team and by status (Active / On hold / Archived); projects without start and end dates are listed underneath as **Unscheduled**.
+
+The 12-month axis **follows your calendar setting** (v2.5.59):
+
+- **Shamsi** — the year runs **Farvardin 1 → Esfand 29/30** (leap years included), with Persian month names (فرو، ارد، خرد …). The year label above the chart is the Jalali year the grid actually covers.
+- **Gregorian** — the year runs **January → December**, labelled Jan…Dec.
+
+Switch calendars under **Preferences → Calendar**; the timeline follows on the next load.
+
+Each row can show three things:
+
+| Colour | Meaning |
+|--------|---------|
+| **Blue bar** | The project's planned window (start date → end date). |
+| **Green fill** | **Progress** (v2.5.59) — how far along the project is, filling the planned bar from the left. |
+| **Red segment** | **Late to start** — the planned start has passed but no task has moved off To do. Drawn over everything else, because "not started" outranks "in progress". |
+
+**Progress** is the average percent-complete of the project's live, lowest-level tasks. Summary (parent) tasks are skipped so their rolled-up percentage is not counted twice, and deleted tasks are ignored. A project with no tasks yet shows 0%. Hover any bar for the exact figure alongside the project's dates.
 
 ### Exporting to CSV (v1.14)
 

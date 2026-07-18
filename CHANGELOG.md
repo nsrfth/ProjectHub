@@ -13,6 +13,41 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.5.59] — 2026-07-18
+
+**Year timeline: calendar-aware month axis + green progress overlay.**
+
+### Added
+- **Calendar-aware YEAR axis.** The 12-month window on the shared Gantt `year` scale now follows
+  the user's calendar preference: a true **Jalali year** (Farvardin 1 → Esfand 29/30, leap-aware)
+  under `SHAMSI`, and January → December under `GREGORIAN`. Applies to both `/projects/timeline`
+  and the project Gantt's Year scale — one implementation, no fork. Month labels became localized
+  short names (`فرو، ارد، خرد …` / `Jan…Dec`) instead of ambiguous numerals `1..12`.
+- **Project progress on the timeline.** `GET /api/projects` rows gain `progressPct` (int 0–100) —
+  the mean `percentComplete` of the project's **live leaf tasks**, the same earned-value
+  definition `evmService` uses. Summary rows are excluded so rollups are not double counted;
+  soft-deleted rows are excluded. One extra indexed `groupBy` per request, mirroring `hasStarted`.
+  The timeline paints it as a green (`--color-success`) fill inside each planned bar, under the
+  red late-start segment, with the percentage in the bar tooltip.
+
+### Fixed
+- **YEAR period label was one Jalali year low.** Under `SHAMSI` the label converted Gregorian
+  Jan 1 — which falls in Dey of the *previous* Jalali year — so the header could read `۱۴۰۴` over
+  a grid mostly covering `۱۴۰۵`. The label is now derived from the same window start as the axis,
+  so the two cannot disagree.
+- **Stray parenthesis in the YEAR label.** The old implementation scraped the year off the end of
+  a formatted long date by splitting on whitespace, which returned `"2025)"` whenever the
+  dual-calendar preference appended `(January 1, 2025)`. The string parsing is gone entirely.
+
+### Notes
+- No schema migration — `progressPct` is computed at read time.
+- `buildGanttAxis`, `visiblePeriodStartMs`, `visiblePeriodEndMs` and `formatGanttPeriodLabel` take
+  an explicit `calendar` parameter rather than reading `localStorage`, keeping the scale module
+  pure and testable. Callers pass `getCalendar()`.
+- Jalali boundaries are derived by probing 19–22 March with the **forward** conversion already
+  used in production (`react-date-object` is only a transitive dependency here), so no leap rule
+  is encoded anywhere and no new dependency surface is taken on.
+
 ## [2.5.58] — 2026-07-17
 
 **Feature epic: multi-team sharing, Hold column with mandatory comments, plan freeze, persistent

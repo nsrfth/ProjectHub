@@ -42,6 +42,10 @@ export interface Project {
   // v2.5.58: cross-team list only (GET /projects) — any live task past TODO
   // or with actualStart. Feeds the year timeline's "late to start" red gap.
   hasStarted?: boolean;
+  // v2.5.59: cross-team list only — mean percentComplete over live leaf tasks.
+  // Drives the year timeline's green progress fill. Optional on the wire for
+  // the same forward-compat reason as hasStarted.
+  progressPct?: number;
   // v2.5.52: attached portfolio org unit (company). Null when unattached;
   // optional on the wire for forward-compat with older responses.
   orgUnit?: { id: string; name: string } | null;

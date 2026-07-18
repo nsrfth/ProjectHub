@@ -17,7 +17,7 @@ import {
   type GanttScaleMode,
 } from '@/features/reports/ganttScale';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
-import { getWeekStartDay } from '@/lib/calendar';
+import { getCalendar, getWeekStartDay } from '@/lib/calendar';
 import { useT } from '@/lib/i18n';
 
 // v1.42: per-project Gantt report page. v1.76: time-scale modes +
@@ -191,10 +191,13 @@ export default function ProjectGanttPage(): JSX.Element {
   const fitBounds = scaleMode === 'day' && dayFitProject ? projectBounds : null;
   const weekStartDay = getWeekStartDay();
   const todayMs = todayUtcMs();
+  // v2.5.59: YEAR scale spans a Jalali year under SHAMSI (shared axis with the
+  // all-projects timeline). Other scales ignore this parameter.
+  const calendar = getCalendar();
 
   const axis = useMemo(
-    () => buildGanttAxis(scaleMode, anchorMs, weekStartDay, todayMs, fitBounds),
-    [scaleMode, anchorMs, weekStartDay, todayMs, fitBounds],
+    () => buildGanttAxis(scaleMode, anchorMs, weekStartDay, todayMs, fitBounds, calendar),
+    [scaleMode, anchorMs, weekStartDay, todayMs, fitBounds, calendar],
   );
 
   const scheduleAxis = useMemo(
@@ -205,13 +208,14 @@ export default function ProjectGanttPage(): JSX.Element {
         weekStartDay,
         todayMs,
         scaleMode === 'day' && dayFitProject ? scheduleBounds : null,
+        calendar,
       ),
-    [scaleMode, anchorMs, weekStartDay, todayMs, dayFitProject, scheduleBounds],
+    [scaleMode, anchorMs, weekStartDay, todayMs, dayFitProject, scheduleBounds, calendar],
   );
 
   const periodLabel = useMemo(
-    () => formatGanttPeriodLabel(scaleMode, anchorMs, weekStartDay, fitBounds),
-    [scaleMode, anchorMs, weekStartDay, fitBounds],
+    () => formatGanttPeriodLabel(scaleMode, anchorMs, weekStartDay, fitBounds, calendar),
+    [scaleMode, anchorMs, weekStartDay, fitBounds, calendar],
   );
 
   const chartHeight =

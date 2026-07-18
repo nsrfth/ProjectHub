@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2.5.58 (unified — frontend, backend, and manual share one number) (2026-07-17)
+**Version:** v2.5.59 (unified — frontend, backend, and manual share one number) (2026-07-18)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -333,6 +333,47 @@ existing task/subtask PATCH routes (same v1.18 manager date gate applies).
 Zoom levels adjust `pxPerDay` and visible window length. Row virtualization
 renders only viewport ± buffer rows in the chart body while keeping full
 scroll height for the sidebar labels.
+
+## All-projects year timeline (v2.5.58, calendar-aware axis + progress v2.5.59)
+
+`/projects/timeline` (`ProjectsTimelinePage`) renders one SVG row per dated
+project across every team the caller can see, on the **shared** `year` axis from
+`features/reports/ganttScale.ts` — the same builder the project Gantt uses, so
+there is one implementation of the year window rather than a timeline-only fork.
+
+**Calendar-aware year window (v2.5.59).** `buildGanttAxis`,
+`visiblePeriodStartMs/EndMs` and `formatGanttPeriodLabel` take an explicit
+`calendar: Calendar` parameter — callers pass `getCalendar()` — rather than
+reading `localStorage` inside the module, which keeps the scale math pure and
+unit-testable. Under `SHAMSI` the window is a true Jalali year (Farvardin 1 →
+Esfand 29/30); under `GREGORIAN` it stays Jan 1 → Dec 31. Both branches produce
+the same 12-month-bounds shape, and the axis window is derived from
+`bounds[0].startMs` / `bounds[11].endMs`, so grid, bars and period label cannot
+disagree about where the year begins — the defect that made the Shamsi label
+read one year low.
+
+Jalali boundaries live in `lib/shamsi.ts`. `react-date-object` is only a
+*transitive* dependency here (it arrives via `react-multi-date-picker`), so we
+lean solely on its **forward** conversion — already proven by the shipping
+formatters — and find Nowruz by probing 19–22 March of Gregorian year
+`jy + 621`. Months 1–6 (31 days) and 7–11 (30) are definitional; only Esfand
+varies, and its end is derived from the *next* Nowruz. No leap rule is encoded.
+
+Column *positions* stay uniform (`x = m * MONTH_PX`) while bars are placed
+day-linearly across the window — the pre-existing v1.76 approximation. It was
+already imprecise for 28–31-day Gregorian months and is no worse for 29–31-day
+Jalali ones; `monthStartMs`/`monthEndMs` carry the real boundaries so
+`isCurrentMonth` remains exact.
+
+**Progress overlay (v2.5.59).** `GET /api/projects` rows carry `progressPct`
+(int 0–100), computed read-time in `projectsService.listAllVisible` as the mean
+`percentComplete` of **live leaf tasks** (`deletedAt: null`, `isSummary: false`)
+— the same earned-value definition `evmService` uses, and summary rows are
+excluded so their rollups are not double counted. It is one extra indexed
+`groupBy` for the whole page, mirroring the `hasStarted` query beside it; no
+schema change and no migration. Row z-order is planned bar → green
+(`--color-success`) progress fill → start/end marker → red (`--color-danger`)
+late-start segment, so "not started" always outranks "in progress".
 
 ## Personal project buckets (v1.45)
 

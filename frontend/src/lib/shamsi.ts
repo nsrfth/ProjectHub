@@ -30,6 +30,8 @@ import { formatTimestamp, formatTimestampDate, getDualCalendar } from './datetim
 // `react-date-object` already does the Gregorian→Jalali conversion the picker
 // uses; we consolidate on it here so we have one library doing the math.
 
+const MS_DAY = 86_400_000;
+
 const FA_MONTHS = [
   'فروردین',
   'اردیبهشت',
@@ -45,11 +47,27 @@ const FA_MONTHS = [
   'اسفند',
 ];
 
+// v2.5.59: abbreviated forms for the year-timeline month axis (72px columns).
+const FA_MONTHS_SHORT = [
+  'فرو',
+  'ارد',
+  'خرد',
+  'تیر',
+  'مرد',
+  'شهر',
+  'مهر',
+  'آبا',
+  'آذر',
+  'دی',
+  'بهم',
+  'اسف',
+];
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-function toPersianDigits(s: string): string {
+export function toPersianDigits(s: string): string {
   return s.replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 }
 
@@ -66,6 +84,77 @@ function jalaaliFromUtc(iso: string): { jy: number; jm: number; jd: number } | n
     locale: persian_fa,
   });
   return { jy: obj.year, jm: obj.month.number, jd: obj.day };
+}
+
+// ------- Jalali year/month boundaries (v2.5.59) --------------------------
+//
+// The year-timeline axis needs the REVERSE of `jalaaliFromUtc`: "which UTC
+// day is Farvardin 1 of Jalali year N?". `react-date-object` is only a
+// transitive dependency here (it arrives via react-multi-date-picker) and we
+// deliberately lean on nothing but its forward conversion, which is the path
+// already proven in production by the formatters above.
+//
+// Nowruz always falls on 19–22 March of Gregorian year jy + 621, so probing
+// those four days with the forward conversion pins Farvardin 1 exactly — in
+// leap and common years alike, with no leap rule encoded anywhere.
+//
+// TZ note: the probe builds LOCAL-midnight Dates because DateObject reads
+// local components. `new Date(y, m, d)` round-trips to the same y/m/d in
+// every timezone; `new Date(Date.UTC(y, m, d))` does not — it reads back as
+// the previous day anywhere west of Greenwich, which is the latent hazard in
+// `jalaaliFromUtc` above (harmless at +03:30, wrong in the Americas).
+function jalaaliFromLocalYmd(
+  gy: number,
+  gm0: number,
+  gd: number,
+): { jy: number; jm: number; jd: number } {
+  const obj = new DateObject({
+    date: new Date(gy, gm0, gd),
+    calendar: persian,
+    locale: persian_fa,
+  });
+  return { jy: obj.year, jm: obj.month.number, jd: obj.day };
+}
+
+/** Jalali year containing the given UTC-midnight calendar day. */
+export function jalaliYearOfUtcMs(ms: number): number {
+  const d = new Date(ms);
+  return jalaaliFromLocalYmd(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).jy;
+}
+
+/** UTC ms of Farvardin 1 (Nowruz) of the given Jalali year. */
+export function jalaliYearStartUtcMs(jy: number): number {
+  const gy = jy + 621;
+  for (let day = 19; day <= 22; day++) {
+    const p = jalaaliFromLocalYmd(gy, 2, day);
+    if (p.jy === jy && p.jm === 1 && p.jd === 1) return Date.UTC(gy, 2, day);
+  }
+  // Unreachable for any real Jalali year. Keep the axis renderable rather
+  // than throwing if the conversion library ever changes shape.
+  return Date.UTC(gy, 2, 21);
+}
+
+// Month lengths are DEFINITIONAL in the modern Solar Hijri calendar: months
+// 1–6 are 31 days, months 7–11 are 30. Only Esfand varies (29 or 30), and we
+// derive its end from the following Nowruz instead of encoding a leap rule.
+const JALALI_MONTH_START_OFFSET = [0, 31, 62, 93, 124, 155, 186, 216, 246, 276, 306, 336];
+
+/** 12 × UTC-ms month bounds for a Jalali year. Esfand is leap-aware. */
+export function jalaliYearMonths(jy: number): Array<{ startMs: number; endMs: number }> {
+  const yearStart = jalaliYearStartUtcMs(jy);
+  const nextYearStart = jalaliYearStartUtcMs(jy + 1);
+  return JALALI_MONTH_START_OFFSET.map((offset, i) => ({
+    startMs: yearStart + offset * MS_DAY,
+    endMs:
+      (i === 11
+        ? nextYearStart
+        : yearStart + JALALI_MONTH_START_OFFSET[i + 1] * MS_DAY) - MS_DAY,
+  }));
+}
+
+/** Abbreviated Persian month name by 0-based index (فرو … اسف). */
+export function jalaliMonthShortName(monthIndex0: number): string {
+  return FA_MONTHS_SHORT[monthIndex0] ?? '';
 }
 
 // Gregorian short calendar date (UTC components → "2026-05-22").

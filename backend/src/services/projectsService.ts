@@ -519,7 +519,16 @@ export class ProjectsService {
   async listAllVisible(
     callerUserId: string,
     callerGlobalRole: GlobalRole,
-  ): Promise<Array<ProjectView & { teamName: string; teamSlug: string; hasStarted: boolean }>> {
+  ): Promise<
+    Array<
+      ProjectView & {
+        teamName: string;
+        teamSlug: string;
+        hasStarted: boolean;
+        progressPct: number;
+      }
+    >
+  > {
     const where = await projectListAllWhereForCaller(callerUserId, callerGlobalRole);
     const rows = await prisma.project.findMany({
       where,
@@ -544,11 +553,34 @@ export class ProjectsService {
         })
       : [];
     const startedIds = new Set(startedGroups.map((g) => g.projectId));
+    // v2.5.59: project progress for the year-timeline's green fill. Mean
+    // percentComplete over LIVE LEAF tasks — the same earned-value definition
+    // evmService uses, so the two never disagree. Summary rows are excluded
+    // because their percentComplete is a rollup of the leaves beneath them and
+    // would double-count. Tasks whose progress is driven by their subtasks
+    // already reflect that here via PercentCompleteMode.FROM_CHILDREN.
+    // One indexed groupBy for the whole page, mirroring `hasStarted` above.
+    const progressGroups = rows.length
+      ? await prisma.task.groupBy({
+          by: ['projectId'],
+          where: {
+            projectId: { in: rows.map((p) => p.id) },
+            deletedAt: null,
+            isSummary: false,
+          },
+          _avg: { percentComplete: true },
+        })
+      : [];
+    const progressById = new Map(
+      progressGroups.map((g) => [g.projectId, Math.round(g._avg.percentComplete ?? 0)]),
+    );
     return rows.map((p) => ({
       ...toView(p),
       teamName: p.team.name,
       teamSlug: p.team.slug,
       hasStarted: startedIds.has(p.id),
+      // Projects with no live leaf tasks have no evidence of progress → 0.
+      progressPct: progressById.get(p.id) ?? 0,
     }));
   }
 

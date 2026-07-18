@@ -1167,6 +1167,7 @@
   "projects.timeline.allStatuses": "All statuses",
   "projects.timeline.teamFilter": "Team",
   "projects.timeline.statusFilter": "Status",
+  "projects.timeline.progress": "Progress",
 
   "common.save": "Save",
   "common.cancel": "Cancel",

@@ -1,4 +1,9 @@
-import { getHolidayName, isOffDay } from '../../lib/calendar';
+import { getHolidayName, isOffDay, type Calendar } from '../../lib/calendar';
+import {
+  jalaliMonthShortName,
+  jalaliYearMonths,
+  jalaliYearOfUtcMs,
+} from '../../lib/shamsi';
 
 // v1.76: time-scale + visible-window math for the per-project Gantt chart.
 // All date math stays on UTC-midnight calendar days (same convention as
@@ -35,14 +40,24 @@ function utcMonthEnd(ms: number): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0);
 }
 
-function utcYearStart(ms: number): number {
-  const d = new Date(ms);
-  return Date.UTC(d.getUTCFullYear(), 0, 1);
-}
-
-function utcYearEnd(ms: number): number {
-  const d = new Date(ms);
-  return Date.UTC(d.getUTCFullYear(), 11, 31);
+// v2.5.59: the YEAR window follows the user's calendar setting — a Jalali
+// year (Farvardin 1 → Esfand 29/30) under SHAMSI, a Gregorian one under
+// GREGORIAN. `calendar` is threaded in as an explicit parameter rather than
+// read from localStorage here so this module stays pure and testable.
+//
+// Both branches return the same shape (12 month bounds), and the axis window
+// is derived from bounds[0]/bounds[11] so the grid, the bars and the period
+// label can never disagree about where the year starts.
+function yearMonthBounds(
+  anchorMs: number,
+  calendar: Calendar,
+): Array<{ startMs: number; endMs: number }> {
+  if (calendar === 'SHAMSI') return jalaliYearMonths(jalaliYearOfUtcMs(anchorMs));
+  const gy = new Date(anchorMs).getUTCFullYear();
+  return Array.from({ length: 12 }, (_, m) => ({
+    startMs: Date.UTC(gy, m, 1),
+    endMs: Date.UTC(gy, m + 1, 0),
+  }));
 }
 
 function addDays(ms: number, n: number): number {
@@ -163,37 +178,35 @@ function buildDayColumns(
   });
 }
 
+function gregorianMonthShortName(monthStartMs: number): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(monthStartMs));
+}
+
+// Columns stay uniform (x = m * MONTH_PX) while bars are placed day-linearly
+// across the window — the pre-existing approximation from v1.76. It was
+// already imprecise for Gregorian months (28–31 days) and is no worse for
+// Jalali ones (29–31). `monthStartMs`/`monthEndMs` carry the REAL boundaries,
+// so `isCurrentMonth` stays exact either way.
 function buildMonthColumns(
-  yearStartMs: number,
+  bounds: Array<{ startMs: number; endMs: number }>,
   todayMs: number,
+  calendar: Calendar,
 ): GanttMonthColumn[] {
-  const cols: GanttMonthColumn[] = [];
-  for (let m = 0; m < 12; m++) {
-    const monthStartMs = Date.UTC(
-      new Date(yearStartMs).getUTCFullYear(),
-      m,
-      1,
-    );
-    const monthEndMs = Date.UTC(
-      new Date(yearStartMs).getUTCFullYear(),
-      m + 1,
-      0,
-    );
-    const d = new Date(monthStartMs);
-    const label = `${d.getUTCMonth() + 1}`;
-    const isCurrentMonth =
-      todayMs >= monthStartMs && todayMs <= monthEndMs;
-    cols.push({
-      kind: 'month',
-      x: m * MONTH_PX,
-      width: MONTH_PX,
-      monthStartMs,
-      monthEndMs,
-      label,
-      isCurrentMonth,
-    });
-  }
-  return cols;
+  return bounds.map((b, m) => ({
+    kind: 'month' as const,
+    x: m * MONTH_PX,
+    width: MONTH_PX,
+    monthStartMs: b.startMs,
+    monthEndMs: b.endMs,
+    label:
+      calendar === 'SHAMSI'
+        ? jalaliMonthShortName(m)
+        : gregorianMonthShortName(b.startMs),
+    isCurrentMonth: todayMs >= b.startMs && todayMs <= b.endMs,
+  }));
 }
 
 export function buildGanttAxis(
@@ -202,6 +215,7 @@ export function buildGanttAxis(
   weekStartDay: number,
   todayMs: number,
   fitBounds: ProjectBounds | null,
+  calendar: Calendar,
 ): GanttAxis {
   if (scaleMode === 'day' && fitBounds) {
     const dayMsList = enumerateDays(fitBounds.startMs, fitBounds.endMs);
@@ -218,13 +232,12 @@ export function buildGanttAxis(
   }
 
   if (scaleMode === 'year') {
-    const startMs = utcYearStart(anchorMs);
-    const endMs = utcYearEnd(anchorMs);
-    const columns = buildMonthColumns(startMs, todayMs);
+    const bounds = yearMonthBounds(anchorMs, calendar);
+    const columns = buildMonthColumns(bounds, todayMs, calendar);
     return {
       scaleMode,
-      startMs,
-      endMs,
+      startMs: bounds[0].startMs,
+      endMs: bounds[11].endMs,
       chartWidth: 12 * MONTH_PX,
       columns,
       columnKind: 'month',
@@ -367,9 +380,10 @@ export function visiblePeriodStartMs(
   anchorMs: number,
   weekStartDay: number,
   fitBounds: ProjectBounds | null,
+  calendar: Calendar,
 ): number {
   if (scaleMode === 'day' && fitBounds) return fitBounds.startMs;
-  if (scaleMode === 'year') return utcYearStart(anchorMs);
+  if (scaleMode === 'year') return yearMonthBounds(anchorMs, calendar)[0].startMs;
   if (scaleMode === 'month' || scaleMode === 'day') return utcMonthStart(anchorMs);
   return weekStartMs(anchorMs, weekStartDay);
 }
@@ -379,9 +393,10 @@ export function visiblePeriodEndMs(
   anchorMs: number,
   weekStartDay: number,
   fitBounds: ProjectBounds | null,
+  calendar: Calendar,
 ): number {
   if (scaleMode === 'day' && fitBounds) return fitBounds.endMs;
-  if (scaleMode === 'year') return utcYearEnd(anchorMs);
+  if (scaleMode === 'year') return yearMonthBounds(anchorMs, calendar)[11].endMs;
   if (scaleMode === 'month' || scaleMode === 'day') return utcMonthEnd(anchorMs);
   return weekStartMs(anchorMs, weekStartDay) + 6 * MS_DAY;
 }

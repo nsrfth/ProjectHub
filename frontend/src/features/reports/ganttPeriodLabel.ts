@@ -1,5 +1,10 @@
-import { getCalendar } from '../../lib/calendar';
-import { formatShamsiCalendarDate, formatShamsiCalendarLong } from '../../lib/shamsi';
+import { type Calendar } from '../../lib/calendar';
+import {
+  formatShamsiCalendarDate,
+  formatShamsiCalendarLong,
+  jalaliYearOfUtcMs,
+  toPersianDigits,
+} from '../../lib/shamsi';
 import {
   visiblePeriodEndMs,
   visiblePeriodStartMs,
@@ -12,20 +17,23 @@ export function formatGanttPeriodLabel(
   anchorMs: number,
   weekStartDay: number,
   fitBounds: ProjectBounds | null,
+  calendar: Calendar,
 ): string {
-  const startMs = visiblePeriodStartMs(scaleMode, anchorMs, weekStartDay, fitBounds);
-  const endMs = visiblePeriodEndMs(scaleMode, anchorMs, weekStartDay, fitBounds);
+  const startMs = visiblePeriodStartMs(scaleMode, anchorMs, weekStartDay, fitBounds, calendar);
+  const endMs = visiblePeriodEndMs(scaleMode, anchorMs, weekStartDay, fitBounds, calendar);
   const startIso = new Date(startMs).toISOString();
   const endIso = new Date(endMs).toISOString();
 
   if (scaleMode === 'year') {
-    if (getCalendar() === 'GREGORIAN') {
+    if (calendar === 'GREGORIAN') {
       return String(new Date(startMs).getUTCFullYear());
     }
-    const long = formatShamsiCalendarLong(startIso);
-    if (!long) return '';
-    const parts = long.trim().split(/\s+/);
-    return parts[parts.length - 1] ?? long;
+    // v2.5.59: read the Jalali year straight off the window start (now a real
+    // Farvardin 1) instead of parsing it out of a formatted long date. The old
+    // approach converted Gregorian Jan 1 — which sits in Dey of the PREVIOUS
+    // Jalali year, labelling the grid one year low — and its split-on-space
+    // trick also returned "2025)" whenever dual-calendar display was on.
+    return toPersianDigits(String(jalaliYearOfUtcMs(startMs)));
   }
 
   if (scaleMode === 'month' || scaleMode === 'day') {

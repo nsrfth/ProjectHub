@@ -17,7 +17,7 @@ import {
   projectsTimelineRows,
 } from '@/features/projects/timelineLogic';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
-import { getWeekStartDay } from '@/lib/calendar';
+import { getCalendar, getWeekStartDay } from '@/lib/calendar';
 import { useT } from '@/lib/i18n';
 
 // v2.5.58: "All projects — one-year timeline". One SVG row per dated project
@@ -52,15 +52,19 @@ export default function ProjectsTimelinePage(): JSX.Element {
 
   const weekStartDay = getWeekStartDay();
   const todayMs = todayUtcMs();
+  // v2.5.59: the 12-month axis follows the calendar preference (Jalali months
+  // under SHAMSI). Changing it happens on the Preferences page, which reloads,
+  // so a plain read at render is enough — no subscription needed.
+  const calendar = getCalendar();
 
   const axis = useMemo(
-    () => buildGanttAxis('year', anchorMs, weekStartDay, todayMs, null),
-    [anchorMs, weekStartDay, todayMs],
+    () => buildGanttAxis('year', anchorMs, weekStartDay, todayMs, null, calendar),
+    [anchorMs, weekStartDay, todayMs, calendar],
   );
 
   const yearLabel = useMemo(
-    () => formatGanttPeriodLabel('year', anchorMs, weekStartDay, null),
-    [anchorMs, weekStartDay],
+    () => formatGanttPeriodLabel('year', anchorMs, weekStartDay, null, calendar),
+    [anchorMs, weekStartDay, calendar],
   );
 
   const teamOptions = useMemo(() => {
@@ -211,6 +215,9 @@ function barTooltip(
   const lines = [`${p.name} — ${p.teamName}`];
   if (start) lines.push(`${t('projects.startDate')}: ${start}`);
   if (end) lines.push(`${t('projects.endDate')}: ${end}`);
+  if (p.progressPct !== undefined) {
+    lines.push(`${t('projects.timeline.progress')}: ${p.progressPct}%`);
+  }
   if (gapDays > 0 && start) {
     lines.push(
       t('projects.timeline.lateStart')
@@ -299,6 +306,13 @@ function TimelineChart({
             ? barGeometry(startMs, Math.min(todayMs, axis.endMs), axis)
             : null;
 
+        // v2.5.59: green progress fill, inset in the planned bar. Clamped to
+        // the planned width so a rounding artefact can never overhang it.
+        const progressPct = p.progressPct ?? 0;
+        const progressWidth = plannedGeom
+          ? Math.min(plannedGeom.width, Math.max(2, (plannedGeom.width * progressPct) / 100))
+          : 0;
+
         const markerGeom = startMarker ?? endMarker;
         const markerCx = markerGeom ? markerGeom.x + markerGeom.width / 2 : null;
         const centerY = rowY + ROW_HEIGHT / 2;
@@ -322,6 +336,18 @@ function TimelineChart({
                 rx={3}
                 style={{ fill: 'var(--color-primary)' }}
                 opacity={0.8}
+              >
+                <title>{tooltip}</title>
+              </rect>
+            )}
+            {plannedGeom && progressPct > 0 && (
+              <rect
+                x={plannedGeom.x + 2}
+                y={rowY + 6}
+                width={progressWidth}
+                height={ROW_HEIGHT - 12}
+                rx={3}
+                style={{ fill: 'var(--color-success)' }}
               >
                 <title>{tooltip}</title>
               </rect>

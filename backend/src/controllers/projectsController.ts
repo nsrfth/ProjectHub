@@ -98,6 +98,7 @@ export class ProjectsController {
         teamName: p.teamName,
         teamSlug: p.teamSlug,
         hasStarted: p.hasStarted,
+        progressPct: p.progressPct,
       })),
     );
   };

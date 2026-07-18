@@ -105,6 +105,8 @@ export const PROJECTS_TIMELINE_I18N_KEYS = [
   'projects.timeline.allStatuses',
   'projects.timeline.teamFilter',
   'projects.timeline.statusFilter',
+  // New (v2.5.59)
+  'projects.timeline.progress',
   // Reused existing keys
   'reports.allTeams',
   'projects.status.active',

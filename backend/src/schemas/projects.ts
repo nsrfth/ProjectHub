@@ -209,6 +209,9 @@ export const projectCrossTeamResponse = projectResponse.extend({
   // v2.5.58: any live task past TODO (or with actualStart) — feeds the
   // year-timeline's "not started yet" red gap.
   hasStarted: z.boolean(),
+  // v2.5.59: mean percentComplete over live leaf tasks (0 when the project has
+  // none) — drives the year-timeline's green progress fill.
+  progressPct: z.number().int().min(0).max(100),
 });
 
 export type CreateProjectBody = z.infer<typeof createProjectBody>;
