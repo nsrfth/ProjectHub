@@ -30,6 +30,10 @@ export interface TeamMember {
   locked: boolean;
   external: boolean;
   groupAccessLevel: 'FULL' | 'READONLY' | null;
+  // v2.11: the member's department (UNIT group) in this division.
+  unitId: string | null;
+  unitName: string | null;
+  unitRole: 'MANAGER' | 'MEMBER' | null;
 }
 
 export interface TeamDeleteBlockers {

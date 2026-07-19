@@ -10,6 +10,7 @@ import { visibleTeamMembers } from '@/lib/systemUser';
 import { useT } from '@/lib/i18n';
 import TeamGroupsPanel from '@/features/groups/TeamGroupsPanel';
 import { displayRoleName } from '@/lib/displayRoleName';
+import { deriveDeputies, systemRoleId } from '@/lib/deputies';
 
 function MemberStatusBadges({ member, t }: { member: teamsApi.TeamMember; t: (k: string) => string }): JSX.Element | null {
   if (member.disabled) {
@@ -178,6 +179,14 @@ export default function TeamsPage(): JSX.Element {
   });
 
   const roster = visibleTeamMembers(membersPage?.items ?? []);
+  // v2.11: unpaginated roster for the deputies row — the paged `roster` above
+  // could hide a deputy sitting on page 2.
+  const { data: fullRoster = [] } = useQuery({
+    queryKey: ['teams', currentTeamId, 'assignees'],
+    queryFn: () => teamsApi.listTeamMembersForAssignees(currentTeamId!),
+    enabled: !!currentTeamId,
+  });
+  const allMembers = visibleTeamMembers(fullRoster);
   const totalPages = membersPage?.totalPages ?? 0;
   const totalItems = membersPage?.totalItems ?? 0;
   const currentPage = membersPage?.page ?? page;
@@ -522,6 +531,63 @@ export default function TeamsPage(): JSX.Element {
                 ))}
               </div>
 
+              {/* v2.11: the division's deputies, first-class. */}
+              {(() => {
+                const deputies = deriveDeputies(allMembers, teamRoles);
+                const managerRoleId = systemRoleId(teamRoles, 'manager');
+                const memberRoleId = systemRoleId(teamRoles, 'member');
+                const candidates = allMembers.filter(
+                  (m) => !m.external && m.roleId !== managerRoleId,
+                );
+                return (
+                  <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" data-testid="deputies-row">
+                    <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                      {t('team.deputies.title')}
+                    </span>
+                    {deputies.length === 0 && (
+                      <span className="text-xs text-slate-400">{t('team.deputies.none')}</span>
+                    )}
+                    {deputies.map((d) => (
+                      <span
+                        key={d.userId}
+                        className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5"
+                      >
+                        {d.name}
+                        {isManager && memberRoleId && (
+                          <button
+                            type="button"
+                            title={t('team.deputies.remove')}
+                            className="text-slate-400 hover:text-danger"
+                            onClick={() => {
+                              if (window.confirm(t('team.deputies.removeConfirm').replace('{name}', d.name)))
+                                updateRoleMut.mutate({ userId: d.userId, roleId: memberRoleId });
+                            }}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                    {isManager && managerRoleId && candidates.length > 0 && (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value)
+                            updateRoleMut.mutate({ userId: e.target.value, roleId: managerRoleId });
+                        }}
+                        className="text-xs rounded border border-border bg-surface px-1 py-0.5"
+                        data-testid="deputy-add"
+                      >
+                        <option value="">{t('team.deputies.add')}</option>
+                        {candidates.map((m) => (
+                          <option key={m.userId} value={m.userId}>{m.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                );
+              })()}
+
               {activeTab === 'members' && (<>
               {removeTarget && removeBlockers && (
                 <div
@@ -737,6 +803,7 @@ export default function TeamsPage(): JSX.Element {
                           {sortIndicator('role')}
                         </button>
                       </th>
+                      <th className="py-1 pe-4">{t('team.members.col.unit')}</th>
                       <th className="py-1 pe-4">
                         <button type="button" onClick={() => toggleSort('joinedAt')} className="hover:underline">
                           {t('team.members.col.joined')}
@@ -808,6 +875,20 @@ export default function TeamsPage(): JSX.Element {
                             )
                           ) : (
                             <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-2 pe-4 text-xs">
+                          {m.unitName ? (
+                            <span>
+                              {m.unitName}
+                              {m.unitRole === 'MANAGER' && (
+                                <span className="ms-1 rounded bg-primary/10 text-primary px-1">
+                                  {t('units.memberRole.manager')}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
                         <td className="py-2 pe-4 text-slate-500 text-xs" dir="rtl">

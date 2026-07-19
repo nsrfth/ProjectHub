@@ -49,6 +49,11 @@ export interface TeamMemberView {
   external: boolean;
   /** Set for external group accessors only — shows FULL vs READONLY access. */
   groupAccessLevel: 'FULL' | 'READONLY' | null;
+  // v2.11: the member's department (UNIT-kind group) in this division, if any.
+  // Null for external accessors and people not yet placed in a department.
+  unitId: string | null;
+  unitName: string | null;
+  unitRole: 'MANAGER' | 'MEMBER' | null;
 }
 
 function memberStatusFromUser(
@@ -83,6 +88,9 @@ function membershipToView(
     ...memberStatusFromUser(m.user, now),
     external: false,
     groupAccessLevel: null,
+    unitId: null,
+    unitName: null,
+    unitRole: null,
   };
 }
 
@@ -163,6 +171,22 @@ async function fetchFullTeamRoster(teamId: string): Promise<TeamMemberView[]> {
   const teamMemberRows = memberships.map((m) => membershipToView(m, now));
   const memberUserIds = new Set(teamMemberRows.map((m) => m.userId));
 
+  // v2.11: one query resolves every member's department (UNIT membership is
+  // at most one per person per division — the partial index guarantees it).
+  const unitRows = await prisma.userGroupMember.findMany({
+    where: { teamId, isUnit: true, status: 'ACCEPTED', userId: { in: [...memberUserIds] } },
+    select: { userId: true, role: true, group: { select: { id: true, name: true } } },
+  });
+  const unitByUser = new Map(unitRows.map((u) => [u.userId, u]));
+  for (const row of teamMemberRows) {
+    const u = unitByUser.get(row.userId);
+    if (u) {
+      row.unitId = u.group.id;
+      row.unitName = u.group.name;
+      row.unitRole = u.role;
+    }
+  }
+
   const excludeExternalIds = [...memberUserIds];
   if (systemUserId) excludeExternalIds.push(systemUserId);
 
@@ -196,6 +220,9 @@ async function fetchFullTeamRoster(teamId: string): Promise<TeamMemberView[]> {
     joinedAt: row.respondedAt ?? row.invitedAt,
     ...memberStatusFromUser(row.user, now),
     external: true,
+    unitId: null,
+    unitName: null,
+    unitRole: null,
     groupAccessLevel: row.accessLevel,
   }));
 

@@ -99,6 +99,10 @@ export const teamMemberResponse = z.object({
   locked: z.boolean(),
   external: z.boolean(),
   groupAccessLevel: z.enum(['FULL', 'READONLY']).nullable(),
+  // v2.11: the member's department (UNIT group) in this division.
+  unitId: z.string().nullable(),
+  unitName: z.string().nullable(),
+  unitRole: z.enum(['MANAGER', 'MEMBER']).nullable(),
 });
 
 export const teamDeleteBlockersResponse = z.object({
