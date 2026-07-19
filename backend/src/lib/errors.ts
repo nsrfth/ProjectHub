@@ -32,6 +32,20 @@ export const Errors = {
   // 403 (not 404): the project is visible; only its schedule is locked.
   datesFrozen: () =>
     new AppError(403, 'PROJECT_DATES_FROZEN', 'Project dates are frozen — unfreeze the project to edit its schedule'),
+  // v2.6 (Phase 1C): unit-scoped assignment rejection. Its OWN stable code —
+  // not a generic FORBIDDEN — because the phase exit criteria steer by the
+  // rate of exactly this error ("ASSIGNEE_OUT_OF_SCOPE error rate < threshold"
+  // during the pilot), and because the SPA needs to render it as "outside your
+  // unit" rather than a generic permission wall. 403, not 400: the target is a
+  // perfectly valid person; it is the ACTOR who lacks the reach.
+  assigneeOutOfScope: (targetName?: string) =>
+    new AppError(
+      403,
+      'ASSIGNEE_OUT_OF_SCOPE',
+      targetName
+        ? `${targetName} is outside your assignment scope — they belong to a different unit`
+        : 'This person is outside your assignment scope — they belong to a different unit',
+    ),
   internal: (msg = 'Internal server error') => new AppError(500, 'INTERNAL', msg),
   serviceUnavailable: (msg = 'Service temporarily unavailable') =>
     new AppError(503, 'SERVICE_UNAVAILABLE', msg),

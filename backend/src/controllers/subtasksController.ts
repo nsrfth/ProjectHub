@@ -33,6 +33,8 @@ export class SubtasksController {
       // v1.19: creator becomes the default responsible on create.
       // v1.42: req.body.assigneeId is passed through here untouched.
       req.user.sub,
+      // v2.6 (Phase 1C): the unit-scope check needs the actor's global role.
+      req.user.globalRole,
       req.body,
     );
     return reply.status(201).send(s);

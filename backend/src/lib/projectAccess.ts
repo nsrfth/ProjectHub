@@ -490,6 +490,107 @@ export async function resolveUserUnit(
   return row ? { groupId: row.groupId, role: row.role } : null;
 }
 
+/**
+ * v2.6 (Phase 1C): THE assignment guard. One call, both questions:
+ *
+ *   eligibility — may this person hold a role on this project at all?
+ *                 (team member ∪ ACCEPTED granted-group member ∪ FULL-shared
+ *                 guest-team member — `isUserEligibleTaskResponsible`)
+ *   scope       — may THIS actor give it to them? (`isWithinAssignmentScope`)
+ *
+ * Every task/subtask assignee and responsible write goes through here, which
+ * ends the drift that motivated the unification: three services each carried
+ * their own inline membership check, all subtly different —
+ *
+ *   - subtasks' `assertAssigneeInTeam`: bare team membership. A user with
+ *     legitimate WRITE via a group grant could not be a subtask assignee.
+ *   - tasks' inline assignee check: team membership OR FULL-shared guest.
+ *     Group-grant members excluded here too.
+ *   - tasks' responsible check: the full eligibility rule.
+ *
+ * Unifying on the full rule deliberately LOOSENS the first two — a group-grant
+ * member with project access is now assignable, matching the responsible rule.
+ * That loosening is intended and recorded in the plan (Phase 1C).
+ *
+ * Approvers are NOT routed through the scope half (eligibility only, at the
+ * call sites): an approver is a governance role, not an assignment of daily
+ * work, and gating who may be *asked to approve* by unit would let unit
+ * boundaries break the approval chain.
+ */
+export async function assertAssignmentAllowed(opts: {
+  teamId: string;
+  projectId: string;
+  actorId: string;
+  actorGlobalRole: GlobalRole;
+  targetId: string | null | undefined;
+  /** Only for the error message — the rules are identical for both roles. */
+  role: 'assignee' | 'responsible';
+}): Promise<void> {
+  const { teamId, projectId, actorId, actorGlobalRole, targetId, role } = opts;
+  // Clearing (null) and omitting (undefined) are always allowed — un-assigning
+  // someone is never an act the scope rule should block.
+  if (targetId === null || targetId === undefined) return;
+
+  const eligible = await isUserEligibleTaskResponsible(teamId, projectId, targetId);
+  if (!eligible) {
+    throw Errors.badRequest(
+      role === 'assignee'
+        ? 'Assignee is not eligible for this project'
+        : 'Responsible is not eligible for this project',
+    );
+  }
+
+  const inScope = await isWithinAssignmentScope(teamId, actorId, targetId, actorGlobalRole);
+  if (!inScope) throw Errors.assigneeOutOfScope();
+}
+
+/**
+ * v2.6 (Phase 1C): batch scope filter for the responsible-candidates picker.
+ *
+ * The picker must not offer people the subsequent write would reject with
+ * ASSIGNEE_OUT_OF_SCOPE — a dropdown of guaranteed errors is how a scoping
+ * rule turns into a support ticket. Same rules as `isWithinAssignmentScope`,
+ * but two queries for the whole candidate list instead of three per candidate.
+ */
+export async function filterCandidatesToAssignerScope(
+  teamId: string,
+  assignerUserId: string,
+  assignerGlobalRole: GlobalRole,
+  candidates: TaskResponsibleCandidate[],
+): Promise<TaskResponsibleCandidate[]> {
+  if (!loadEnv().ACCESS_UNIT_SCOPE) return candidates;
+  if (assignerGlobalRole === 'ADMIN') return candidates;
+
+  const membership = await prisma.teamMembership.findUnique({
+    where: { userId_teamId: { userId: assignerUserId, teamId } },
+  });
+  if (membership) {
+    const perms = await listMembershipPermissions(membership, assignerGlobalRole);
+    if (perms.has('*') || perms.has('task.assign_any')) return candidates;
+  }
+
+  const unitRows = await prisma.userGroupMember.findMany({
+    where: {
+      teamId,
+      isUnit: true,
+      status: 'ACCEPTED',
+      userId: { in: [assignerUserId, ...candidates.map((c) => c.userId)] },
+    },
+    select: { userId: true, groupId: true },
+  });
+  const unitByUser = new Map(unitRows.map((r) => [r.userId, r.groupId]));
+  const assignerUnit = unitByUser.get(assignerUserId);
+
+  // Mirrors isWithinAssignmentScope exactly: self always; same unit when the
+  // assigner has one; unitless candidates are assign_any-only, and assign_any
+  // holders already returned above — so they are filtered here.
+  return candidates.filter((c) => {
+    if (c.userId === assignerUserId) return true;
+    if (!assignerUnit) return false;
+    return unitByUser.get(c.userId) === assignerUnit;
+  });
+}
+
 export async function isUserEligibleTaskResponsible(
   teamId: string,
   projectId: string,

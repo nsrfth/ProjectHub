@@ -193,6 +193,21 @@ export class DirectoryService {
         throw Errors.badRequest('roleId does not belong to the mapping team');
       }
     }
+    // v2.6 (Phase 1A, D-3): unit anchor validation, mirroring the roleId rule
+    // above — the unit must be a UNIT-kind group in the mapping's own team, so
+    // a typo cannot place people into another team's section.
+    if (input.userGroupId) {
+      if (!input.teamId) {
+        throw Errors.badRequest('userGroupId requires teamId on the same mapping');
+      }
+      const group = await prisma.userGroup.findUnique({ where: { id: input.userGroupId } });
+      if (!group || group.teamId !== input.teamId) {
+        throw Errors.badRequest('userGroupId does not belong to the mapping team');
+      }
+      if (group.kind !== 'UNIT') {
+        throw Errors.badRequest('userGroupId must reference a unit, not a collaboration group');
+      }
+    }
     return prisma.directoryGroupMapping.create({
       data: {
         directoryId,
@@ -201,6 +216,7 @@ export class DirectoryService {
         teamId: input.teamId,
         teamRole: input.teamRole,
         roleId: input.roleId,
+        userGroupId: input.userGroupId,
       },
     });
   }

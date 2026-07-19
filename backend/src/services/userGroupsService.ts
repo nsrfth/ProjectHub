@@ -1,4 +1,4 @@
-import type { GroupAccessLevel, GroupInviteStatus } from '@prisma/client';
+import type { GroupAccessLevel, GroupInviteStatus, GroupRole, UserGroupKind } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { searchUsers as searchUsersLib } from '../lib/userSearch.js';
@@ -11,6 +11,9 @@ export interface UserGroupSummary {
   teamId: string;
   name: string;
   description: string | null;
+  // v2.6 (Phase 1A): UNIT (AD-synced section, direct membership, one per
+  // person per team) or COLLAB (the shipped invitation-based behaviour).
+  kind: UserGroupKind;
   memberCount: number;
   grantedProjectCount: number;
   createdAt: Date;
@@ -25,6 +28,9 @@ export interface UserGroupMemberView {
   accessLevel: GroupAccessLevel;
   status: GroupInviteStatus;
   external: boolean;
+  // v2.6 (Phase 1A): standing within the group. A UNIT's MANAGER is the
+  // supervisor; on COLLAB groups it is informational for now.
+  role: GroupRole;
   invitedAt: Date;
   respondedAt: Date | null;
 }
@@ -94,6 +100,7 @@ function toSummary(
     teamId: string;
     name: string;
     description: string | null;
+    kind: UserGroupKind;
     createdAt: Date;
     updatedAt: Date;
     _count: { members: number; grants: number };
@@ -104,11 +111,28 @@ function toSummary(
     teamId: g.teamId,
     name: g.name,
     description: g.description,
+    kind: g.kind,
     memberCount: g._count.members,
     grantedProjectCount: g._count.grants,
     createdAt: g.createdAt,
     updatedAt: g.updatedAt,
   };
+}
+
+/**
+ * v2.6 (Phase 1A): translate the one-unit-per-person partial-index violation
+ * into a friendly 409.
+ *
+ * Deliberately does NOT inspect `err.meta.target`: the index lives in raw
+ * migration SQL, not the Prisma schema, so Prisma cannot map the constraint
+ * name back to fields and the meta shape is version-dependent (verified on the
+ * LAN box — target came back as the column list, not the index name). Instead
+ * the CALLER asserts the context: inside addMember the (groupId, userId)
+ * duplicate is pre-checked, so any P2002 on a UNIT insert can only be the
+ * one-unit index.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
 export class UserGroupsService {
@@ -128,7 +152,7 @@ export class UserGroupsService {
   async create(
     teamId: string,
     actorId: string,
-    input: { name: string; description?: string | null },
+    input: { name: string; description?: string | null; kind?: UserGroupKind },
   ): Promise<UserGroupSummary> {
     try {
       const g = await prisma.userGroup.create({
@@ -136,6 +160,8 @@ export class UserGroupsService {
           teamId,
           name: input.name.trim(),
           description: input.description?.trim() ?? null,
+          // v2.6 (Phase 1A): defaults COLLAB — existing callers unchanged.
+          kind: input.kind ?? 'COLLAB',
         },
         include: { _count: { select: { members: true, grants: true } } },
       });
@@ -143,7 +169,7 @@ export class UserGroupsService {
         actorId,
         teamId,
         action: 'group.created',
-        meta: { groupId: g.id, name: g.name },
+        meta: { groupId: g.id, name: g.name, kind: g.kind },
       });
       return toSummary(g);
     } catch (err) {
@@ -180,6 +206,7 @@ export class UserGroupsService {
         accessLevel: m.accessLevel,
         status: m.status,
         external: m.external,
+        role: m.role,
         invitedAt: m.invitedAt,
         respondedAt: m.respondedAt,
       })),
@@ -236,20 +263,38 @@ export class UserGroupsService {
     });
   }
 
-  /** In-team members: ACCEPTED directly. Out-of-team: PENDING invite. */
+  /**
+   * COLLAB: in-team members ACCEPTED directly, out-of-team get a PENDING
+   * invite (the v1.51 behaviour, unchanged).
+   *
+   * UNIT (v2.6, Phase 1A): direct membership only — a unit is an org fact, not
+   * an invitation. Members must belong to the team (a section cannot contain
+   * someone outside its department), accessLevel is pinned FULL (unit
+   * membership IS full participation; a read-only unit member is a
+   * contradiction the model rejects rather than stores), and the single-unit
+   * partial index may veto the insert if the person already holds a unit.
+   */
   async addMember(
     teamId: string,
     groupId: string,
     actorId: string,
     userId: string,
     accessLevel: GroupAccessLevel,
+    role: GroupRole = 'MEMBER',
   ): Promise<UserGroupDetail> {
     const group = await assertGroupInTeam(teamId, groupId);
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.disabledAt) throw Errors.notFound('User not found');
 
     const inTeam = await isTeamMember(teamId, userId);
+    const isUnit = group.kind === 'UNIT';
+    if (isUnit && !inTeam) {
+      throw Errors.badRequest(
+        'Units contain team members only — add the person to the team first',
+      );
+    }
     const external = !inTeam;
+    const effectiveAccess: GroupAccessLevel = isUnit ? 'FULL' : accessLevel;
 
     const existing = await prisma.userGroupMember.findUnique({
       where: { groupId_userId: { groupId, userId } },
@@ -261,21 +306,35 @@ export class UserGroupsService {
       throw Errors.conflict('User is already in this group');
     }
 
-    const member = await prisma.userGroupMember.create({
-      data: {
-        groupId,
-        userId,
-        accessLevel,
-        status: external ? 'PENDING' : 'ACCEPTED',
-        external,
-        invitedById: actorId,
-        respondedAt: external ? null : new Date(),
-      },
-      include: {
-        user: { select: { name: true, email: true } },
-        group: { include: { team: { select: { name: true } } } },
-      },
-    });
+    let member;
+    try {
+      member = await prisma.userGroupMember.create({
+        data: {
+          groupId,
+          userId,
+          accessLevel: effectiveAccess,
+          // Units never create PENDING rows — there is no invite to accept.
+          status: external ? 'PENDING' : 'ACCEPTED',
+          external,
+          role,
+          invitedById: actorId,
+          respondedAt: external ? null : new Date(),
+        },
+        include: {
+          user: { select: { name: true, email: true } },
+          group: { include: { team: { select: { name: true } } } },
+        },
+      });
+    } catch (err) {
+      // Same-group duplicates were pre-checked above, so a unique violation on
+      // a UNIT insert can only be the one-unit-per-team partial index.
+      if (isUnit && isUniqueViolation(err)) {
+        throw Errors.conflict(
+          `${user.name} already belongs to a unit in this team — a person holds exactly one unit. Remove them from their current unit first.`,
+        );
+      }
+      throw err;
+    }
 
     if (external) {
       const team = await prisma.team.findUnique({ where: { id: teamId }, select: { name: true } });
@@ -314,7 +373,11 @@ export class UserGroupsService {
     actorId: string,
     accessLevel: GroupAccessLevel,
   ): Promise<UserGroupDetail> {
-    await assertGroupInTeam(teamId, groupId);
+    const group = await assertGroupInTeam(teamId, groupId);
+    // v2.6 (Phase 1A): unit accessLevel is pinned FULL — see addMember.
+    if (group.kind === 'UNIT' && accessLevel !== 'FULL') {
+      throw Errors.badRequest('Unit members always have FULL access — units do not carry access levels');
+    }
     try {
       await prisma.userGroupMember.update({
         where: { groupId_userId: { groupId, userId } },
@@ -331,6 +394,41 @@ export class UserGroupsService {
       teamId,
       action: 'group.member_accessLevel_changed',
       meta: { groupId, userId, accessLevel },
+    });
+    return this.get(teamId, groupId);
+  }
+
+  /**
+   * v2.6 (Phase 1A): set a member's role within the group. On a UNIT this
+   * designates the supervisor — the person Phase 3's participation-acceptance
+   * flow will route to. Kept as its own method (not folded into
+   * updateMemberAccess) because role and access are different axes and a UNIT
+   * rejects access changes while accepting role changes.
+   */
+  async updateMemberRole(
+    teamId: string,
+    groupId: string,
+    userId: string,
+    actorId: string,
+    role: GroupRole,
+  ): Promise<UserGroupDetail> {
+    await assertGroupInTeam(teamId, groupId);
+    try {
+      await prisma.userGroupMember.update({
+        where: { groupId_userId: { groupId, userId } },
+        data: { role },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw Errors.notFound('Group member not found');
+      }
+      throw err;
+    }
+    await logActivity(prisma, {
+      actorId,
+      teamId,
+      action: 'group.member_role_changed',
+      meta: { groupId, userId, role },
     });
     return this.get(teamId, groupId);
   }

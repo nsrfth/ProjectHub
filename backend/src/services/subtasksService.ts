@@ -2,7 +2,7 @@ import { Prisma, type GlobalRole, type SubtaskStatus } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { userHasPermission } from '../middleware/requirePermission.js';
-import { resolveProjectAccess } from '../lib/projectAccess.js';
+import { assertAssignmentAllowed, resolveProjectAccess } from '../lib/projectAccess.js';
 import { getDelegateCapabilities, type DelegateCapability } from '../lib/delegateCaps.js';
 import { assertProjectDatesNotFrozen } from '../lib/projectFreeze.js';
 import { logActivity } from './activityLogger.js';
@@ -61,21 +61,13 @@ function toView(row: Prisma.SubtaskGetPayload<{ include: typeof SUBTASK_INCLUDE 
   };
 }
 
-// v1.42: shared assignee-must-be-team-member guard. Skip when clearing
-// (null) or when omitted. Throws 400 with a friendly message.
-async function assertAssigneeInTeam(
-  teamId: string,
-  assigneeId: string | null | undefined,
-): Promise<void> {
-  if (assigneeId === undefined || assigneeId === null) return;
-  const membership = await prisma.teamMembership.findUnique({
-    where: { userId_teamId: { userId: assigneeId, teamId } },
-    select: { userId: true },
-  });
-  if (!membership) {
-    throw Errors.badRequest('Assignee is not a member of this team');
-  }
-}
+// v1.42 → v2.6 (Phase 1C): the module-private `assertAssigneeInTeam` (bare
+// team membership) is gone, replaced by the shared `assertAssignmentAllowed`
+// from lib/projectAccess. Two deliberate consequences:
+//   - LOOSER eligibility: an ACCEPTED group-grant member with project access
+//     can now be a subtask assignee, matching the task-responsible rule. The
+//     old check rejected them despite their legitimate WRITE.
+//   - unit scope applies when ACCESS_UNIT_SCOPE is on.
 
 // v1.41: end-on-or-after-start helper. Returns true when the pair is
 // valid OR either side is null. Throws a 400 with a friendly reason
@@ -105,6 +97,8 @@ export class SubtasksService {
     projectId: string,
     taskId: string,
     creatorId: string,
+    // v2.6 (Phase 1C): needed by the unit-scope check (ADMIN bypass).
+    creatorGlobalRole: GlobalRole,
     input: {
       title: string;
       done?: boolean;
@@ -128,8 +122,15 @@ export class SubtasksService {
     const startDate = input.startDate ? new Date(input.startDate) : null;
     const endDate = input.endDate ? new Date(input.endDate) : null;
     assertDateRange(startDate, endDate);
-    // v1.42: validate assignee is a team member when provided.
-    await assertAssigneeInTeam(teamId, input.assigneeId);
+    // v1.42 → v2.6: shared eligibility + unit-scope guard (see note above).
+    await assertAssignmentAllowed({
+      teamId,
+      projectId,
+      actorId: creatorId,
+      actorGlobalRole: creatorGlobalRole,
+      targetId: input.assigneeId,
+      role: 'assignee',
+    });
     // Append to the end with the same sparse-position scheme as Task.
     const last = await prisma.subtask.findFirst({
       where: { taskId },
@@ -202,12 +203,26 @@ export class SubtasksService {
     const hasWrite = access === 'WRITE';
     const can = (cap: DelegateCapability): boolean =>
       hasWrite || (caps ? caps.has(cap) : false);
+    // v2.6 (Phase 1C): assignee/responsible self-service, aligned with the
+    // v1.82 setStatus route — the subtask's own responsible or assignee may
+    // change STATUS/DONE (and nothing else) without WRITE or a capability.
+    // Deliberately the same allowance set as setStatus, so the full-PATCH path
+    // and the focused status route cannot disagree about who may self-serve.
+    const isSelfService =
+      existing.assigneeId === actorId || existing.responsibleId === actorId;
+
     if (input.title !== undefined && !can('EDIT_TITLES')) {
       throw Errors.forbidden('Missing capability to edit the subtask title');
     }
+    // assigneeId stays capability-gated even for the self-servicer: releasing
+    // or re-pointing the assignment is a coordination act, not self-service.
+    if (input.assigneeId !== undefined && !can('EDIT_DETAILS')) {
+      throw Errors.forbidden('Missing capability to edit subtask details');
+    }
     if (
-      (input.done !== undefined || input.status !== undefined || input.assigneeId !== undefined) &&
-      !can('EDIT_DETAILS')
+      (input.done !== undefined || input.status !== undefined) &&
+      !can('EDIT_DETAILS') &&
+      !isSelfService
     ) {
       throw Errors.forbidden('Missing capability to edit subtask details');
     }
@@ -243,9 +258,16 @@ export class SubtasksService {
           : new Date(input.endDate);
     assertDateRange(mergedStart, mergedEnd);
 
-    // v1.42: validate assignee on change (skip when undefined or null).
+    // v1.42 → v2.6: shared eligibility + unit-scope guard (see note above).
     if (input.assigneeId !== undefined) {
-      await assertAssigneeInTeam(teamId, input.assigneeId);
+      await assertAssignmentAllowed({
+        teamId,
+        projectId,
+        actorId,
+        actorGlobalRole,
+        targetId: input.assigneeId,
+        role: 'assignee',
+      });
     }
 
     // v1.19 → v1.23: responsible change gate. Now permission-driven.
@@ -258,12 +280,18 @@ export class SubtasksService {
       ) {
         throw Errors.forbidden('Missing permission: task.change_responsible');
       }
-      if (input.responsibleId !== null) {
-        const membership = await prisma.teamMembership.findUnique({
-          where: { userId_teamId: { userId: input.responsibleId, teamId } },
-        });
-        if (!membership) throw Errors.badRequest('Responsible is not a member of this team');
-      }
+      // v2.6 (Phase 1C): was a bare team-membership check — now the shared
+      // guard, so subtask responsibles follow the same (looser) eligibility as
+      // task responsibles, plus unit scope. The permission gate above stays:
+      // it answers "may you change it at all", this answers "to THIS person".
+      await assertAssignmentAllowed({
+        teamId,
+        projectId,
+        actorId,
+        actorGlobalRole,
+        targetId: input.responsibleId,
+        role: 'responsible',
+      });
     }
 
     // v1.82: keep done <-> status coherent. status is the source of truth:

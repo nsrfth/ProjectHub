@@ -11,6 +11,8 @@ import {
   createUserGroupBody,
   setGroupProjectsBody,
   updateGroupMemberBody,
+  updateGroupMemberRoleBody,
+  type UpdateGroupMemberRoleBody,
   updateUserGroupBody,
   userGroupDetailResponse,
   userGroupsListResponse,
@@ -182,6 +184,35 @@ export async function userGroupsRoutes(app: FastifyInstance): Promise<void> {
         req.user.sub,
         req.body.userId,
         req.body.accessLevel,
+        req.body.role,
+      );
+      return reply.send(serializeDetail(detail));
+    },
+  });
+
+  // v2.6 (Phase 1A): designate / demote the unit manager (group role, not
+  // access level — a UNIT rejects access changes but accepts role changes).
+  r.patch('/:groupId/members/:userId/role', {
+    preHandler: [requirePermission('group.manage'), requireScope('admin')],
+    schema: {
+      tags: ['groups'],
+      summary: 'Change a member role within the group (unit manager designation)',
+      params: z.object({ teamId: z.string(), groupId: z.string(), userId: z.string() }),
+      body: updateGroupMemberRoleBody,
+      response: { 200: userGroupDetailResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (
+      req: FastifyRequest<{ Params: GroupMemberParams; Body: UpdateGroupMemberRoleBody }>,
+      reply: FastifyReply,
+    ) => {
+      if (!req.user) throw Errors.unauthorized();
+      const detail = await svc.updateMemberRole(
+        req.params.teamId,
+        req.params.groupId,
+        req.params.userId,
+        req.user.sub,
+        req.body.role,
       );
       return reply.send(serializeDetail(detail));
     },

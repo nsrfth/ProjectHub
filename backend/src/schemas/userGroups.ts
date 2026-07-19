@@ -2,10 +2,18 @@ import { z } from 'zod';
 
 export const groupAccessLevelEnum = z.enum(['FULL', 'READONLY']);
 export const groupInviteStatusEnum = z.enum(['PENDING', 'ACCEPTED', 'DECLINED']);
+// v2.6 (Phase 1A): units vs collaboration groups.
+export const userGroupKindEnum = z.enum(['UNIT', 'COLLAB']);
+export const groupRoleEnum = z.enum(['MANAGER', 'MEMBER']);
 
 export const createUserGroupBody = z.object({
   name: z.string().min(1).max(120).trim(),
   description: z.string().max(2000).trim().nullable().optional(),
+  // Defaults COLLAB so existing clients are untouched. Kind is immutable after
+  // create — flipping a populated COLLAB group to UNIT would need every member
+  // to pass the one-unit constraint at once, which the DB trigger enforces by
+  // rejecting the whole update; create-as-the-right-kind avoids the trap.
+  kind: userGroupKindEnum.default('COLLAB'),
 });
 
 export const updateUserGroupBody = z.object({
@@ -19,10 +27,18 @@ export const updateUserGroupBody = z.object({
 export const addGroupMemberBody = z.object({
   userId: z.string().min(1),
   accessLevel: groupAccessLevelEnum.default('FULL'),
+  // v2.6 (Phase 1A): standing within the group; a UNIT's MANAGER is the
+  // supervisor. Ignored meaningfully only on units for now.
+  role: groupRoleEnum.default('MEMBER'),
 });
 
 export const updateGroupMemberBody = z.object({
   accessLevel: groupAccessLevelEnum,
+});
+
+// v2.6 (Phase 1A): designate / demote the unit manager.
+export const updateGroupMemberRoleBody = z.object({
+  role: groupRoleEnum,
 });
 
 export const setGroupProjectsBody = z.object({
@@ -38,6 +54,7 @@ export const userGroupSummaryResponse = z.object({
   teamId: z.string(),
   name: z.string(),
   description: z.string().nullable(),
+  kind: userGroupKindEnum,
   memberCount: z.number().int(),
   grantedProjectCount: z.number().int(),
   createdAt: z.string(),
@@ -52,6 +69,7 @@ export const userGroupMemberResponse = z.object({
   accessLevel: groupAccessLevelEnum,
   status: groupInviteStatusEnum,
   external: z.boolean(),
+  role: groupRoleEnum,
   invitedAt: z.string(),
   respondedAt: z.string().nullable(),
 });
@@ -95,4 +113,5 @@ export type CreateUserGroupBody = z.infer<typeof createUserGroupBody>;
 export type UpdateUserGroupBody = z.infer<typeof updateUserGroupBody>;
 export type AddGroupMemberBody = z.infer<typeof addGroupMemberBody>;
 export type UpdateGroupMemberBody = z.infer<typeof updateGroupMemberBody>;
+export type UpdateGroupMemberRoleBody = z.infer<typeof updateGroupMemberRoleBody>;
 export type SetGroupProjectsBody = z.infer<typeof setGroupProjectsBody>;

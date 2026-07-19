@@ -35,6 +35,7 @@ export type DirectorySyncConflictCode =
   | 'MAPPING_DN_ESCAPED'
   | 'IDENTITY_COLLISION'
   | 'USER_MISSING_EMAIL'
+  | 'UNIT_CONFLICT'
   | 'LAST_ADMIN_PROTECTED';
 
 export interface DirectorySyncConflict {
@@ -64,6 +65,9 @@ export interface DirectorySyncDirectoryResult {
   membershipsUpdated: number;
   membershipsRemoved: number;
   globalRolesChanged: number;
+  // v2.6 (Phase 1A/1C): unit placements driven by mapping.userGroupId.
+  unitsAssigned: number;
+  unitsRemoved: number;
 
   conflicts: DirectorySyncConflict[];
 }
@@ -92,6 +96,10 @@ interface UsableMapping {
   teamId: string | null;
   teamRole: TeamRole | null;
   roleId: string | null;
+  // v2.6 (Phase 1A, D-3): the unit this AD group places its members into.
+  // Null on most mappings; validated in preflight (must resolve to a UNIT-kind
+  // group in the mapping's own team, else degraded to team-only + reported).
+  userGroupId: string | null;
 }
 
 interface TeamGrant {
@@ -115,6 +123,8 @@ function emptyResult(dir: Pick<Directory, 'id' | 'slug'>): DirectorySyncDirector
     membershipsUpdated: 0,
     membershipsRemoved: 0,
     globalRolesChanged: 0,
+    unitsAssigned: 0,
+    unitsRemoved: 0,
     conflicts: [],
   };
 }
@@ -304,6 +314,20 @@ export class DirectorySyncService {
     });
     const liveTeamIds = new Set(teams.map((t) => t.id));
 
+    // v2.6 (Phase 1A): resolve mapped units once per run. A usable unit anchor
+    // must (a) still exist — the FK is SetNull, so a deleted unit degrades the
+    // mapping to team-only, exactly the intended posture — and (b) be a
+    // UNIT-kind group belonging to the mapping's OWN team; anything else is a
+    // configuration error reported once per run, never once per user.
+    const unitIds = [...new Set(raw.map((m) => m.userGroupId).filter((id): id is string => !!id))];
+    const unitGroups = unitIds.length
+      ? await prisma.userGroup.findMany({
+          where: { id: { in: unitIds } },
+          select: { id: true, teamId: true, kind: true },
+        })
+      : [];
+    const unitById = new Map(unitGroups.map((g) => [g.id, g]));
+
     const usable: UsableMapping[] = [];
     for (const m of raw) {
       if (hasEscapedComma(m.externalGroupDn)) {
@@ -334,6 +358,32 @@ export class DirectorySyncService {
         });
         continue;
       }
+      // v2.6 (Phase 1A): validate the unit anchor; degrade to team-only on any
+      // problem rather than dropping the whole mapping — the team grant is
+      // still valid and removing it too would punish users for a config error.
+      let userGroupId = m.userGroupId;
+      if (userGroupId) {
+        const unit = unitById.get(userGroupId);
+        const problem = !unit
+          ? 'no longer exists'
+          : unit.kind !== 'UNIT'
+            ? 'is a collaboration group, not a unit'
+            : unit.teamId !== m.teamId
+              ? 'belongs to a different team than the mapping grants'
+              : null;
+        if (problem) {
+          result.conflicts.push({
+            code: 'MAPPING_TARGET_MISSING',
+            message:
+              `mapping ${m.id} (${m.externalGroupDn}) points at unit ${userGroupId}, which ` +
+              `${problem}; unit placement skipped, team grant kept`,
+            mappingIds: [m.id],
+            teamId: m.teamId ?? undefined,
+          });
+          userGroupId = null;
+        }
+      }
+
       usable.push({
         id: m.id,
         externalGroupDn: m.externalGroupDn,
@@ -341,6 +391,7 @@ export class DirectorySyncService {
         teamId: m.teamId,
         teamRole: m.teamRole,
         roleId: m.roleId,
+        userGroupId,
       });
     }
 
@@ -624,6 +675,103 @@ export class DirectorySyncService {
     }
     const removed = toRemove.filter((id) => currentByTeam.has(id)).length;
 
+    // ------------------------------------------------ v2.6: unit placement
+    // Desired units = distinct userGroupId across MATCHED mappings whose team
+    // survived (not conflicted). Two different units in ONE team is the AD
+    // hygiene failure the single-unit rule exists to catch: report
+    // UNIT_CONFLICT and place the user in NEITHER — a silent pick here would
+    // decide which supervisor owns this person's work.
+    const desiredUnitsByTeam = new Map<string, { groupId: string; mappingIds: string[] }>();
+    const unitConflictTeams = new Set<string>();
+    for (const m of matched) {
+      if (!m.userGroupId || !m.teamId) continue;
+      if (conflictedTeams.has(m.teamId)) continue;
+      const existing = desiredUnitsByTeam.get(m.teamId);
+      if (!existing) {
+        desiredUnitsByTeam.set(m.teamId, { groupId: m.userGroupId, mappingIds: [m.id] });
+      } else if (existing.groupId !== m.userGroupId) {
+        unitConflictTeams.add(m.teamId);
+        result.conflicts.push({
+          code: 'UNIT_CONFLICT',
+          message:
+            `${entry.email} matches mappings placing them in two different units of team ` +
+            `${m.teamId}; a person holds exactly one unit, so neither is applied`,
+          externalId: entry.dn,
+          teamId: m.teamId,
+          mappingIds: [...existing.mappingIds, m.id],
+        });
+      } else {
+        existing.mappingIds.push(m.id);
+      }
+    }
+    for (const teamId of unitConflictTeams) desiredUnitsByTeam.delete(teamId);
+
+    // Removal mirrors the team posture exactly: only units REFERENCED BY THIS
+    // DIRECTORY'S MAPPINGS are eligible, so a hand-created unit membership in
+    // an unmapped unit is never touched by the sync.
+    const mappedUnitIds = new Set(
+      mappings.map((m) => m.userGroupId).filter((id): id is string => !!id),
+    );
+    const desiredUnitIds = new Set([...desiredUnitsByTeam.values()].map((u) => u.groupId));
+    const currentUnits = mappedUnitIds.size
+      ? await prisma.userGroupMember.findMany({
+          where: { userId: resolved.id, groupId: { in: [...mappedUnitIds] } },
+          select: { groupId: true, teamId: true },
+        })
+      : [];
+    const unitIdsToRemove = currentUnits
+      .filter((u) => !desiredUnitIds.has(u.groupId) && !(u.teamId && unitConflictTeams.has(u.teamId)))
+      .map((u) => u.groupId);
+    const currentUnitIds = new Set(currentUnits.map((u) => u.groupId));
+    let unitsToAdd = [...desiredUnitsByTeam.values()]
+      .map((u) => u.groupId)
+      .filter((id) => !currentUnitIds.has(id));
+
+    // A MANUALLY-placed unit membership outside the mapped set would make the
+    // insert below trip the one-unit partial index — which, inside the shared
+    // transaction, would roll back this user's team writes too. Detect the
+    // collision up front, report it, and skip only the unit placement: the
+    // admin placed that person deliberately, and the sync must not fight them
+    // by exception.
+    if (unitsToAdd.length) {
+      const addTeams = [...desiredUnitsByTeam.entries()]
+        .filter(([, u]) => unitsToAdd.includes(u.groupId))
+        .map(([teamId]) => teamId);
+      // A blocker is a unit membership that is NEITHER desired NOR in a
+      // mapped unit. Mapped-unit memberships are sync-owned — the non-desired
+      // ones are scheduled for removal in this very transaction, so treating
+      // them as "manual placements" would cancel every unit-to-unit move.
+      const blockers = await prisma.userGroupMember.findMany({
+        where: {
+          userId: resolved.id,
+          teamId: { in: addTeams },
+          isUnit: true,
+          groupId: { notIn: [...new Set([...desiredUnitIds, ...mappedUnitIds])] },
+        },
+        select: { groupId: true, teamId: true },
+      });
+      if (blockers.length) {
+        const blockedTeams = new Set(blockers.map((b) => b.teamId));
+        for (const b of blockers) {
+          result.conflicts.push({
+            code: 'UNIT_CONFLICT',
+            message:
+              `${entry.email} was manually placed in unit ${b.groupId}; the mapped unit ` +
+              'placement is skipped rather than overriding an admin decision',
+            externalId: entry.dn,
+            teamId: b.teamId ?? undefined,
+          });
+        }
+        unitsToAdd = unitsToAdd.filter((id) => {
+          const team = [...desiredUnitsByTeam.entries()].find(([, u]) => u.groupId === id)?.[0];
+          return !team || !blockedTeams.has(team);
+        });
+      }
+    }
+
+    result.unitsAssigned += unitsToAdd.length;
+    result.unitsRemoved += unitIdsToRemove.length;
+
     result.membershipsAdded += added;
     result.membershipsUpdated += updated;
     result.membershipsRemoved += removed;
@@ -657,6 +805,32 @@ export class DirectorySyncService {
       if (toRemove.length) {
         await tx.teamMembership.deleteMany({
           where: { userId: resolved.id, teamId: { in: toRemove } },
+        });
+      }
+
+      // v2.6: unit placement, inside the same per-user transaction. Remove
+      // BEFORE add, so a unit->unit move within a team never trips the
+      // one-unit partial index on its own transition. The DB trigger stamps
+      // teamId/isUnit on insert; role stays untouched on existing rows so a
+      // hand-designated unit MANAGER survives every sync.
+      if (unitIdsToRemove.length) {
+        await tx.userGroupMember.deleteMany({
+          where: { userId: resolved.id, groupId: { in: unitIdsToRemove } },
+        });
+      }
+      for (const groupId of unitsToAdd) {
+        await tx.userGroupMember.upsert({
+          where: { groupId_userId: { groupId, userId: resolved.id } },
+          update: { accessLevel: 'FULL', status: 'ACCEPTED' },
+          create: {
+            groupId,
+            userId: resolved.id,
+            accessLevel: 'FULL',
+            status: 'ACCEPTED',
+            external: false,
+            role: 'MEMBER',
+            respondedAt: new Date(),
+          },
         });
       }
 

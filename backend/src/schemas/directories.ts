@@ -90,6 +90,7 @@ export const directorySyncConflictSchema = z.object({
     'MAPPING_DN_ESCAPED',
     'IDENTITY_COLLISION',
     'USER_MISSING_EMAIL',
+    'UNIT_CONFLICT',
     'LAST_ADMIN_PROTECTED',
   ]),
   message: z.string(),
@@ -113,6 +114,8 @@ export const directorySyncDirectoryResultSchema = z.object({
   membershipsUpdated: z.number().int(),
   membershipsRemoved: z.number().int(),
   globalRolesChanged: z.number().int(),
+  unitsAssigned: z.number().int(),
+  unitsRemoved: z.number().int(),
   conflicts: z.array(directorySyncConflictSchema),
 });
 
@@ -135,6 +138,9 @@ export const groupMappingCreateBody = z.object({
   teamId: z.string().nullable().default(null),
   teamRole: z.enum(['MANAGER', 'MEMBER']).nullable().default(null),
   roleId: z.string().nullable().default(null),
+  // v2.6 (Phase 1A, D-3): the UNIT this AD group places its members into.
+  // Requires teamId, and the unit must belong to that team (service-validated).
+  userGroupId: z.string().nullable().default(null),
 });
 
 export const groupMappingResponse = z.object({
@@ -145,6 +151,7 @@ export const groupMappingResponse = z.object({
   teamId: z.string().nullable(),
   teamRole: z.enum(['MANAGER', 'MEMBER']).nullable(),
   roleId: z.string().nullable(),
+  userGroupId: z.string().nullable(),
 });
 
 export const groupMappingListResponse = z.object({

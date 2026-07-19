@@ -13,7 +13,8 @@ import {
 } from '../lib/projectAccess.js';
 import { getDelegateCapabilities } from '../lib/delegateCaps.js';
 import { logActivity } from './activityLogger.js';
-import { listMembershipPermissions } from '../middleware/requirePermission.js';
+import { listMembershipPermissions, userHasPermission } from '../middleware/requirePermission.js';
+import { loadEnv } from '../config/env.js';
 import { ProfilesService } from './profilesService.js';
 // Project visibility (additive):
 // - globalRole === 'ADMIN' → all projects
@@ -137,6 +138,27 @@ async function assertAccountableInTeam(
 // Never grant ownership (and thus full access) to a user outside the team.
 async function assertOwnerInTeam(teamId: string, ownerId: string | null): Promise<void> {
   if (ownerId === null) return;
+  // v2.6 (Phase 1C): ownership policy — the owner must hold a manager-tier
+  // role, operationalised as "a role granting project.edit". An owner without
+  // it can neither manage their own project's visibility nor be the anchor the
+  // access model assumes, so under unit scoping the assignment would be a
+  // trap. Enforced at create/transfer only (existing violations are surfaced
+  // by `npm run report:ownership`, never retroactively broken), and only while
+  // the Phase 1C flag is on.
+  if (loadEnv().ACCESS_UNIT_SCOPE) {
+    const owner = await prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { globalRole: true },
+    });
+    if (owner && owner.globalRole !== 'ADMIN') {
+      const ok = await userHasPermission(ownerId, teamId, owner.globalRole, 'project.edit');
+      if (!ok) {
+        throw Errors.badRequest(
+          'Project owner must hold a manager-tier role (one granting project.edit)',
+        );
+      }
+    }
+  }
   const membership = await prisma.teamMembership.findUnique({
     where: { userId_teamId: { userId: ownerId, teamId } },
     select: { userId: true },

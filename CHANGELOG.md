@@ -13,7 +13,52 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
-## [Unreleased] — Phases 1 & 2, Access & Organization Redesign
+## [2.7.0] — 2026-07-19 — Phase 1 complete (units, role tiers, assignment scoping)
+
+Completes the Phase 1 call-site wiring the 2.6.x entry below listed as "not yet wired".
+Everything verified on the pilot instance: full backend suite green against the known
+baseline, 48 new/updated tests passing, 1B backfill executed (zero memberships remain on
+the legacy fallback path), role tiers seeded on all 14 teams.
+
+### Added
+
+- **Assignment scoping is now enforced** (behind `ACCESS_UNIT_SCOPE`, default off). One
+  shared guard — eligibility + unit scope — on every task/subtask assignee and responsible
+  write. Out-of-scope targets are rejected with the dedicated `ASSIGNEE_OUT_OF_SCOPE`
+  code (403), and the responsible-candidates picker filters to the assigner's scope so the
+  UI never offers a person the write would reject.
+- **Unified assignee eligibility.** Three services carried three subtly different inline
+  checks; all now use the responsible rule (team member ∪ ACCEPTED granted-group member ∪
+  FULL-shared guest member). Deliberate loosening: a group-grant member with legitimate
+  project WRITE can now be an assignee — previously rejected on subtasks and tasks alike.
+- **Subtask self-service.** The subtask's own assignee or responsible can change
+  status/done through the full PATCH path without WRITE access — the same allowance set as
+  the v1.82 `setStatus` route, so the two paths cannot disagree. Self-service does not
+  extend to any other field.
+- **Units are operational.** Groups API carries `kind` (UNIT/COLLAB) and member `role`
+  (MANAGER/MEMBER, with a new member-role endpoint for supervisor designation). Units:
+  direct membership only, team members only, access pinned FULL, one unit per person per
+  team (friendly 409 from the partial index). The directory sync evaluates
+  `DirectoryGroupMapping.userGroupId`: places matched users into units, moves them when AD
+  moves them, reports `UNIT_CONFLICT` instead of picking when mappings disagree, and never
+  overrides a manually-placed unit membership.
+- **Role tiers seeded** (`npm run seed:role-tiers`): Department manager / Supervisor /
+  Specialist as editable per-team roles, plus explicit `task.assign_any` + `project.share`
+  grants on each system Manager role — the step that makes flag-on survivable, since those
+  keys are excluded from the legacy fallback set by design.
+- **Ownership policy**: project owners must hold a manager-tier role (`project.edit`) —
+  enforced at create/transfer only, only while the flag is on; `npm run report:ownership`
+  finds the backlog first (pilot instance: 0 violations).
+
+### Phase 1 exit criteria status
+
+Backfill verified (0 null `roleId` instance-wide) · partial index proven under test ·
+negative tenancy green · **remaining: the two-week pilot with `ACCESS_UNIT_SCOPE=on`**,
+which starts when units exist and the flag is flipped — a deliberate operator decision,
+not part of this release. Groups UI tabs (unit badges, manager designation) are backend-
+ready but not yet built.
+
+## [2.6.x] — Phases 1 & 2, Access & Organization Redesign
 
 **Nothing in this entry is enabled by default.** Both phases ship behind flags that
 default off, and every schema change is additive. See the "Not yet wired" list — this is a

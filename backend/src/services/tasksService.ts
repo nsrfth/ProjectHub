@@ -3,7 +3,9 @@ import { buildWbsPath, refreshIsSummary, repathDescendants } from '../lib/wbs.js
 import { prisma } from '../data/prisma.js';
 import { AppError, Errors } from '../lib/errors.js';
 import {
+  assertAssignmentAllowed,
   assertCanWriteProject,
+  filterCandidatesToAssignerScope,
   isProjectEditDelegate,
   isUserEligibleTaskResponsible,
   listEligibleTaskResponsibleCandidates,
@@ -411,22 +413,18 @@ export class TasksService {
     }
     await this.ensureProjectInTeam(teamId, projectId);
 
-    if (input.assigneeId) {
-      // Only allow assigning to someone who can see the task: a home-team
-      // member, or (v2.5.58) a member of a FULL-shared guest team.
-      const membership = await prisma.teamMembership.findUnique({
-        where: { userId_teamId: { userId: input.assigneeId, teamId } },
-      });
-      if (!membership) {
-        const sharedMember = await prisma.teamMembership.findFirst({
-          where: {
-            userId: input.assigneeId,
-            team: { projectShares: { some: { projectId, level: 'FULL' } } },
-          },
-        });
-        if (!sharedMember) throw Errors.badRequest('Assignee is not a member of this team');
-      }
-    }
+    // v2.6 (Phase 1C): unified onto the shared guard. Eligibility now matches
+    // the responsible rule (so an ACCEPTED group-grant member is assignable —
+    // a deliberate loosening vs the old team-or-FULL-share check), and the
+    // unit-scope condition applies when ACCESS_UNIT_SCOPE is on.
+    await assertAssignmentAllowed({
+      teamId,
+      projectId,
+      actorId: creatorId,
+      actorGlobalRole: creatorGlobalRole,
+      targetId: input.assigneeId,
+      role: 'assignee',
+    });
 
     // v2.5.58: while the project plan is frozen, new tasks may be created but
     // not with plan dates (that would change the schedule). Reality capture
@@ -460,15 +458,20 @@ export class TasksService {
 
     let responsibleId: string | null;
     if (input.responsibleId === undefined) {
+      // Defaulting to the creator needs no guard: self-assignment is always in
+      // scope, and a creator who can reach this code has project WRITE.
       responsibleId = creatorId;
     } else {
       responsibleId = input.responsibleId;
-      if (responsibleId !== null) {
-        const eligible = await isUserEligibleTaskResponsible(teamId, projectId, responsibleId);
-        if (!eligible) {
-          throw Errors.badRequest('Responsible is not eligible for this project');
-        }
-      }
+      // v2.6 (Phase 1C): eligibility + unit scope in one guard.
+      await assertAssignmentAllowed({
+        teamId,
+        projectId,
+        actorId: creatorId,
+        actorGlobalRole: creatorGlobalRole,
+        targetId: responsibleId,
+        role: 'responsible',
+      });
     }
 
     // v1.87: approval gate. An approver (when set) must be project-eligible
@@ -673,7 +676,10 @@ export class TasksService {
   ): Promise<TaskResponsibleCandidate[]> {
     await assertCanWriteProject(projectId, teamId, callerId, callerGlobalRole);
     await this.ensureProjectInTeam(teamId, projectId);
-    return listEligibleTaskResponsibleCandidates(teamId, projectId);
+    // v2.6 (Phase 1C): the picker must not offer people the write would then
+    // reject with ASSIGNEE_OUT_OF_SCOPE. No-op while the flag is off.
+    const candidates = await listEligibleTaskResponsibleCandidates(teamId, projectId);
+    return filterCandidatesToAssignerScope(teamId, callerId, callerGlobalRole, candidates);
   }
 
   async list(
@@ -791,21 +797,17 @@ export class TasksService {
       validatedReplaceLabelIds = await assertLabelsInTeam(teamId, input.labelIds);
     }
 
-    if (input.assigneeId) {
-      const membership = await prisma.teamMembership.findUnique({
-        where: { userId_teamId: { userId: input.assigneeId, teamId } },
-      });
-      if (!membership) {
-        // v2.5.58: members of FULL-shared guest teams are assignable too.
-        const sharedMember = await prisma.teamMembership.findFirst({
-          where: {
-            userId: input.assigneeId,
-            team: { projectShares: { some: { projectId, level: 'FULL' } } },
-          },
-        });
-        if (!sharedMember) throw Errors.badRequest('Assignee is not a member of this team');
-      }
-    }
+    // v2.6 (Phase 1C): unified onto the shared guard — eligibility now matches
+    // the responsible rule (group-grant members assignable; deliberate
+    // loosening) and unit scope applies when the flag is on.
+    await assertAssignmentAllowed({
+      teamId,
+      projectId,
+      actorId,
+      actorGlobalRole,
+      targetId: input.assigneeId,
+      role: 'assignee',
+    });
 
     // v1.87: approval-config change (toggle requiresApproval / set the approver).
     // An approver (when set) must be project-eligible (same pool as responsible);
@@ -895,16 +897,18 @@ export class TasksService {
           'Missing permission: task.change_responsible',
         );
       }
-      if (input.responsibleId != null) {
-        const eligible = await isUserEligibleTaskResponsible(
-          teamId,
-          projectId,
-          input.responsibleId,
-        );
-        if (!eligible) {
-          throw Errors.badRequest('Responsible is not eligible for this project');
-        }
-      }
+      // v2.6 (Phase 1C): eligibility + unit scope. The permission gate above
+      // answers "may you change the responsible AT ALL"; this answers "may you
+      // hand it to THIS person". A task.change_responsible holder without
+      // task.assign_any is still confined to their unit.
+      await assertAssignmentAllowed({
+        teamId,
+        projectId,
+        actorId,
+        actorGlobalRole,
+        targetId: input.responsibleId,
+        role: 'responsible',
+      });
     }
 
     // v1.18: date-edit restriction. Only consulted when the caller is
