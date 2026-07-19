@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2.17.1 (unified — frontend, backend, and manual share one number) (2026-07-19)
+**Version:** v2.17.2 (unified — frontend, backend, and manual share one number) (2026-07-19)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -552,6 +552,64 @@ administrator in one unattended run. Hence: opt-in, suppressed on any aborted
 run, last-admin interlock, and every demotion audited.
 
 Full rationale and the rollout sequence: `docs/DIRECTORY_SYNC.md`.
+
+## Organizational model — Divisions, Departments, Units (v2.10–v2.17)
+
+The product speaks the operator's vocabulary at the LABEL layer only; schema
+identifiers, API paths and permission keys keep their original names. The
+mapping, which every reader of this codebase eventually needs:
+
+| Org term (FA / EN) | Schema concept | Notes |
+|---|---|---|
+| معاونت / Division | `Team` | Tenancy root, security boundary — unchanged |
+| اداره کل / Department | `UserGroup` kind `UNIT` | Direct membership, one per person per division |
+| اداره / Unit | `UserGroup` kind `SUBUNIT` | v2.16: a TAG on department members, not a membership |
+| معاون / Deputy | system `Manager` role holder | Display-mapped (`displayRoleName`); DB name untouched |
+| مدیر / Department manager | `GroupRole.MANAGER` on the unit | Single-manager semantics enforced by the picker |
+| سرپرست / کارشناس tiers | per-division data roles | Renamed by script; resolved by name, never hardcoded ids |
+
+Design decisions worth keeping:
+
+- **One department per person** is a partial unique index over trigger-maintained
+  denormalized columns (`UserGroupMember.teamId/isUnit`) — an authorization-relevant
+  invariant enforced by the database, not by service discipline.
+- **Department-add implies division-add** (v2.12): adding a non-member to a department
+  auto-creates their `TeamMembership` on the system Member role. The division Members tab
+  was removed; departments are the member-management surface. Tier escalation is never
+  automatic.
+- **Sub-units are tags** so the one-department constraint, assignment scoping and the
+  directory sync stay untouched. Real third-level membership would be a program decision.
+- **`TeamOrgUnit` (division ↔ company, v2.17) stays non-RBAC** — it declares where a
+  division sits in the business structure; access flows through project attachments and
+  org policies, never through this table.
+
+## Unified project-access grants & consent (v2.8, Phases 2–3)
+
+Six legacy access paths collapse into `ProjectAccessGrant`
+(USER|GROUP|TEAM|ORG_UNIT × READ|WRITE, status, expiry, grantor, source).
+`ACCESS_UNIFIED_GRANTS=off|dual|on` walks the cutover: in `dual` both resolvers
+run, the LEGACY answer is returned, and disagreements land as
+`access.divergence` audit rows — the exit criterion is two clean weeks.
+
+The invariant that makes the consent flow (`ACCESS_GRANT_CONSENT`) correct in
+every mode: **the legacy row is written when — and only when — the grant is
+ACTIVE.** Pending grants (cross-team shares awaiting the target division's
+manager; department participation awaiting its مدیر) produce no access anywhere
+until accepted. Legacy surfaces dual-write grants; the grants service
+dual-writes legacy rows. Nothing here may be "cleaned up" before Phase 6 — the
+instant `off` rollback exists because legacy tables stay authoritative.
+
+## Org-tree membership & standing policies (v2.9, Phases 4–5)
+
+`OrgUnitMembership` (SYNC-owned vs MANUAL rows) puts people in the business
+dimension; `SITE` joined the node vocabulary. ORG_UNIT grant subjects resolve
+DOWNWARD via the materialized path — a grant on a holding covers its sites'
+members, and cross-root isolation is structural (no foreign path contains the
+root's id). `OrgUnitGrantPolicy` materializes grants once, when a project is
+attached into the anchor's subtree, stamping `sourcePolicyId` for bulk revoke
+(`revoke-policy-grants.ts`). ORG_UNIT resolution is live only under
+`ACCESS_UNIFIED_GRANTS=on`, so all of this is inert until the flag walk
+completes.
 
 ## Instance security policy (v1.43)
 

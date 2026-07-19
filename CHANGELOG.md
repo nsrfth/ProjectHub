@@ -13,6 +13,16 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.17.2] — 2026-07-19 — Documentation catch-up
+
+Content docs join the code: ARCHITECTURE gains three sections (organizational model with
+the label↔schema mapping table; unified grants + the ACTIVE-iff-legacy-row invariant;
+org-tree membership & policies). Both user manuals gain an authoritative
+**Divisions & Departments** chapter (EN + FA) covering the header rows, both tabs,
+member/manager/tier/unit management, removal with blockers, the Sharing panel + approvals
+inbox, and create-project autofill — with a staleness note on the legacy Teams chapter.
+CLAUDE.md documents the access-redesign flags and the never-rename-DB-roles rule.
+
 ## [2.17.1] — 2026-07-19 — Hide tier select on department managers
 
 The member row of a department MANAGER shows only the «مدیر» badge — the tier select

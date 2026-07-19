@@ -314,10 +314,21 @@ export class WebhookService {
         },
         body: bodyText,
         signal: controller.signal,
+        // SSRF hardening: the assertWebhookUrlSafe() guard above only vets the
+        // ORIGINAL URL's host. fetch() follows 3xx redirects by default, so a
+        // target that returns `302 -> http://169.254.169.254/…` (or any private
+        // host) would sail past the guard. Refuse to auto-follow; a redirect
+        // then surfaces as an opaqueredirect (status 0) and is treated as a
+        // failed delivery below rather than a request to an internal address.
+        redirect: 'manual',
       });
-      // 2xx is success; everything else queues a retry.
+      // 2xx is success; everything else (including a refused redirect, which
+      // arrives as status 0) queues a retry.
       if (res.status >= 200 && res.status < 300) {
         return { ok: true, httpStatus: res.status };
+      }
+      if (res.status === 0 || res.type === 'opaqueredirect') {
+        return { ok: false, errorMessage: 'Webhook target attempted a redirect (refused)' };
       }
       return { ok: false, httpStatus: res.status, errorMessage: `HTTP ${res.status}` };
     } catch (e) {

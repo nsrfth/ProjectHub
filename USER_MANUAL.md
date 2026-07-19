@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.17.1** (2026-07-19)
+Version **v2.17.2** (2026-07-19)
 
 
 > **Terminology (v2.10).** The product now uses your organizational vocabulary:
@@ -126,7 +126,58 @@ The buttons appear on every signed-in route so you can always reach help / conte
 
 ---
 
+## Divisions & Departments (v2.10–v2.17)
+
+Your organization lives on the **Divisions** page (معاونت‌ها in Farsi).
+
+**The division header** shows, top to bottom:
+- **Company** — which company (from the portfolio tree) this division belongs to.
+  Members see it; editors can change it.
+- **Deputies** — the division's معاون(s). A deputy has full division powers: assign
+  work to anyone, share projects, manage departments. Add one from the dropdown;
+  remove with the × on a chip.
+
+**Two tabs**: *Departments* and *Collaboration groups*.
+
+### Departments (ادارات کل)
+
+A department is a section of the division with a single **manager (مدیر)** and members.
+
+- **Create** one with the name box at the top of the Departments tab.
+- **Add members** with the search box — anyone you pick who isn't yet in the division
+  is joined to it automatically (as a regular member; roles stay a deliberate choice).
+- **Choose the manager** from the مدیر dropdown — picking someone promotes them and
+  demotes any previous manager. Manager rows show only the badge.
+- **Set each member's tier**: *Supervisor* (سرپرست — creates and assigns work) or
+  *Expert / Specialist* (کارشناس — works their own assignments).
+- **Units (ادارات)** — optionally subdivide a department: create unit chips, then tag
+  members with a unit from the per-row dropdown. Tags are organizational only.
+- **Removing people**: × removes from the department only; *Remove from division*
+  runs the full check — if they own projects you must reassign ownership or
+  explicitly force. Division members not in any department are listed at the bottom
+  of the tab so nobody is invisible.
+- **One department per person.** Adding someone who already has a department is
+  refused with a clear message.
+
+### Sharing projects
+
+Project **⋯ → Edit → Sharing** is one list for everything: share to a division, a
+group, or a department, at Read or Write level. When consent is enabled, shares that
+need another manager's approval stay **Pending** — approvals arrive in the bell menu
+under *Awaiting your approval*, where the responsible manager accepts or declines.
+
+### Creating projects
+
+The create form asks for **Division** and (optionally) **Department**. Choosing them
+pre-fills the owner with the division's deputy and the accountable with the
+department's manager — both remain editable.
+
 ## Teams and projects
+
+> **Note:** this section predates the v2.10 renaming (Team → Division) and the v2.12
+> move of member management into Departments. For anything about people, roles, or
+> org structure, the chapter above is authoritative.
+
 
 - **Teams** page — click the team-name dropdown on the dashboard or go to `/teams`. Lists every team you belong to and lets you switch the "current team" (drives what the kanban / reports / settings show).
 - **Create a team** — click **New team**, give it a name + slug (URL-safe, dash-delimited, e.g. `growth-eng`).

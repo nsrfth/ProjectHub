@@ -9,7 +9,7 @@ TaskHub — self-hosted team task management. Monorepo with `backend/` (Fastify 
 and Redis 7.
 
 **Versioning (from v2.5.0):** frontend, backend, the user manual, and `TASKHUB_VERSION` share a
-**single unified version number**, currently **2.17.1**. **Bump it on every change** (patch by
+**single unified version number**, currently **2.17.2**. **Bump it on every change** (patch by
 default) and keep all version stamps in lockstep — see the Deploy workflow section.
 
 The deep design docs are worth reading before non-trivial work:
@@ -114,6 +114,20 @@ the frontend matches on `error.code`, never on `message`. Use the helpers in `li
   (theme switching sets a `theme-*` class on `<html>`). i18n is EN + FA (`i18n/`).
 - The `/planner` route exposes multiple *views* (my-tasks, board, calendar, charts, grid) over
   the same task rows without duplicating business logic — see ARCHITECTURE.md "Planner".
+
+### Access-redesign flags & nomenclature (v2.6–v2.17)
+
+- Label layer speaks the org vocabulary: Team=**Division/معاونت**, `UserGroup` kind
+  UNIT=**Department/اداره کل** (SUBUNIT=tag-only اداره), system Manager displays as
+  **معاون/Deputy** (`lib/displayRoleName.ts`). Schema/API names are unchanged — never
+  rename DB role rows or identifiers to match labels.
+- Env flags, all default-off/inert: `DIRECTORY_SYNC_*` (scheduled AD sync),
+  `ACCESS_UNIT_SCOPE` (department-scoped assignment), `ACCESS_UNIFIED_GRANTS=off|dual|on`
+  (grant-table cutover; `dual` returns legacy answers and logs `access.divergence`),
+  `ACCESS_GRANT_CONSENT` (pending-approval flow; only after grants reach `on`).
+- Invariants: legacy access rows are written iff a grant is ACTIVE (dual-write both
+  directions); one department per person is a DB partial index + trigger; deleting the
+  legacy tables is Phase 6 only (docs/PHASE6_RETIREMENT.md).
 
 ## Conventions & gotchas
 
