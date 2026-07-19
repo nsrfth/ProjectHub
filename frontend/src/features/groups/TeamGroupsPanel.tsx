@@ -259,14 +259,6 @@ function GroupEditor({
       });
   };
 
-  const setRole = (userId: string, role: groupsApi.GroupRole): void => {
-    setMemberError(null);
-    void groupsApi
-      .updateGroupMemberRole(teamId, detail.id, userId, role)
-      .then(onInvalidate)
-      .catch((err) => setMemberError(errorMessage(err, t('groups.createFailed'))));
-  };
-
   return (
     <div className="border rounded p-3 text-sm space-y-3 border-border">
       <div className="flex justify-between items-start gap-2">
@@ -287,6 +279,37 @@ function GroupEditor({
       </div>
 
       <div>
+        {isUnit && detail.members.length > 0 && (
+          <label className="block mb-2">
+            <span className="block text-xs font-medium text-slate-500 mb-1">
+              {t('units.memberRole.manager')}
+            </span>
+            <select
+              value={detail.members.find((m) => m.role === 'MANAGER')?.userId ?? ''}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                if (!nextId) return;
+                setMemberError(null);
+                const demote = detail.members
+                  .filter((m) => m.role === 'MANAGER' && m.userId !== nextId)
+                  .map((m) =>
+                    groupsApi.updateGroupMemberRole(teamId, detail.id, m.userId, 'MEMBER'),
+                  );
+                void Promise.all(demote)
+                  .then(() => groupsApi.updateGroupMemberRole(teamId, detail.id, nextId, 'MANAGER'))
+                  .then(onInvalidate)
+                  .catch((err) => setMemberError(errorMessage(err, t('groups.createFailed'))));
+              }}
+              className="w-full rounded border px-2 py-1 text-xs bg-surface"
+              data-testid="unit-manager-picker"
+            >
+              <option value="">{t('units.manager.pick')}</option>
+              {detail.members.map((m) => (
+                <option key={m.userId} value={m.userId}>{m.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <p className="text-xs font-medium text-slate-500 mb-1">{t('groups.members')}</p>
         {memberError && <p role="alert" className="text-xs text-danger mb-1">{memberError}</p>}
         <ul className="space-y-1 mb-2">
@@ -308,18 +331,7 @@ function GroupEditor({
               {!isUnit && m.status === 'DECLINED' && (
                 <span className="rounded bg-red-100 text-red-800 px-1">{t('groups.invite.declined')}</span>
               )}
-              {isUnit ? (
-                <button
-                  type="button"
-                  className="text-xs underline text-text-muted hover:text-text"
-                  onClick={() => setRole(m.userId, m.role === 'MANAGER' ? 'MEMBER' : 'MANAGER')}
-                  data-testid="unit-role-toggle"
-                >
-                  {m.role === 'MANAGER'
-                    ? t('units.demoteToMember')
-                    : t('units.promoteToManager')}
-                </button>
-              ) : (
+              {isUnit ? null : (
                 <select
                   value={m.accessLevel}
                   className="rounded border px-1 py-0.5 text-xs bg-surface"

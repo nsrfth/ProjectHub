@@ -1552,5 +1552,6 @@
   "projects.create.division": "معاونت",
   "projects.create.department": "اداره کل",
   "projects.create.department.none": "— بدون اداره کل —",
-  "projects.create.autofillHint": "مالک به‌صورت خودکار معاونِ معاونت و پاسخگو مدیرکلِ اداره کل انتخاب می‌شود؛ هر دو قابل تغییرند."
+  "projects.create.autofillHint": "مالک به‌صورت خودکار معاونِ معاونت و پاسخگو مدیرکلِ اداره کل انتخاب می‌شود؛ هر دو قابل تغییرند.",
+  "units.manager.pick": "انتخاب مدیرکل…"
 }

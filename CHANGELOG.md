@@ -13,6 +13,12 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.13.1] — 2026-07-19 — Department manager picker
+
+Each department gets a dedicated **مدیرکل picker** in its editor: choose the director from
+the department's members; picking someone promotes them and demotes any other manager
+(single-manager semantics). Replaces the per-row promote/demote toggle; the badge stays.
+
 ## [2.13.0] — 2026-07-19 — Create-project: division/department pickers + role autofill
 
 ### Added
