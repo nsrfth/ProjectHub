@@ -10,7 +10,6 @@ import { useT } from '@/lib/i18n';
 import TeamGroupsPanel from '@/features/groups/TeamGroupsPanel';
 import { deriveDeputies, systemRoleId } from '@/lib/deputies';
 
-function MemberStatusBadges({ member, t }: { member: teamsApi.TeamMember; t: (k: string) => string }): JSX.Element | null {
   if (member.disabled) {
     return (
       <span className="text-xs px-1.5 py-0.5 rounded bg-danger/10 text-danger">
