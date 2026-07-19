@@ -3,6 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import type { Team } from '@/features/teams/api';
 import { listTeamMembersForAssignees } from '@/features/teams/api';
+import * as rolesApi from '@/features/roles/api';
+import * as groupsApi from '@/features/groups/api';
+import { departmentManager, deriveDeputies } from '@/lib/deputies';
 import { visibleTeamMembers } from '@/lib/systemUser';
 import * as projectsApi from '@/features/projects/api';
 import * as profilesApi from '@/features/profiles/api';
@@ -40,6 +43,13 @@ export default function CreateProjectForm({
 
   const [formTeamId, setFormTeamId] = useState<string>(() => currentTeamId ?? '');
   const effectiveFormTeamId = formTeamId || currentTeamId || '';
+  // v2.13: department pick + deputy/director autofill.
+  const [deptId, setDeptId] = useState<string>('');
+  // Owner autofill is applied when the roster/roles for the chosen division
+  // ARRIVE (they load async), then never again — so a manual owner edit after
+  // the fill is never clobbered. Starts true: the initial division counts as
+  // "chosen".
+  const [ownerFillPending, setOwnerFillPending] = useState(true);
   const { data: formMembersRaw = [] } = useQuery({
     queryKey: ['teams', effectiveFormTeamId, 'assignees'],
     queryFn: () => listTeamMembersForAssignees(effectiveFormTeamId),
@@ -47,6 +57,19 @@ export default function CreateProjectForm({
     staleTime: 30_000,
   });
   const formMembers = visibleTeamMembers(formMembersRaw);
+  const { data: rolesResp } = useQuery({
+    queryKey: ['roles', effectiveFormTeamId],
+    queryFn: () => rolesApi.listRoles(effectiveFormTeamId),
+    enabled: !!effectiveFormTeamId,
+    staleTime: 30_000,
+  });
+  const { data: allGroups = [] } = useQuery({
+    queryKey: ['groups', effectiveFormTeamId],
+    queryFn: () => groupsApi.listGroups(effectiveFormTeamId),
+    enabled: !!effectiveFormTeamId,
+    staleTime: 30_000,
+  });
+  const departments = allGroups.filter((g) => g.kind === 'UNIT');
 
   const selectedTeam = teams.find((tm) => tm.id === effectiveFormTeamId);
   const [values, setValues] = useState<ProjectFormValues>({
@@ -79,6 +102,25 @@ export default function CreateProjectForm({
       setValues((v) => ({ ...v, budgetCurrency: selectedTeam.defaultCurrency }));
     }
   }, [selectedTeam?.id, selectedTeam?.defaultCurrency]);
+
+  // v2.13: owner ← the division's deputy (معاون), once per division choice.
+  useEffect(() => {
+    if (!ownerFillPending) return;
+    const roles = rolesResp?.items ?? [];
+    if (formMembers.length === 0 || roles.length === 0) return;
+    const deputy = deriveDeputies(formMembers, roles)[0];
+    if (deputy) setValues((v) => ({ ...v, ownerId: deputy.userId }));
+    setOwnerFillPending(false);
+  }, [ownerFillPending, formMembers, rolesResp]);
+
+  // v2.13: accountable ← the chosen department's director (مدیرکل). Applied
+  // on every department change; clearing the department clears nothing (the
+  // user may have picked someone deliberately).
+  useEffect(() => {
+    if (!deptId) return;
+    const director = departmentManager(formMembers, deptId);
+    setValues((v) => ({ ...v, accountableId: director ? director.userId : v.accountableId }));
+  }, [deptId, formMembers]);
 
   const createMut = useMutation({
     mutationFn: (input: ProjectFormValues) =>
@@ -127,11 +169,14 @@ export default function CreateProjectForm({
     <form onSubmit={onSubmit} className="space-y-3">
       {teams.length > 1 && (
         <label className="block">
-          <span className="block text-xs text-text-muted mb-1">Team</span>
+          <span className="block text-xs text-text-muted mb-1">{t('projects.create.division')}</span>
           <select
             value={effectiveFormTeamId}
             onChange={(e) => {
               setFormTeamId(e.target.value);
+              setDeptId('');
+              // Re-arm the deputy autofill for the newly chosen division.
+              setOwnerFillPending(true);
               patch({ accountableId: null, ownerId: user?.id ?? null });
             }}
             className="w-full rounded border-border dark:bg-slate-700 dark:text-slate-100 px-2 py-1.5 border text-sm"
@@ -142,6 +187,26 @@ export default function CreateProjectForm({
               </option>
             ))}
           </select>
+        </label>
+      )}
+
+      {departments.length > 0 && (
+        <label className="block">
+          <span className="block text-xs text-text-muted mb-1">{t('projects.create.department')}</span>
+          <select
+            value={deptId}
+            onChange={(e) => setDeptId(e.target.value)}
+            className="w-full rounded border-border dark:bg-slate-700 dark:text-slate-100 px-2 py-1.5 border text-sm"
+            data-testid="project-create-department"
+          >
+            <option value="">{t('projects.create.department.none')}</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <span className="block text-[11px] text-text-muted mt-0.5">
+            {t('projects.create.autofillHint')}
+          </span>
         </label>
       )}
 

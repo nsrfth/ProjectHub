@@ -13,6 +13,16 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.13.0] — 2026-07-19 — Create-project: division/department pickers + role autofill
+
+### Added
+- Create-project form: the picker is labelled **Division** (معاونت) and gains a
+  **Department** (اداره کل) picker beneath it. Choosing them pre-fills **owner ← the
+  division's deputy** (معاون, first system-Manager holder) and **accountable ← the
+  department's director** (مدیرکل). Fills apply when the async roster arrives, exactly
+  once per selection — a manual owner/accountable edit afterwards is never clobbered.
+  Both stay editable; no schema change (the department pick drives autofill only).
+
 ## [2.12.0] — 2026-07-19 — Departments become the member-management surface
 
 ### Changed

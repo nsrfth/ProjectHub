@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveDeputies, systemRoleId } from './deputies';
+import { departmentManager, deriveDeputies, systemRoleId } from './deputies';
 
 const roles = [
   { id: 'r_mgr', name: 'Manager', isSystem: true },
@@ -26,5 +26,19 @@ describe('deriveDeputies (v2.11)', () => {
   it('no system Manager role -> no deputies (never guesses)', () => {
     expect(deriveDeputies(members, [{ id: 'x', name: 'Chief', isSystem: true }])).toEqual([]);
     expect(systemRoleId(roles, 'manager')).toBe('r_mgr');
+  });
+});
+
+describe('departmentManager (v2.13 create-project autofill)', () => {
+  const roster = [
+    { userId: 'u1', unitId: 'net', unitRole: 'MANAGER' as const },
+    { userId: 'u2', unitId: 'net', unitRole: 'MEMBER' as const },
+    { userId: 'u3', unitId: null, unitRole: null },
+  ];
+  it('finds the unit manager for the chosen department', () => {
+    expect(departmentManager(roster, 'net')?.userId).toBe('u1');
+  });
+  it('returns null when the department has no manager', () => {
+    expect(departmentManager(roster, 'sec')).toBeNull();
   });
 });

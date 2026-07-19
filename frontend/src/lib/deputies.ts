@@ -27,3 +27,17 @@ export function deriveDeputies<M extends DeputyMemberLike>(
   if (!managerId) return [];
   return members.filter((m) => !m.external && m.roleId === managerId);
 }
+
+// v2.13: the member running a given department (unitRole MANAGER on that
+// unit), for the create-project autofill (accountable = مدیرکل).
+export interface UnitMemberLike {
+  userId: string;
+  unitId: string | null;
+  unitRole: 'MANAGER' | 'MEMBER' | null;
+}
+export function departmentManager<M extends UnitMemberLike>(
+  members: M[],
+  unitId: string,
+): M | null {
+  return members.find((m) => m.unitId === unitId && m.unitRole === 'MANAGER') ?? null;
+}

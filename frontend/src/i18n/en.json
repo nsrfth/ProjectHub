@@ -1635,5 +1635,9 @@
   "team.deputies.add": "Add deputy…",
   "team.deputies.remove": "Remove deputy",
   "team.deputies.removeConfirm": "Remove {name} as deputy? They become a regular member.",
-  "team.members.col.unit": "Department"
+  "team.members.col.unit": "Department",
+  "projects.create.division": "Division",
+  "projects.create.department": "Department",
+  "projects.create.department.none": "— no department —",
+  "projects.create.autofillHint": "Owner is pre-filled with the division deputy; accountable with the department director. Both stay editable."
 }

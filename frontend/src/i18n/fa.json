@@ -1548,5 +1548,9 @@
   "team.deputies.add": "افزودن معاون…",
   "team.deputies.remove": "حذف معاون",
   "team.deputies.removeConfirm": "«{name}» از معاونت برکنار شود؟ به عضو عادی تبدیل می‌شود.",
-  "team.members.col.unit": "اداره کل"
+  "team.members.col.unit": "اداره کل",
+  "projects.create.division": "معاونت",
+  "projects.create.department": "اداره کل",
+  "projects.create.department.none": "— بدون اداره کل —",
+  "projects.create.autofillHint": "مالک به‌صورت خودکار معاونِ معاونت و پاسخگو مدیرکلِ اداره کل انتخاب می‌شود؛ هر دو قابل تغییرند."
 }
