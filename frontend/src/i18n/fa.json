@@ -1553,5 +1553,9 @@
   "projects.create.department": "اداره کل",
   "projects.create.department.none": "— بدون اداره کل —",
   "projects.create.autofillHint": "مالک به‌صورت خودکار معاونِ معاونت و پاسخگو مدیرکلِ اداره کل انتخاب می‌شود؛ هر دو قابل تغییرند.",
-  "units.manager.pick": "انتخاب مدیرکل…"
+  "units.manager.pick": "انتخاب مدیرکل…",
+  "team.remove.error": "حذف عضو انجام نشد",
+  "units.removeFromDivision": "حذف از معاونت",
+  "units.removeFromDept": "حذف از اداره کل",
+  "units.unassigned.title": "اعضای معاونت بدون اداره کل"
 }

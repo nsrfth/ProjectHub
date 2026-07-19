@@ -6,6 +6,7 @@ import * as projectsApi from '@/features/projects/api';
 import { listTeamMembersForAssignees, updateMemberRole, type TeamMember } from '@/features/teams/api';
 import * as rolesApi from '@/features/roles/api';
 import { tierRoles } from '@/lib/deputies';
+import RemoveFromDivisionTrigger from '@/features/teams/RemoveFromDivisionDialog';
 import { useT } from '@/lib/i18n';
 import { groupRoleLabelKey } from '@/lib/displayRoleName';
 import { visibleTeamMembers } from '@/lib/systemUser';
@@ -207,6 +208,28 @@ export default function TeamGroupsPanel({
           />
         )}
       </div>
+
+      {/* v2.15: division members not yet in any department — visible here so
+          they are neither unmanageable nor invisible. */}
+      {isUnit && visibleMembers.some((m) => !m.unitId) && (
+        <div className="mt-4 pt-3 border-t border-border">
+          <p className="text-xs font-medium text-slate-500 mb-1">{t('units.unassigned.title')}</p>
+          <ul className="space-y-1">
+            {visibleMembers.filter((m) => !m.unitId).map((m) => (
+              <li key={m.userId} className="flex flex-wrap items-center gap-2 text-xs">
+                <span>{m.name}</span>
+                <span className="text-slate-400">{m.email}</span>
+                <RemoveFromDivisionTrigger
+                  teamId={teamId}
+                  member={{ userId: m.userId, name: m.name }}
+                  reassignCandidates={visibleMembers}
+                  onRemoved={invalidate}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
@@ -411,6 +434,7 @@ function GroupEditor({
               <button
                 type="button"
                 className="text-danger underline"
+                title={t('units.removeFromDept')}
                 onClick={() => {
                   setMemberError(null);
                   void groupsApi.removeGroupMember(teamId, detail.id, m.userId).then(onInvalidate);
@@ -418,6 +442,14 @@ function GroupEditor({
               >
                 ×
               </button>
+              {isUnit && (
+                <RemoveFromDivisionTrigger
+                  teamId={teamId}
+                  member={{ userId: m.userId, name: m.name }}
+                  reassignCandidates={teamMembers}
+                  onRemoved={onInvalidate}
+                />
+              )}
             </li>
           ))}
         </ul>

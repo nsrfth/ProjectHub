@@ -13,6 +13,14 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.15.0] — 2026-07-19 — Full division removal restored (owned-projects blockers)
+
+Closes the last v2.12.0 trade-off. Department member rows gain **«حذف از معاونت»**
+alongside the department «×», running the recovered blocker flow: members owning projects
+must have ownership reassigned or be force-removed, never silently dropped. A new
+**unassigned section** in the Departments tab lists division members without a department,
+so nobody is invisible or unmanageable.
+
 ## [2.14.0] — 2026-07-19 — Department member tier picker (سرپرست / کارشناس)
 
 Closes the v2.12.0 trade-off: tier assignment has a UI again, in its natural home. Each
