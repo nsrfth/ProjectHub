@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const groupAccessLevelEnum = z.enum(['FULL', 'READONLY']);
 export const groupInviteStatusEnum = z.enum(['PENDING', 'ACCEPTED', 'DECLINED']);
 // v2.6 (Phase 1A): units vs collaboration groups.
-export const userGroupKindEnum = z.enum(['UNIT', 'COLLAB']);
+export const userGroupKindEnum = z.enum(['UNIT', 'COLLAB', 'SUBUNIT']);
 export const groupRoleEnum = z.enum(['MANAGER', 'MEMBER']);
 
 export const createUserGroupBody = z.object({
@@ -14,6 +14,8 @@ export const createUserGroupBody = z.object({
   // to pass the one-unit constraint at once, which the DB trigger enforces by
   // rejecting the whole update; create-as-the-right-kind avoids the trap.
   kind: userGroupKindEnum.default('COLLAB'),
+  // v2.16: SUBUNIT rows point at their parent department.
+  parentId: z.string().nullable().optional(),
 });
 
 export const updateUserGroupBody = z.object({
@@ -70,6 +72,8 @@ export const userGroupMemberResponse = z.object({
   status: groupInviteStatusEnum,
   external: z.boolean(),
   role: groupRoleEnum,
+  subUnitId: z.string().nullable(),
+  subUnitName: z.string().nullable(),
   invitedAt: z.string(),
   respondedAt: z.string().nullable(),
 });
@@ -84,6 +88,12 @@ export const userGroupProjectResponse = z.object({
 export const userGroupDetailResponse = userGroupSummaryResponse.extend({
   members: z.array(userGroupMemberResponse),
   projects: z.array(userGroupProjectResponse),
+  subUnits: z.array(z.object({ id: z.string(), name: z.string() })),
+});
+
+// v2.16: tag / untag a department member with a sub-unit.
+export const setMemberSubUnitBody = z.object({
+  subUnitId: z.string().nullable(),
 });
 
 export const userGroupsListResponse = z.object({
@@ -114,4 +124,5 @@ export type UpdateUserGroupBody = z.infer<typeof updateUserGroupBody>;
 export type AddGroupMemberBody = z.infer<typeof addGroupMemberBody>;
 export type UpdateGroupMemberBody = z.infer<typeof updateGroupMemberBody>;
 export type UpdateGroupMemberRoleBody = z.infer<typeof updateGroupMemberRoleBody>;
+export type SetMemberSubUnitBody = z.infer<typeof setMemberSubUnitBody>;
 export type SetGroupProjectsBody = z.infer<typeof setGroupProjectsBody>;

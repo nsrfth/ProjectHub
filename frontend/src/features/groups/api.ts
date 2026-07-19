@@ -4,7 +4,7 @@ export type GroupAccessLevel = 'FULL' | 'READONLY';
 export type GroupInviteStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED';
 // v2.10: UNIT = department (اداره کل) — direct membership, one per person;
 // COLLAB = collaboration group, the original invitation-based behaviour.
-export type UserGroupKind = 'UNIT' | 'COLLAB';
+export type UserGroupKind = 'UNIT' | 'COLLAB' | 'SUBUNIT';
 export type GroupRole = 'MANAGER' | 'MEMBER';
 
 export interface UserGroupSummary {
@@ -30,6 +30,8 @@ export interface UserGroupMember {
   invitedAt: string;
   respondedAt: string | null;
   role: GroupRole;
+  subUnitId: string | null;
+  subUnitName: string | null;
 }
 
 export interface UserGroupProject {
@@ -39,7 +41,9 @@ export interface UserGroupProject {
   grantedAt: string;
 }
 
+export interface SubUnitRef { id: string; name: string }
 export interface UserGroupDetail extends UserGroupSummary {
+  subUnits: SubUnitRef[];
   members: UserGroupMember[];
   projects: UserGroupProject[];
 }
@@ -73,7 +77,7 @@ export async function searchUsers(teamId: string, q: string): Promise<UserSearch
 
 export async function createGroup(
   teamId: string,
-  input: { name: string; description?: string | null; kind?: UserGroupKind },
+  input: { name: string; description?: string | null; kind?: UserGroupKind; parentId?: string | null },
 ): Promise<UserGroupDetail> {
   return (await api.post<UserGroupDetail>(`/teams/${teamId}/groups`, input)).data;
 }
@@ -99,6 +103,21 @@ export async function addGroupMember(
       accessLevel,
       role,
     })
+  ).data;
+}
+
+// v2.16: tag / untag a department member with a sub-unit.
+export async function setMemberSubUnit(
+  teamId: string,
+  groupId: string,
+  userId: string,
+  subUnitId: string | null,
+): Promise<UserGroupDetail> {
+  return (
+    await api.patch<UserGroupDetail>(
+      `/teams/${teamId}/groups/${groupId}/members/${userId}/subunit`,
+      { subUnitId },
+    )
   ).data;
 }
 

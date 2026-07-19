@@ -63,7 +63,7 @@ export default function ProjectGrantsPanel({ teamId, projectId }: Props): JSX.El
   const addableTeams = teams.filter(
     (tm) => tm.id !== teamId && !grantedKeys.has(`TEAM:${tm.id}`),
   );
-  const addableGroups = groups.filter((g) => !grantedKeys.has(`GROUP:${g.id}`));
+  const addableGroups = groups.filter((g) => g.kind !== 'SUBUNIT' && !grantedKeys.has(`GROUP:${g.id}`));
 
   const statusChip = (s: grantsApi.GrantStatus) =>
     s === 'ACTIVE' ? null : (

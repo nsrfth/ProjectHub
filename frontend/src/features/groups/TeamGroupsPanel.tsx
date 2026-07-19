@@ -36,7 +36,7 @@ export default function TeamGroupsPanel({
   kind,
 }: {
   teamId: string;
-  kind: groupsApi.UserGroupKind;
+  kind: 'UNIT' | 'COLLAB';
 }): JSX.Element {
   const t = useT();
   const qc = useQueryClient();
@@ -253,7 +253,7 @@ function GroupEditor({
   savePending,
 }: {
   teamId: string;
-  kind: groupsApi.UserGroupKind;
+  kind: 'UNIT' | 'COLLAB';
   detail: groupsApi.UserGroupDetail;
   teamMembers: TeamMember[];
   divisionRoles: { id: string; name: string; isSystem: boolean }[];
@@ -273,6 +273,7 @@ function GroupEditor({
   const isUnit = kind === 'UNIT';
   const [projectIds, setProjectIds] = useState<Set<string>>(new Set());
   const [memberError, setMemberError] = useState<string | null>(null);
+  const [subUnitName, setSubUnitName] = useState('');
 
   useEffect(() => {
     setProjectIds(new Set(detail.projects.map((p) => p.projectId)));
@@ -327,6 +328,61 @@ function GroupEditor({
         </button>
       </div>
 
+      {isUnit && (
+        <div>
+          <p className="text-xs font-medium text-slate-500 mb-1">{t('units.subunits.title')}</p>
+          <div className="flex flex-wrap items-center gap-1 mb-1">
+            {detail.subUnits.map((su) => (
+              <span key={su.id} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs">
+                {su.name}
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-danger"
+                  onClick={() => {
+                    if (window.confirm(t('units.subunits.confirmDelete').replace('{name}', su.name)))
+                      void groupsApi.deleteGroup(teamId, su.id).then(onInvalidate);
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <form
+              className="inline-flex items-center gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const name = subUnitName.trim();
+                if (!name) return;
+                setMemberError(null);
+                void groupsApi
+                  .createGroup(teamId, { name, kind: 'SUBUNIT', parentId: detail.id })
+                  .then(() => {
+                    setSubUnitName('');
+                    return onInvalidate();
+                  })
+                  .catch((err) => setMemberError(errorMessage(err, t('groups.createFailed'))));
+              }}
+            >
+              <input
+                type="text"
+                value={subUnitName}
+                onChange={(e) => setSubUnitName(e.target.value)}
+                placeholder={t('units.subunits.namePlaceholder')}
+                className="rounded border px-2 py-0.5 text-xs bg-surface w-32"
+                data-testid="subunit-name-input"
+              />
+              <button
+                type="submit"
+                disabled={!subUnitName.trim()}
+                className="text-xs border rounded px-2 py-0.5 hover:bg-bg-elevated disabled:opacity-50"
+              >
+                {t('units.subunits.create')}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div>
         {isUnit && detail.members.length > 0 && (
           <label className="block mb-2">
@@ -379,6 +435,25 @@ function GroupEditor({
               )}
               {!isUnit && m.status === 'DECLINED' && (
                 <span className="rounded bg-red-100 text-red-800 px-1">{t('groups.invite.declined')}</span>
+              )}
+              {isUnit && detail.subUnits.length > 0 && (
+                <select
+                  value={m.subUnitId ?? ''}
+                  onChange={(e) => {
+                    setMemberError(null);
+                    void groupsApi
+                      .setMemberSubUnit(teamId, detail.id, m.userId, e.target.value || null)
+                      .then(onInvalidate)
+                      .catch((err) => setMemberError(errorMessage(err, t('groups.createFailed'))));
+                  }}
+                  className="rounded border px-1 py-0.5 text-xs bg-surface"
+                  data-testid="member-subunit-select"
+                >
+                  <option value="">{t('units.subunits.none')}</option>
+                  {detail.subUnits.map((su) => (
+                    <option key={su.id} value={su.id}>{su.name}</option>
+                  ))}
+                </select>
               )}
               {isUnit ? (
                 supervisorId && specialistId ? (

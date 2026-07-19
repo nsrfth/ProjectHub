@@ -13,6 +13,8 @@ import {
   updateGroupMemberBody,
   updateGroupMemberRoleBody,
   type UpdateGroupMemberRoleBody,
+  setMemberSubUnitBody,
+  type SetMemberSubUnitBody,
   updateUserGroupBody,
   userGroupDetailResponse,
   userGroupsListResponse,
@@ -213,6 +215,33 @@ export async function userGroupsRoutes(app: FastifyInstance): Promise<void> {
         req.params.userId,
         req.user.sub,
         req.body.role,
+      );
+      return reply.send(serializeDetail(detail));
+    },
+  });
+
+  // v2.16: tag a department member with a sub-unit (اداره).
+  r.patch('/:groupId/members/:userId/subunit', {
+    preHandler: [requirePermission('group.manage'), requireScope('admin')],
+    schema: {
+      tags: ['groups'],
+      summary: 'Tag / untag a department member with a sub-unit',
+      params: z.object({ teamId: z.string(), groupId: z.string(), userId: z.string() }),
+      body: setMemberSubUnitBody,
+      response: { 200: userGroupDetailResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (
+      req: FastifyRequest<{ Params: GroupMemberParams; Body: SetMemberSubUnitBody }>,
+      reply: FastifyReply,
+    ) => {
+      if (!req.user) throw Errors.unauthorized();
+      const detail = await svc.setMemberSubUnit(
+        req.params.teamId,
+        req.params.groupId,
+        req.params.userId,
+        req.user.sub,
+        req.body.subUnitId,
       );
       return reply.send(serializeDetail(detail));
     },

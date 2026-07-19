@@ -1646,5 +1646,10 @@
   "units.removeFromDept": "Remove from department",
   "units.unassigned.title": "Division members without a department",
   "units.tier.supervisor": "Supervisor",
-  "units.tier.specialist": "Expert / Specialist"
+  "units.tier.specialist": "Expert / Specialist",
+  "units.subunits.title": "Units",
+  "units.subunits.create": "Add",
+  "units.subunits.namePlaceholder": "Unit name",
+  "units.subunits.none": "— no unit —",
+  "units.subunits.confirmDelete": "Delete unit \"{name}\"? Members are just untagged."
 }

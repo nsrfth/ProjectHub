@@ -32,6 +32,9 @@ export interface UserGroupMemberView {
   // v2.6 (Phase 1A): standing within the group. A UNIT's MANAGER is the
   // supervisor; on COLLAB groups it is informational for now.
   role: GroupRole;
+  // v2.16: optional sub-unit tag (departments only).
+  subUnitId: string | null;
+  subUnitName: string | null;
   invitedAt: Date;
   respondedAt: Date | null;
 }
@@ -46,6 +49,8 @@ export interface UserGroupProjectView {
 export interface UserGroupDetail extends UserGroupSummary {
   members: UserGroupMemberView[];
   projects: UserGroupProjectView[];
+  // v2.16: this department's sub-units.
+  subUnits: { id: string; name: string }[];
 }
 
 export interface GroupInviteView {
@@ -153,8 +158,19 @@ export class UserGroupsService {
   async create(
     teamId: string,
     actorId: string,
-    input: { name: string; description?: string | null; kind?: UserGroupKind },
+    input: { name: string; description?: string | null; kind?: UserGroupKind; parentId?: string | null },
   ): Promise<UserGroupSummary> {
+    // v2.16: sub-units live under a department of the SAME team; everything
+    // else must not carry a parent.
+    if (input.kind === 'SUBUNIT') {
+      if (!input.parentId) throw Errors.badRequest('A sub-unit needs its parent department');
+      const parent = await prisma.userGroup.findUnique({ where: { id: input.parentId } });
+      if (!parent || parent.teamId !== teamId || parent.kind !== 'UNIT') {
+        throw Errors.badRequest('Sub-unit parent must be a department of this division');
+      }
+    } else if (input.parentId) {
+      throw Errors.badRequest('Only sub-units carry a parent');
+    }
     try {
       const g = await prisma.userGroup.create({
         data: {
@@ -163,6 +179,7 @@ export class UserGroupsService {
           description: input.description?.trim() ?? null,
           // v2.6 (Phase 1A): defaults COLLAB — existing callers unchanged.
           kind: input.kind ?? 'COLLAB',
+          parentId: input.parentId ?? null,
         },
         include: { _count: { select: { members: true, grants: true } } },
       });
@@ -187,9 +204,13 @@ export class UserGroupsService {
       include: {
         _count: { select: { members: true, grants: true } },
         members: {
-          include: { user: { select: { email: true, name: true } } },
+          include: {
+            user: { select: { email: true, name: true } },
+            subUnit: { select: { id: true, name: true } },
+          },
           orderBy: { invitedAt: 'asc' },
         },
+        subUnits: { select: { id: true, name: true }, orderBy: { name: 'asc' } },
         grants: {
           include: { project: { select: { id: true, name: true, ownerId: true } } },
           orderBy: { grantedAt: 'asc' },
@@ -208,9 +229,12 @@ export class UserGroupsService {
         status: m.status,
         external: m.external,
         role: m.role,
+        subUnitId: m.subUnit?.id ?? null,
+        subUnitName: m.subUnit?.name ?? null,
         invitedAt: m.invitedAt,
         respondedAt: m.respondedAt,
       })),
+      subUnits: g.subUnits.map((u) => ({ id: u.id, name: u.name })),
       projects: g.grants.map((gr) => ({
         projectId: gr.project.id,
         name: gr.project.name,
@@ -284,6 +308,11 @@ export class UserGroupsService {
     role: GroupRole = 'MEMBER',
   ): Promise<UserGroupDetail> {
     const group = await assertGroupInTeam(teamId, groupId);
+    // v2.16: sub-units carry no membership — people are members of the
+    // department and merely TAGGED with a sub-unit (setMemberSubUnit).
+    if (group.kind === 'SUBUNIT') {
+      throw Errors.badRequest('Sub-units have no members of their own — tag a department member instead');
+    }
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.disabledAt) throw Errors.notFound('User not found');
 
@@ -469,6 +498,46 @@ export class UserGroupsService {
       action: 'group.member_removed',
       meta: { groupId, userId },
     });
+  }
+
+  /**
+   * v2.16: tag a department member with one of the department's sub-units
+   * (or null to untag). Validation is the whole point: the sub-unit must be
+   * a child of exactly this department.
+   */
+  async setMemberSubUnit(
+    teamId: string,
+    groupId: string,
+    userId: string,
+    actorId: string,
+    subUnitId: string | null,
+  ): Promise<UserGroupDetail> {
+    const group = await assertGroupInTeam(teamId, groupId);
+    if (group.kind !== 'UNIT') throw Errors.badRequest('Sub-unit tags apply to department members');
+    if (subUnitId) {
+      const su = await prisma.userGroup.findUnique({ where: { id: subUnitId } });
+      if (!su || su.kind !== 'SUBUNIT' || su.parentId !== groupId) {
+        throw Errors.badRequest('Sub-unit does not belong to this department');
+      }
+    }
+    try {
+      await prisma.userGroupMember.update({
+        where: { groupId_userId: { groupId, userId } },
+        data: { subUnitId },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw Errors.notFound('Group member not found');
+      }
+      throw err;
+    }
+    await logActivity(prisma, {
+      actorId,
+      teamId,
+      action: 'group.member_subunit_changed',
+      meta: { groupId, userId, subUnitId },
+    });
+    return this.get(teamId, groupId);
   }
 
   async setProjects(

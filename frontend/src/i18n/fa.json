@@ -1559,5 +1559,10 @@
   "units.removeFromDept": "حذف از اداره کل",
   "units.unassigned.title": "اعضای معاونت بدون اداره کل",
   "units.tier.supervisor": "سرپرست",
-  "units.tier.specialist": "کارشناس"
+  "units.tier.specialist": "کارشناس",
+  "units.subunits.title": "ادارات",
+  "units.subunits.create": "افزودن",
+  "units.subunits.namePlaceholder": "نام اداره",
+  "units.subunits.none": "— بدون اداره —",
+  "units.subunits.confirmDelete": "اداره «{name}» حذف شود؟ فقط برچسب اعضا برداشته می‌شود."
 }

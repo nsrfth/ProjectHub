@@ -1221,6 +1221,12 @@ model OrgUnitMembership {
 enum UserGroupKind {
   UNIT
   COLLAB
+  // v2.16: an OPTIONAL subdivision inside a department (اداره within an
+  // اداره کل). Carries no membership of its own — people stay members of the
+  // DEPARTMENT (one-department constraint, assignment scoping and the sync
+  // all untouched); a member is merely TAGGED with a sub-unit via
+  // UserGroupMember.subUnitId.
+  SUBUNIT
 }
 
 // v2.6 (Phase 1A): a member's standing WITHIN the group. Distinct from
@@ -1239,6 +1245,12 @@ model UserGroup {
   description String?
   // v2.6 (Phase 1A). See UserGroupKind.
   kind        UserGroupKind @default(COLLAB)
+  // v2.16: SUBUNIT rows point at their parent DEPARTMENT. Cascade: deleting a
+  // department removes its sub-units (they are meaningless without it).
+  parentId    String?
+  parent      UserGroup?  @relation("GroupSubUnits", fields: [parentId], references: [id], onDelete: Cascade)
+  subUnits    UserGroup[] @relation("GroupSubUnits")
+  taggedMembers UserGroupMember[] @relation("MemberSubUnit")
   // v1.98 (PMIS R2): optional per-group default project profile — the highest-
   // priority defaulting carrier (group ▸ team ▸ system NEUTRAL) the project-
   // create picker pre-fills from. SetNull so deleting the profile just clears
@@ -1271,6 +1283,11 @@ model UserGroupMember {
   external    Boolean           @default(false)
   // v2.6 (Phase 1A): standing within the group. See GroupRole.
   role        GroupRole         @default(MEMBER)
+  // v2.16: optional sub-unit tag. SetNull — deleting a sub-unit just untags
+  // its people. Service-validated: the sub-unit's parent must be this row's
+  // group (a department member cannot be tagged with another department's unit).
+  subUnitId   String?
+  subUnit     UserGroup?        @relation("MemberSubUnit", fields: [subUnitId], references: [id], onDelete: SetNull)
 
   // v2.6 (Phase 1A): DENORMALIZED from the parent group, and denormalized for
   // exactly one reason — the single-unit-per-person rule.

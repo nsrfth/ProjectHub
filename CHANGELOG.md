@@ -13,6 +13,17 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.16.0] — 2026-07-19 — Optional units (اداره) inside departments
+
+A third, OPTIONAL org level: Division → Department → Unit. Deliberately a **tag, not a
+membership**: people remain members of the DEPARTMENT — the one-department constraint,
+assignment scoping, and the directory sync are all untouched — and a member is merely
+tagged with one of the department's units. Department editor gains a units chip-row
+(create/delete) and a per-member unit select (visible only when units exist). Sub-units
+are excluded from grant subjects and department tabs. Server-validated: a unit belongs to
+exactly one department; cross-department tags are rejected; units carry no members of
+their own. Additive migration (SUBUNIT kind, parentId, subUnitId).
+
 ## [2.15.1] — 2026-07-19 — Department manager label + localized tier options
 
 The department head is now labelled **Manager / «مدیر»** (was Director / «مدیرکل») across

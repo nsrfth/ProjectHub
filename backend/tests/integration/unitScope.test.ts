@@ -574,3 +574,48 @@ describe('directory sync — the unit pass', () => {
     expect(units[0]!.groupId).toBe(manual.id);
   });
 });
+
+describe('sub-units (v2.16) — optional tags inside a department', () => {
+  it('create, tag, wrong-parent rejection, and no direct membership', async () => {
+    const team = await makeTeam('Tech');
+    const admin = await makeUser('admin');
+    const person = await makeUser('person');
+    await joinTeam(admin.id, team.id, 'MANAGER');
+    await joinTeam(person.id, team.id);
+    const svc = new UserGroupsService();
+    const dept = await svc.create(team.id, admin.id, { name: `D-${rnd()}`, kind: 'UNIT' });
+    const other = await svc.create(team.id, admin.id, { name: `O-${rnd()}`, kind: 'UNIT' });
+    await svc.addMember(team.id, dept.id, admin.id, person.id, 'FULL');
+
+    const su = await svc.create(team.id, admin.id, {
+      name: `SU-${rnd()}`, kind: 'SUBUNIT', parentId: dept.id,
+    });
+    // Tag the member; detail carries the tag.
+    const detail = await svc.setMemberSubUnit(team.id, dept.id, person.id, admin.id, su.id);
+    expect(detail.members.find((m) => m.userId === person.id)?.subUnitId).toBe(su.id);
+    expect(detail.subUnits.map((x) => x.id)).toContain(su.id);
+
+    // A sub-unit of ANOTHER department is rejected.
+    const suOther = await svc.create(team.id, admin.id, {
+      name: `SO-${rnd()}`, kind: 'SUBUNIT', parentId: other.id,
+    });
+    await expect(
+      svc.setMemberSubUnit(team.id, dept.id, person.id, admin.id, suOther.id),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    // Sub-units carry no membership of their own.
+    await expect(
+      svc.addMember(team.id, su.id, admin.id, person.id, 'FULL'),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    // A sub-unit needs a department parent of the same team.
+    await expect(
+      svc.create(team.id, admin.id, { name: `X-${rnd()}`, kind: 'SUBUNIT' }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    // Membership stayed on the DEPARTMENT — one-department rule untouched.
+    expect(
+      await prisma.userGroupMember.count({ where: { userId: person.id, isUnit: true } }),
+    ).toBe(1);
+  });
+});
