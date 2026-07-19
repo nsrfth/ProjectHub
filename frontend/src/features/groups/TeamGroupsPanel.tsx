@@ -456,7 +456,7 @@ function GroupEditor({
                 </select>
               )}
               {isUnit ? (
-                supervisorId && specialistId ? (
+                m.role !== 'MANAGER' && supervisorId && specialistId ? (
                   (() => {
                     const roster = rosterByUser.get(m.userId);
                     const current =

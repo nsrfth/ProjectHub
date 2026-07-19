@@ -13,6 +13,11 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.17.1] — 2026-07-19 — Hide tier select on department managers
+
+The member row of a department MANAGER shows only the «مدیر» badge — the tier select
+(سرپرست/کارشناس) renders for regular members only.
+
 ## [2.17.0] — 2026-07-19 — Division ↔ company link on the Divisions page
 
 A **Company** row above the deputies: attach the division to a COMPANY node from the
