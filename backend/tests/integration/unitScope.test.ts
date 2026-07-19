@@ -388,7 +388,10 @@ describe('units — service semantics and the one-unit rule', () => {
     ).resolves.toBeDefined();
   });
 
-  it('a unit refuses non-team members and access-level changes', async () => {
+  it('adding a non-member to a unit AUTO-JOINS them to the division (v2.12)', async () => {
+    // The division Members tab is gone; the department is where people are
+    // managed. So department-add implies division-add, on the system Member
+    // role — not a tier, and never a silent escalation.
     const team = await makeTeam('Tech');
     const admin = await makeUser('admin');
     const stranger = await makeUser('stranger');
@@ -396,9 +399,27 @@ describe('units — service semantics and the one-unit rule', () => {
     const svc = new UserGroupsService();
     const unit = await svc.create(team.id, admin.id, { name: `U-${rnd()}`, kind: 'UNIT' });
 
-    await expect(
-      svc.addMember(team.id, unit.id, admin.id, stranger.id, 'FULL'),
-    ).rejects.toMatchObject({ statusCode: 400 });
+    const detail = await svc.addMember(team.id, unit.id, admin.id, stranger.id, 'FULL');
+    const m = detail.members.find((x) => x.userId === stranger.id)!;
+    expect(m.status).toBe('ACCEPTED');
+    expect(m.external).toBe(false);
+
+    const membership = await prisma.teamMembership.findUnique({
+      where: { userId_teamId: { userId: stranger.id, teamId: team.id } },
+      include: { customRole: { select: { name: true, isSystem: true } } },
+    });
+    expect(membership).not.toBeNull();
+    expect(membership!.role).toBe('MEMBER');
+    expect(membership!.customRole?.isSystem).toBe(true);
+    expect(membership!.customRole?.name.toLowerCase()).toBe('member');
+  });
+
+  it('a unit still refuses access-level changes', async () => {
+    const team = await makeTeam('Tech');
+    const admin = await makeUser('admin');
+    await joinTeam(admin.id, team.id, 'MANAGER');
+    const svc = new UserGroupsService();
+    const unit = await svc.create(team.id, admin.id, { name: `U-${rnd()}`, kind: 'UNIT' });
 
     const person = await makeUser('person');
     await joinTeam(person.id, team.id);

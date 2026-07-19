@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { searchUsers as searchUsersLib } from '../lib/userSearch.js';
 import { Errors } from '../lib/errors.js';
+import { systemRoleIdFor } from '../lib/teamRoles.js';
 import { logActivity } from './activityLogger.js';
 import { notificationsHub } from './notificationsHub.js';
 
@@ -288,12 +289,24 @@ export class UserGroupsService {
 
     const inTeam = await isTeamMember(teamId, userId);
     const isUnit = group.kind === 'UNIT';
+    // v2.12: adding someone to a department IMPLIES division membership — the
+    // department is where people are managed now (the division Members tab is
+    // gone), so a non-member is auto-joined rather than rejected. They land on
+    // the system Member role (displays «عضو»); tier upgrades stay a deliberate
+    // act. Gated by the same group.manage permission as the rest of this
+    // surface — in this org model, managing a department's roster IS managing
+    // the division's roster.
     if (isUnit && !inTeam) {
-      throw Errors.badRequest(
-        'Units contain team members only — add the person to the team first',
-      );
+      await prisma.teamMembership.create({
+        data: {
+          userId,
+          teamId,
+          role: 'MEMBER',
+          roleId: await systemRoleIdFor(teamId, 'MEMBER'),
+        },
+      });
     }
-    const external = !inTeam;
+    const external = isUnit ? false : !inTeam;
     const effectiveAccess: GroupAccessLevel = isUnit ? 'FULL' : accessLevel;
 
     const existing = await prisma.userGroupMember.findUnique({
