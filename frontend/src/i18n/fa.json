@@ -1542,5 +1542,11 @@
   "team.rename.emptyError": "نام معاونت نمی‌تواند خالی باشد",
   "team.actions.rename": "تغییر نام معاونت",
   "team.actions.delete": "حذف معاونت",
-  "team.actions.deleting": "در حال حذف…"
+  "team.actions.deleting": "در حال حذف…",
+  "team.deputies.title": "معاونین",
+  "team.deputies.none": "هنوز معاونی تعیین نشده",
+  "team.deputies.add": "افزودن معاون…",
+  "team.deputies.remove": "حذف معاون",
+  "team.deputies.removeConfirm": "«{name}» از معاونت برکنار شود؟ به عضو عادی تبدیل می‌شود.",
+  "team.members.col.unit": "اداره کل"
 }

@@ -1629,5 +1629,11 @@
   "team.rename.emptyError": "Division name cannot be empty",
   "team.actions.rename": "Rename division",
   "team.actions.delete": "Delete division",
-  "team.actions.deleting": "Deleting…"
+  "team.actions.deleting": "Deleting…",
+  "team.deputies.title": "Deputies",
+  "team.deputies.none": "No deputy yet",
+  "team.deputies.add": "Add deputy…",
+  "team.deputies.remove": "Remove deputy",
+  "team.deputies.removeConfirm": "Remove {name} as deputy? They become a regular member.",
+  "team.members.col.unit": "Department"
 }

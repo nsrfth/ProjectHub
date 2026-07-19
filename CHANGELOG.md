@@ -13,6 +13,21 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.11.0] — 2026-07-19 — Deputies first-class + department column
+
+The division-management flow (create department → add members → designate a deputy)
+existed as scattered clicks; this makes its state visible and one-click manageable.
+
+### Added
+- **Deputies row** on the division header: chips for every معاون (= SYSTEM Manager role
+  holder — the rule is pinned by a pure helper + tests, so the UI can never silently
+  widen it), one-click assign from a full-roster picker, confirm-demote to system Member.
+  Uses the unpaginated roster so a deputy on page 2 can't hide.
+- **«اداره کل» column** in the members table, with a «مدیرکل» chip for directors.
+  Backend: team-members payload gains `unitId/unitName/unitRole` — one additional query
+  per roster (the one-department constraint makes it a simple map), additive response
+  fields, zero migrations, zero new endpoints.
+
 ## [2.10.1] — 2026-07-19 — Nomenclature: hardcoded TeamsPage literals
 
 The v2.10.0 sweep covered the i18n files; the Divisions page itself still carried nine
