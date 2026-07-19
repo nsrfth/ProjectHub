@@ -1564,5 +1564,7 @@
   "units.subunits.create": "افزودن",
   "units.subunits.namePlaceholder": "نام اداره",
   "units.subunits.none": "— بدون اداره —",
-  "units.subunits.confirmDelete": "اداره «{name}» حذف شود؟ فقط برچسب اعضا برداشته می‌شود."
+  "units.subunits.confirmDelete": "اداره «{name}» حذف شود؟ فقط برچسب اعضا برداشته می‌شود.",
+  "team.company.label": "شرکت",
+  "team.company.none": "— بدون شرکت —"
 }

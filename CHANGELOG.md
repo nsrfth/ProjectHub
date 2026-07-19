@@ -13,6 +13,14 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.17.0] — 2026-07-19 — Division ↔ company link on the Divisions page
+
+A **Company** row above the deputies: attach the division to a COMPANY node from the
+portfolio tree, via the shipped TeamOrgUnit table (non-RBAC attachment, single-company
+replace-set semantics). Every member sees the attachment; the picker renders only for
+members with team.edit_details AND portfolio-tree access (a 403 on the tree quietly
+degrades to read-only display). New GET/PUT /api/teams/:teamId/org-unit.
+
 ## [2.16.0] — 2026-07-19 — Optional units (اداره) inside departments
 
 A third, OPTIONAL org level: Division → Department → Unit. Deliberately a **tag, not a

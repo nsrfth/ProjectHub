@@ -9,6 +9,7 @@ import { visibleTeamMembers } from '@/lib/systemUser';
 import { useT } from '@/lib/i18n';
 import TeamGroupsPanel from '@/features/groups/TeamGroupsPanel';
 import { deriveDeputies, systemRoleId } from '@/lib/deputies';
+import { listOrgUnitTree, type OrgUnitTreeNode } from '@/features/portfolio/api';
 
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -98,6 +99,39 @@ export default function TeamsPage(): JSX.Element {
     enabled: !!currentTeamId,
   });
   const allMembers = visibleTeamMembers(fullRoster);
+
+  // v2.17: division <-> company link. The link itself is team-scoped (every
+  // member may see it); the PICKER needs the portfolio tree, which is
+  // permission-gated — fetched only for editors, and a 403 just hides it.
+  const { data: companyLink } = useQuery({
+    queryKey: ['teams', currentTeamId, 'org-unit'],
+    queryFn: () => teamsApi.getTeamOrgUnit(currentTeamId!),
+    enabled: !!currentTeamId,
+  });
+  const { data: orgTree = [] } = useQuery({
+    queryKey: ['org-units', 'tree'],
+    queryFn: listOrgUnitTree,
+    enabled: !!currentTeamId,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const companies = (() => {
+    const out: { id: string; name: string }[] = [];
+    const walk = (nodes: OrgUnitTreeNode[]): void => {
+      for (const n of nodes) {
+        if (n.type === 'COMPANY') out.push({ id: n.id, name: n.name });
+        walk(n.children);
+      }
+    };
+    walk(orgTree);
+    return out;
+  })();
+  const companyMut = useMutation({
+    mutationFn: (orgUnitId: string | null) => teamsApi.setTeamOrgUnit(currentTeamId!, orgUnitId),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'org-unit'] });
+    },
+  });
   const isManager = detail?.myRole === 'MANAGER';
   const canEditDetails = detail?.capabilities?.editDetails ?? isManager;
   const canDelete = detail?.capabilities?.deleteTeam ?? false;
@@ -344,7 +378,30 @@ export default function TeamsPage(): JSX.Element {
                 const candidates = allMembers.filter(
                   (m) => !m.external && m.roleId !== managerRoleId,
                 );
-                return (
+                return (<>
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-sm" data-testid="company-row">
+                    <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                      {t('team.company.label')}
+                    </span>
+                    {canEditDetails && companies.length > 0 ? (
+                      <select
+                        value={companyLink?.orgUnitId ?? ''}
+                        onChange={(e) => companyMut.mutate(e.target.value || null)}
+                        disabled={companyMut.isPending}
+                        className="text-xs rounded border border-border bg-surface px-1 py-0.5"
+                        data-testid="company-picker"
+                      >
+                        <option value="">{t('team.company.none')}</option>
+                        {companies.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs">
+                        {companyLink?.orgUnitName ?? t('team.company.none')}
+                      </span>
+                    )}
+                  </div>
                   <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" data-testid="deputies-row">
                     <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
                       {t('team.deputies.title')}
@@ -390,7 +447,7 @@ export default function TeamsPage(): JSX.Element {
                       </select>
                     )}
                   </div>
-                );
+                </>);
               })()}
 
               {/* v2.12: division member management now lives in the departments. */}

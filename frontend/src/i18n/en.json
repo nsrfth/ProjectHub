@@ -1651,5 +1651,7 @@
   "units.subunits.create": "Add",
   "units.subunits.namePlaceholder": "Unit name",
   "units.subunits.none": "— no unit —",
-  "units.subunits.confirmDelete": "Delete unit \"{name}\"? Members are just untagged."
+  "units.subunits.confirmDelete": "Delete unit \"{name}\"? Members are just untagged.",
+  "team.company.label": "Company",
+  "team.company.none": "— not attached —"
 }

@@ -1,7 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { TeamsService } from '../services/teamsService.js';
+import { OrgUnitsService } from '../services/orgUnitsService.js';
+import { Errors } from '../lib/errors.js';
 import { TeamsController } from '../controllers/teamsController.js';
 import { requireAuth, requireTeamRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
@@ -19,6 +21,8 @@ import {
   teamUserSearchResponse,
   updateMemberRoleBody,
   updateTeamBody,
+  teamOrgUnitBody,
+  teamOrgUnitResponse,
 } from '../schemas/teams.js';
 
 export async function teamsRoutes(app: FastifyInstance): Promise<void> {
@@ -76,6 +80,50 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.listMembers,
+  });
+
+  // v2.17: division <-> company link (portfolio attachment).
+  r.get('/:teamId/org-unit', {
+    preHandler: [requireTeamRole('MEMBER', 'MANAGER')],
+    schema: {
+      tags: ['teams'],
+      summary: 'Get the company this division is attached to',
+      params: z.object({ teamId: z.string() }),
+      response: { 200: teamOrgUnitResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (req: FastifyRequest<{ Params: { teamId: string } }>, reply: FastifyReply) => {
+      const link = await new OrgUnitsService().getTeamOrgUnit(req.params.teamId);
+      return reply.send(link);
+    },
+  });
+
+  r.put('/:teamId/org-unit', {
+    preHandler: [
+      requireTeamRole('MEMBER', 'MANAGER'),
+      requirePermission('team.edit_details'),
+      requireScope('admin'),
+    ],
+    schema: {
+      tags: ['teams'],
+      summary: 'Attach this division to a company from the portfolio tree',
+      params: z.object({ teamId: z.string() }),
+      body: teamOrgUnitBody,
+      response: { 200: teamOrgUnitResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (
+      req: FastifyRequest<{ Params: { teamId: string }; Body: { orgUnitId: string | null } }>,
+      reply: FastifyReply,
+    ) => {
+      if (!req.user) throw Errors.unauthorized();
+      const link = await new OrgUnitsService().setTeamOrgUnit(
+        req.params.teamId,
+        req.user.sub,
+        req.body.orgUnitId,
+      );
+      return reply.send(link);
+    },
   });
 
   r.patch('/:teamId', {

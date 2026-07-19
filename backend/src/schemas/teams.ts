@@ -187,3 +187,10 @@ export type CreateTeamBody = z.infer<typeof createTeamBody>;
 export type UpdateTeamBody = z.infer<typeof updateTeamBody>;
 export type AddMemberBody = z.infer<typeof addMemberBody>;
 export type UpdateMemberRoleBody = z.infer<typeof updateMemberRoleBody>;
+
+// v2.17: division <-> company link (TeamOrgUnit, non-RBAC attachment).
+export const teamOrgUnitBody = z.object({ orgUnitId: z.string().nullable() });
+export const teamOrgUnitResponse = z.object({
+  orgUnitId: z.string(),
+  orgUnitName: z.string(),
+}).nullable();

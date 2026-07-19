@@ -245,6 +245,41 @@ export class OrgUnitsService {
     };
   }
 
+  /**
+   * v2.17: the division <-> company link, via TeamOrgUnit — the shipped
+   * default-attachment table (non-RBAC, exactly as its schema comment says).
+   * Single-company semantics: PUT replaces the whole link set.
+   */
+  async getTeamOrgUnit(teamId: string): Promise<{ orgUnitId: string; orgUnitName: string } | null> {
+    const link = await prisma.teamOrgUnit.findFirst({
+      where: { teamId },
+      include: { orgUnit: { select: { id: true, name: true } } },
+    });
+    return link ? { orgUnitId: link.orgUnit.id, orgUnitName: link.orgUnit.name } : null;
+  }
+
+  async setTeamOrgUnit(
+    teamId: string,
+    actorId: string,
+    orgUnitId: string | null,
+  ): Promise<{ orgUnitId: string; orgUnitName: string } | null> {
+    if (orgUnitId) {
+      const node = await prisma.orgUnit.findUnique({ where: { id: orgUnitId } });
+      if (!node) throw Errors.badRequest('Org unit not found');
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.teamOrgUnit.deleteMany({ where: { teamId } });
+      if (orgUnitId) await tx.teamOrgUnit.create({ data: { teamId, orgUnitId } });
+    });
+    await logActivity(prisma, {
+      teamId,
+      actorId,
+      action: 'team.org_unit_set',
+      meta: { orgUnitId },
+    });
+    return this.getTeamOrgUnit(teamId);
+  }
+
   async setProjectOrgUnit(
     teamId: string,
     projectId: string,

@@ -203,3 +203,18 @@ export async function removeMember(
 export async function deleteTeam(teamId: string): Promise<void> {
   await api.delete(`/teams/${teamId}`);
 }
+
+// v2.17: division <-> company link (portfolio attachment).
+export interface TeamOrgUnitLink {
+  orgUnitId: string;
+  orgUnitName: string;
+}
+export async function getTeamOrgUnit(teamId: string): Promise<TeamOrgUnitLink | null> {
+  return (await api.get<TeamOrgUnitLink | null>(`/teams/${teamId}/org-unit`)).data;
+}
+export async function setTeamOrgUnit(
+  teamId: string,
+  orgUnitId: string | null,
+): Promise<TeamOrgUnitLink | null> {
+  return (await api.put<TeamOrgUnitLink | null>(`/teams/${teamId}/org-unit`, { orgUnitId })).data;
+}
