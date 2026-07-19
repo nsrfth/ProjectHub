@@ -68,6 +68,9 @@ export interface DirectorySyncDirectoryResult {
   // v2.6 (Phase 1A/1C): unit placements driven by mapping.userGroupId.
   unitsAssigned: number;
   unitsRemoved: number;
+  // v2.9 (Phase 4): org-node placements driven by mapping.orgUnitId.
+  orgMembershipsAssigned: number;
+  orgMembershipsRemoved: number;
 
   conflicts: DirectorySyncConflict[];
 }
@@ -100,6 +103,11 @@ interface UsableMapping {
   // Null on most mappings; validated in preflight (must resolve to a UNIT-kind
   // group in the mapping's own team, else degraded to team-only + reported).
   userGroupId: string | null;
+  // v2.9 (Phase 4, D-3): the org node this AD group places its members into.
+  // Unlike units, multiple org memberships per person are legal, so there is
+  // no conflict rule — just add/remove of SYNC-source rows. MANUAL rows are
+  // admin-placed for local users and never touched.
+  orgUnitId: string | null;
 }
 
 interface TeamGrant {
@@ -125,6 +133,8 @@ function emptyResult(dir: Pick<Directory, 'id' | 'slug'>): DirectorySyncDirector
     globalRolesChanged: 0,
     unitsAssigned: 0,
     unitsRemoved: 0,
+    orgMembershipsAssigned: 0,
+    orgMembershipsRemoved: 0,
     conflicts: [],
   };
 }
@@ -328,6 +338,14 @@ export class DirectorySyncService {
       : [];
     const unitById = new Map(unitGroups.map((g) => [g.id, g]));
 
+    // v2.9 (Phase 4): resolve mapped org nodes once per run. Any node type is
+    // a valid anchor — a person can belong to a SITE, a COMPANY, or both.
+    const orgIds = [...new Set(raw.map((m) => m.orgUnitId).filter((id): id is string => !!id))];
+    const orgUnits = orgIds.length
+      ? await prisma.orgUnit.findMany({ where: { id: { in: orgIds } }, select: { id: true } })
+      : [];
+    const liveOrgIds = new Set(orgUnits.map((o) => o.id));
+
     const usable: UsableMapping[] = [];
     for (const m of raw) {
       if (hasEscapedComma(m.externalGroupDn)) {
@@ -384,6 +402,19 @@ export class DirectorySyncService {
         }
       }
 
+      // v2.9 (Phase 4): degraded-not-dropped, same posture as the unit anchor.
+      let orgUnitId = m.orgUnitId;
+      if (orgUnitId && !liveOrgIds.has(orgUnitId)) {
+        result.conflicts.push({
+          code: 'MAPPING_TARGET_MISSING',
+          message:
+            `mapping ${m.id} (${m.externalGroupDn}) points at org unit ${orgUnitId}, ` +
+            'which no longer exists; org placement skipped, other grants kept',
+          mappingIds: [m.id],
+        });
+        orgUnitId = null;
+      }
+
       usable.push({
         id: m.id,
         externalGroupDn: m.externalGroupDn,
@@ -392,6 +423,7 @@ export class DirectorySyncService {
         teamRole: m.teamRole,
         roleId: m.roleId,
         userGroupId,
+        orgUnitId,
       });
     }
 
@@ -772,6 +804,30 @@ export class DirectorySyncService {
     result.unitsAssigned += unitsToAdd.length;
     result.unitsRemoved += unitIdsToRemove.length;
 
+    // ------------------------------------------------ v2.9: org placement
+    // Simpler than units: multiple memberships are legal (no conflict rule),
+    // and the sync owns ONLY rows it created (source SYNC). MANUAL rows —
+    // admin placements for local users — are invisible to both the add and
+    // the remove side.
+    const desiredOrgIds = new Set(
+      matched.map((m) => m.orgUnitId).filter((id): id is string => !!id),
+    );
+    const mappedOrgIds = new Set(
+      mappings.map((m) => m.orgUnitId).filter((id): id is string => !!id),
+    );
+    const currentSyncOrg = mappedOrgIds.size
+      ? await prisma.orgUnitMembership.findMany({
+          where: { userId: resolved.id, source: 'SYNC', orgUnitId: { in: [...mappedOrgIds] } },
+          select: { orgUnitId: true },
+        })
+      : [];
+    const currentSyncOrgIds = new Set(currentSyncOrg.map((o) => o.orgUnitId));
+    const orgToAdd = [...desiredOrgIds].filter((id) => !currentSyncOrgIds.has(id));
+    const orgToRemove = [...currentSyncOrgIds].filter((id) => !desiredOrgIds.has(id));
+
+    result.orgMembershipsAssigned += orgToAdd.length;
+    result.orgMembershipsRemoved += orgToRemove.length;
+
     result.membershipsAdded += added;
     result.membershipsUpdated += updated;
     result.membershipsRemoved += removed;
@@ -831,6 +887,23 @@ export class DirectorySyncService {
             role: 'MEMBER',
             respondedAt: new Date(),
           },
+        });
+      }
+
+      // v2.9: org placement. upsert with an empty update so an existing MANUAL
+      // row for the same node is left exactly as the admin made it (no
+      // duplicate, no source flip); removal filters on source SYNC so MANUAL
+      // rows survive every run.
+      if (orgToRemove.length) {
+        await tx.orgUnitMembership.deleteMany({
+          where: { userId: resolved.id, source: 'SYNC', orgUnitId: { in: orgToRemove } },
+        });
+      }
+      for (const orgUnitId of orgToAdd) {
+        await tx.orgUnitMembership.upsert({
+          where: { orgUnitId_userId: { orgUnitId, userId: resolved.id } },
+          update: {},
+          create: { orgUnitId, userId: resolved.id, source: 'SYNC' },
         });
       }
 

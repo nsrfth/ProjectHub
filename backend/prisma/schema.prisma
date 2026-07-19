@@ -401,6 +401,12 @@ model DirectoryGroupMapping {
   userGroupId     String?
   userGroup       UserGroup? @relation(fields: [userGroupId], references: [id], onDelete: SetNull)
 
+  // v2.9 (Phase 4, D-3): the org node this AD group places its members into.
+  // Same anchor pattern as userGroupId above; SetNull so deleting an org node
+  // degrades the mapping rather than cascading it away.
+  orgUnitId       String?
+  orgUnit         OrgUnit?   @relation(fields: [orgUnitId], references: [id], onDelete: SetNull)
+
   directory       Directory  @relation(fields: [directoryId], references: [id], onDelete: Cascade)
 
   @@unique([directoryId, externalGroupDn])
@@ -477,6 +483,8 @@ model User {
   // v2.6 (Phase 2): grants this user issued (audit trail, not grants they hold —
   // those are found by subjectId, which is polymorphic and therefore unrelated).
   issuedProjectGrants ProjectAccessGrant[] @relation("ProjectGrantsIssued")
+  // v2.9 (Phase 4): business-dimension memberships.
+  orgMemberships OrgUnitMembership[]
   ownedProjects  Project[]        @relation("ProjectOwner")
   accountableForProjects Project[] @relation("ProjectAccountable")
   managedOrgUnits OrgUnit[]       @relation("OrgUnitManager")
@@ -1083,6 +1091,11 @@ enum OrgUnitType {
   COMPANY
   PORTFOLIO
   PROGRAM
+  // v2.9 (Phase 4, decision D-8): a physical site (KVSM, KVSS, Nabdaneh, BIK,
+  // KDJ…). Its own vocabulary rather than PROGRAM-as-site, because a site is
+  // a place people belong to and a program is a thing money flows through —
+  // conflating them pollutes every roll-up that groups by type.
+  SITE
 }
 
 model OrgUnit {
@@ -1106,6 +1119,12 @@ model OrgUnit {
   manager   User?        @relation("OrgUnitManager", fields: [managerId], references: [id], onDelete: SetNull)
   projects  Project[]
   teamLinks TeamOrgUnit[]
+  // v2.9 (Phase 4): people who belong to this org node.
+  members   OrgUnitMembership[]
+  // v2.9 (Phase 5): standing grant policies anchored at this node.
+  grantPolicies OrgUnitGrantPolicy[] @relation("PolicyAnchor")
+  // v2.9 (Phase 4, D-3): directory mappings placing people into this node.
+  directoryMappings DirectoryGroupMapping[]
 
   @@unique([parentId, code])
   @@index([path])
@@ -1125,6 +1144,66 @@ model TeamOrgUnit {
 
   @@unique([teamId, orgUnitId])
   @@index([orgUnitId])
+}
+
+// v2.9 (Phase 4): a person's membership in the BUSINESS dimension — which
+// company/site/holding they belong to. This is the reversal Phase 5 makes
+// explicit: OrgUnit membership + grants become access-relevant, while
+// TeamOrgUnit (default-attachment suggestion) stays non-RBAC exactly as its
+// comment says.
+//
+//   SYNC   — derived from a DirectoryGroupMapping.orgUnitId match; the sync
+//            job owns the row (creates, and removes on unmatch)
+//   MANUAL — placed by an admin for local users; the sync never touches it
+//
+// A person may belong to MULTIPLE org nodes (unlike units): someone can sit
+// at a site and serve a company function. The Phase 4 exit criterion is
+// ">= 1 node or on the exception report", not exactly one.
+enum OrgMembershipSource {
+  SYNC
+  MANUAL
+}
+
+// v2.9 (Phase 5): a standing rule — "projects created under THIS org subtree
+// auto-grant THAT subject". Applied ONCE at project creation; materialized
+// grants are stamped sourcePolicyId so a bad policy is bulk-revocable, and
+// deleting a policy never revokes retroactively (the stamp outlives it via
+// SetNull… no — the stamp is a bare string precisely so it survives policy
+// deletion for the revoke script).
+//
+// This is the recorded reversal of "the org tree is non-RBAC": it applies to
+// OrgUnit membership + grants. TeamOrgUnit's non-RBAC comment stays true of
+// that table.
+model OrgUnitGrantPolicy {
+  id              String              @id @default(cuid())
+  name            String
+  // Subtree anchor: applies to projects whose orgUnit sits at or below this
+  // node (materialized-path prefix match — structurally incapable of crossing
+  // roots).
+  anchorOrgUnitId String
+  subjectType     ProjectGrantSubject
+  subjectId       String
+  level           ProjectGrantLevel
+  enabled         Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+
+  anchor OrgUnit @relation("PolicyAnchor", fields: [anchorOrgUnitId], references: [id], onDelete: Cascade)
+
+  @@index([anchorOrgUnitId, enabled])
+}
+
+model OrgUnitMembership {
+  id        String              @id @default(cuid())
+  orgUnitId String
+  userId    String
+  source    OrgMembershipSource @default(MANUAL)
+  createdAt DateTime            @default(now())
+
+  orgUnit OrgUnit @relation(fields: [orgUnitId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgUnitId, userId])
+  @@index([userId])
 }
 
 // v1.50 / v1.51: team-scoped user groups for granting project access without

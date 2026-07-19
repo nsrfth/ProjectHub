@@ -116,6 +116,8 @@ export const directorySyncDirectoryResultSchema = z.object({
   globalRolesChanged: z.number().int(),
   unitsAssigned: z.number().int(),
   unitsRemoved: z.number().int(),
+  orgMembershipsAssigned: z.number().int(),
+  orgMembershipsRemoved: z.number().int(),
   conflicts: z.array(directorySyncConflictSchema),
 });
 
@@ -141,6 +143,8 @@ export const groupMappingCreateBody = z.object({
   // v2.6 (Phase 1A, D-3): the UNIT this AD group places its members into.
   // Requires teamId, and the unit must belong to that team (service-validated).
   userGroupId: z.string().nullable().default(null),
+  // v2.9 (Phase 4, D-3): org-node anchor.
+  orgUnitId: z.string().nullable().default(null),
 });
 
 export const groupMappingResponse = z.object({
@@ -152,6 +156,7 @@ export const groupMappingResponse = z.object({
   teamRole: z.enum(['MANAGER', 'MEMBER']).nullable(),
   roleId: z.string().nullable(),
   userGroupId: z.string().nullable(),
+  orgUnitId: z.string().nullable(),
 });
 
 export const groupMappingListResponse = z.object({

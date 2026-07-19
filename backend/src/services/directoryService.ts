@@ -174,8 +174,12 @@ export class DirectoryService {
     // Sanity: at least one of (globalRole, teamRole+teamId) must be set.
     const hasGlobal = !!input.globalRole;
     const hasTeam = !!input.teamRole && !!input.teamId;
-    if (!hasGlobal && !hasTeam) {
-      throw Errors.badRequest('Mapping must grant either a globalRole or a (teamId + teamRole)');
+    // v2.9 (Phase 4): an org-only mapping is now legal — it grants business-
+    // dimension membership without any team or global role.
+    if (!hasGlobal && !hasTeam && !input.orgUnitId) {
+      throw Errors.badRequest(
+        'Mapping must grant a globalRole, a (teamId + teamRole), or an orgUnitId',
+      );
     }
     if (hasTeam && !!input.teamId) {
       const team = await prisma.team.findUnique({ where: { id: input.teamId } });
@@ -208,6 +212,12 @@ export class DirectoryService {
         throw Errors.badRequest('userGroupId must reference a unit, not a collaboration group');
       }
     }
+    // v2.9 (Phase 4): org anchor — any existing node; org is team-orthogonal,
+    // so no teamId requirement (a mapping may grant ONLY org membership).
+    if (input.orgUnitId) {
+      const node = await prisma.orgUnit.findUnique({ where: { id: input.orgUnitId } });
+      if (!node) throw Errors.badRequest('orgUnitId references a non-existent org unit');
+    }
     return prisma.directoryGroupMapping.create({
       data: {
         directoryId,
@@ -217,6 +227,7 @@ export class DirectoryService {
         teamRole: input.teamRole,
         roleId: input.roleId,
         userGroupId: input.userGroupId,
+        orgUnitId: input.orgUnitId,
       },
     });
   }
