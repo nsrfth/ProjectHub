@@ -8,6 +8,7 @@ import { loadEnv } from '../config/env.js';
 import { requireAuth, requireGlobalRole } from '../middleware/auth.js';
 import { requireScope } from '../middleware/requireScope.js';
 import { updateCheckService } from '../services/updateCheckService.js';
+import { escapeField } from '../lib/csv.js';
 import {
   adminResetPasswordBody,
   adminResetPasswordResponse,
@@ -78,8 +79,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         ...groups.map((g) => [g.id, `${g.name} (${g.kind})`] as const),
         ...teams.map((t) => [t.id, t.name] as const),
       ]);
-      const esc = (v: string | null | undefined) =>
-        v == null ? '' : /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+      // Use the shared CSV field escaper: it quotes commas/quotes/newlines AND
+      // neutralizes leading formula characters (= + - @) so a project/team name
+      // or email set by a lower-privileged member can't execute as a spreadsheet
+      // formula when an admin opens the export.
+      const esc = (v: string | null | undefined) => escapeField(v ?? '');
       const mode = loadEnv().ACCESS_UNIFIED_GRANTS;
       const header =
         `# TaskHub access report, generated ${new Date().toISOString()}, ACCESS_UNIFIED_GRANTS=${mode}\n` +

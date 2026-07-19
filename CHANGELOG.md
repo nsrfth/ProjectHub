@@ -13,6 +13,29 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.18.0] — 2026-07-19 — Security hardening & correctness pass
+
+A pre-internet-exposure review sweep. **Security:** webhook delivery no longer follows
+3xx redirects (closed an SSRF-guard bypass to cloud-metadata / internal hosts);
+admin-generated/reset passwords now use a CSPRNG instead of `Math.random()` with a fixed
+prefix; search excerpts are HTML-escaped with a `<b>`-only allowlist (stored-XSS hardening);
+`trustProxy` trusts only private-range proxies so `X-Forwarded-For` can't forge the
+rate-limit key; login pads timing with a dummy argon2 verify to close user enumeration;
+a password-only login on a 2FA account now revokes only its own just-issued token (was:
+all sessions — a DoS); global-role changes take effect immediately (live re-read in
+`requireAuth`); 2FA attempts feed the account-lockout counter; JWT verification pinned to
+HS256; boot refuses equal access/refresh secrets; recovery codes 32→64 bits; password-reset
+lookup is case-insensitive. **Authorization:** resource-assignment mutations now require
+`resource.manage`; correspondence attachment list/download now require project access;
+record-comment POST requires project write; two CSV exporters (access report, org-unit
+portfolio) neutralize formula-injection prefixes. **Correctness:** EVM metrics use the
+reporting currency's decimal factor instead of a hardcoded `/100` (was garbage for IRR);
+weekly `byWeekday` recurrence honors `interval` (no more weekly firing for a biweekly rule);
+webhook / backup / due-date schedulers gained re-entrancy guards (no duplicate deliveries,
+concurrent `pg_dump`, or double reminders under overlapping ticks); a 0-hour reminder lead
+is respected. See the review notes for deferred items (cross-team portfolio scope, search
+visibility, TOTP replay, lockout default, Kopia/Swagger exposure).
+
 ## [2.17.2] — 2026-07-19 — Documentation catch-up
 
 Content docs join the code: ARCHITECTURE gains three sections (organizational model with

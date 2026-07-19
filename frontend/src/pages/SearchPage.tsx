@@ -221,11 +221,19 @@ function Section<T extends { id: string }>({
   );
 }
 
-// `ts_headline` returns HTML-escaped text with literal <b>...</b> markers
-// for the matches. Strip everything except those bold tags before rendering.
+// Postgres `ts_headline` wraps matched terms in literal <b>…</b> markers but
+// does NOT HTML-escape the surrounding source text — so raw markup a user put
+// in a task description / comment / project name flows through verbatim. A
+// regex blocklist over untrusted HTML is not safe (truncated/dangling tags,
+// reassembly). Instead escape EVERYTHING, then restore only the bare <b>/</b>
+// highlight markers: a user-authored "<b>" also becomes bold (inert), while any
+// tag with attributes or any other element stays escaped and cannot execute.
 function sanitiseExcerpt(html: string): string {
-  // Drop any tag that isn't <b> or </b>.
-  return html.replace(/<(?!\/?b>)[^>]*>/gi, '');
+  const escaped = html
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return escaped.replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
 }
 
 function Excerpt({ html }: { html: string | null }): JSX.Element | null {

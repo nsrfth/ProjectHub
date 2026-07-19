@@ -172,6 +172,9 @@ export async function recordsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/:recordId/comments', {
+    // Writing a comment requires project WRITE, consistent with task comments —
+    // otherwise a read-only project user could post record comments.
+    preHandler: [requireProjectWriteAccess()],
     schema: {
       tags: ['records'],
       summary: 'Add a comment to a record',

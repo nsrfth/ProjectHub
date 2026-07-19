@@ -203,7 +203,11 @@ export async function correspondenceRoutes(
   });
 
   r.get('/:id/attachments', {
-    preHandler: requireScope('correspondence:read'),
+    // Match the sibling letter reads: project READ access, not merely team
+    // membership. requireTeamRoleOrGrantedProject (plugin-level) returns for any
+    // team member, so without this a member lacking access to the project could
+    // list — and download — its letters' attachments.
+    preHandler: [requireProjectAccess(), requireScope('correspondence:read')],
     schema: {
       tags: ['correspondence'],
       summary: 'List a letter attachments (metadata only)',
@@ -216,7 +220,7 @@ export async function correspondenceRoutes(
 
   // No Zod response schema — the response is a binary stream.
   r.get('/:id/attachments/:attachmentId', {
-    preHandler: requireScope('correspondence:read'),
+    preHandler: [requireProjectAccess(), requireScope('correspondence:read')],
     schema: {
       tags: ['correspondence'],
       summary: 'Download a letter attachment (forces download)',

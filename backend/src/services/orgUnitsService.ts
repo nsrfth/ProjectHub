@@ -1,6 +1,7 @@
 import { Prisma, type OrgUnitType } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { buildCurrencyRollups, computeProjectBudgetMetrics } from '../lib/budgetReportMath.js';
+import { escapeField } from '../lib/csv.js';
 import { Errors } from '../lib/errors.js';
 import { applyOrgGrantPolicies } from '../lib/projectGrants.js';
 import {
@@ -460,11 +461,16 @@ export class OrgUnitsService {
 
   async portfolioCsv(orgUnitId: string): Promise<string> {
     const progress = await this.reportProgress(orgUnitId);
+    // escapeField quotes commas/quotes/newlines AND neutralizes leading formula
+    // characters — a project/team name set by a member must not execute as a
+    // spreadsheet formula on export.
     const lines = [
       'projectId,projectName,teamId,teamName,percentComplete',
       ...progress.projects.map(
         (p) =>
-          `${p.projectId},"${p.projectName.replace(/"/g, '""')}",${p.teamId},"${p.teamName.replace(/"/g, '""')}",${p.percentComplete}`,
+          [p.projectId, p.projectName, p.teamId, p.teamName, p.percentComplete]
+            .map((c) => escapeField(c as string | number))
+            .join(','),
       ),
     ];
     return lines.join('\n');

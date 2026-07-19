@@ -265,14 +265,27 @@ const envSchema = z.object({
   // worth crashing the backend over rather than silently treating every
   // /upgrade call as 503.
   .superRefine((env, ctx) => {
-    if (!env.UPDATER_URL) return;
-    if (!env.UPDATER_TOKEN || env.UPDATER_TOKEN.length < 24) {
+    if (env.UPDATER_URL) {
+      if (!env.UPDATER_TOKEN || env.UPDATER_TOKEN.length < 24) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['UPDATER_TOKEN'],
+          message:
+            'UPDATER_TOKEN must be set and at least 24 characters when UPDATER_URL is configured. ' +
+            'Generate one with: openssl rand -base64 48',
+        });
+      }
+    }
+    // The two JWT secrets MUST differ — the whole point of the separate refresh
+    // namespace is that a leaked ACCESS secret can't be used to mint REFRESH
+    // tokens. Equal secrets silently collapse that guarantee, so fail at boot.
+    if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['UPDATER_TOKEN'],
+        path: ['JWT_REFRESH_SECRET'],
         message:
-          'UPDATER_TOKEN must be set and at least 24 characters when UPDATER_URL is configured. ' +
-          'Generate one with: openssl rand -base64 48',
+          'JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET. ' +
+          'Generate distinct values with: openssl rand -base64 48',
       });
     }
   });

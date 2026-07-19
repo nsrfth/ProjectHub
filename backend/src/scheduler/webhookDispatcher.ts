@@ -25,8 +25,17 @@ export interface WebhookDispatcher {
 export function createWebhookDispatcher(opts: DispatcherOptions): WebhookDispatcher {
   const svc = new WebhookService();
   let timer: NodeJS.Timeout | null = null;
+  // In-process re-entrancy guard. drainOnce reads status=PENDING rows and only
+  // flips each to DELIVERED/PENDING after its own POST resolves (up to ~10s
+  // each). At the default 5s interval a tick blocked on a slow endpoint would
+  // otherwise let the next tick re-select the same still-PENDING rows and
+  // deliver them twice. This does NOT provide cross-process mutual exclusion —
+  // multi-instance deploys must still enable the dispatcher on exactly one node.
+  let running = false;
 
   async function tick(): Promise<number> {
+    if (running) return 0;
+    running = true;
     try {
       const processed = await svc.drainOnce(opts.batch);
       if (processed > 0) {
@@ -36,6 +45,8 @@ export function createWebhookDispatcher(opts: DispatcherOptions): WebhookDispatc
     } catch (err) {
       opts.logger.error({ err }, 'webhook dispatch tick failed');
       return 0;
+    } finally {
+      running = false;
     }
   }
 

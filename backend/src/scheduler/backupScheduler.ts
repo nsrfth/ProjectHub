@@ -27,8 +27,15 @@ export interface BackupScheduler {
 
 export function createBackupScheduler(opts: BackupSchedulerOptions): BackupScheduler {
   let handle: NodeJS.Timeout | null = null;
+  // Re-entrancy guard. runBackup() writes lastRunAt only AFTER pg_dump + the
+  // tarball finish; a dump that outlasts the check interval would otherwise let
+  // the next tick read the still-old lastRunAt, see it as due, and launch a
+  // second concurrent pg_dump (wasteful, and IO contention). One dump at a time.
+  let running = false;
 
   async function tick(): Promise<{ ran: boolean; reason?: string }> {
+    if (running) return { ran: false, reason: 'a backup is already running' };
+    running = true;
     try {
       const cfg = await opts.service.getConfig();
       if (!cfg.enabled) return { ran: false, reason: 'disabled in settings' };
@@ -49,6 +56,8 @@ export function createBackupScheduler(opts: BackupSchedulerOptions): BackupSched
     } catch (err) {
       opts.logger.error({ err }, 'backup tick failed');
       return { ran: false, reason: (err as Error).message };
+    } finally {
+      running = false;
     }
   }
 

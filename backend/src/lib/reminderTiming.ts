@@ -24,8 +24,11 @@ export function resolveLeadHours(
   creatorLead: number | null | undefined,
   fallbackHours: number,
 ): number {
+  // `??` deliberately keeps a stored 0 ("remind exactly at due time"); only a
+  // negative value (which the schema shouldn't allow) or a null on every source
+  // falls back. The previous `> 0` test discarded a legitimate 0-hour lead.
   const pick = assigneeLead ?? creatorLead ?? fallbackHours;
-  return pick > 0 ? pick : fallbackHours;
+  return pick >= 0 ? pick : fallbackHours;
 }
 
 /**

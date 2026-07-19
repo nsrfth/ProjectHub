@@ -1,6 +1,8 @@
 // Configurable local-user password policy. Stored in InstanceSetting
 // `security.passwordPolicy`; defaults mirror the pre-v1.43 hardcoded rules.
 
+import { randomInt } from 'node:crypto';
+
 export interface PasswordPolicy {
   minLength: number;
   requireUppercase: boolean;
@@ -119,27 +121,44 @@ export function scorePasswordStrength(password: string, policy: PasswordPolicy):
   return 'strong';
 }
 
+// Draw one character uniformly from `s` using a CSPRNG. `randomInt` is
+// rejection-sampled internally, so there is no modulo bias.
+function randomChar(s: string): string {
+  return s[randomInt(s.length)]!;
+}
+
 export function generateCompliantPassword(policy: PasswordPolicy): string {
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   const lower = 'abcdefghjkmnpqrstuvwxyz';
   const digits = '23456789';
   const special = '!@#$%^&*-_+=';
-  let chars = lower + digits;
-  let required = lower[0]! + digits[0]!;
+  // Always include lowercase + digits; add the optionally-required classes.
+  // These server-generated values are handed to a user as their live
+  // credential, so entropy MUST come from a CSPRNG (crypto.randomInt), never
+  // Math.random() — the latter is state-recoverable and, with the old fixed
+  // "a2…" prefix, made the whole password guessable.
+  let pool = lower + digits;
+  const required: string[] = [randomChar(lower), randomChar(digits)];
   if (policy.requireUppercase) {
-    chars += upper;
-    required += upper[0]!;
+    pool += upper;
+    required.push(randomChar(upper));
   }
   if (policy.requireSpecialChars) {
-    chars += special;
-    required += special[0]!;
+    pool += special;
+    required.push(randomChar(special));
   }
   const target = Math.max(policy.minLength, 16);
-  let out = required;
-  while (out.length < target) {
-    out += chars[Math.floor(Math.random() * chars.length)];
+  const chars = [...required];
+  while (chars.length < target) {
+    chars.push(randomChar(pool));
   }
-  return out;
+  // Fisher–Yates shuffle so the required-class characters aren't pinned to
+  // fixed leading positions (which would leak structure to an attacker).
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j]!, chars[i]!];
+  }
+  return chars.join('');
 }
 
 export function policyRequirementLines(policy: PasswordPolicy): string[] {

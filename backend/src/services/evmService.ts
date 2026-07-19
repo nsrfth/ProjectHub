@@ -37,12 +37,19 @@ export class EvmService {
     const asOf = query.asOf ? new Date(`${query.asOf}T23:59:59.999Z`) : new Date();
     const method: EacMethod = query.eacMethod ?? 'CPI_BASED';
 
-    // BAC: sum of budget lines. amountMinor is in minor units (cents) → divide by 100.
+    // Minor→major conversion MUST use the reporting currency's own decimal
+    // count, not a hardcoded 100. IRR (the default reporting currency) has 0
+    // decimals: dividing its amounts by 100 makes BAC/PV/EV come out 100× too
+    // small relative to AC (which already uses this factor), so CV/CPI/SPI/EAC
+    // were all garbage for the primary currency. See CURRENCY_DECIMALS.
+    const reportingFactor = Math.pow(10, CURRENCY_DECIMALS[currency]);
+
+    // BAC: sum of budget lines. amountMinor is in the currency's minor units.
     const budgetAgg = await prisma.budgetLine.aggregate({
       where: { projectId },
       _sum: { amountMinor: true },
     });
-    const bac = Number(budgetAgg._sum.amountMinor ?? 0n) / 100;
+    const bac = Number(budgetAgg._sum.amountMinor ?? 0n) / reportingFactor;
 
     // PV: time-phased from the most recent baseline's BaselineEntry schedule bars
     // + the task's BudgetLine amounts (linear interpolation over the window).
@@ -59,7 +66,7 @@ export class EvmService {
         include: { task: { include: { budgetLines: { select: { amountMinor: true } } } } },
       });
       for (const e of entries) {
-        const taskBudget = e.task.budgetLines.reduce((s, b) => s + Number(b.amountMinor) / 100, 0);
+        const taskBudget = e.task.budgetLines.reduce((s, b) => s + Number(b.amountMinor) / reportingFactor, 0);
         if (!taskBudget) continue;
         const start = e.start?.getTime();
         const end = e.end?.getTime();
@@ -82,7 +89,7 @@ export class EvmService {
     });
     let ev = 0;
     for (const t of leafTasks) {
-      const taskBudget = t.budgetLines.reduce((s, b) => s + Number(b.amountMinor) / 100, 0);
+      const taskBudget = t.budgetLines.reduce((s, b) => s + Number(b.amountMinor) / reportingFactor, 0);
       ev += (t.percentComplete / 100) * taskBudget;
     }
 
@@ -92,7 +99,6 @@ export class EvmService {
       where: { projectId, incurredOn: { lte: asOf } },
       _sum: { baseAmountMinor: true },
     });
-    const reportingFactor = Math.pow(10, CURRENCY_DECIMALS[currency]);
     const ac = Number(acAgg._sum.baseAmountMinor ?? 0n) / reportingFactor;
 
     return this.deriveMetrics({ bac, pv, ev, ac, method, currency, asOf, projectId });

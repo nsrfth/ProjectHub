@@ -46,15 +46,15 @@ export function verifyTotp(code: string, secret: string): boolean {
   }
 }
 
-// Recovery codes — 10 by default. Format: "xxxx-xxxx" (8 hex chars, 32 bits
-// of entropy each). Easy to type, hard to enumerate. The dash is purely
-// cosmetic — we strip it during verification so users typing the raw 8
-// chars also work.
+// Recovery codes — 10 by default. Format: "xxxx-xxxx-xxxx-xxxx" (16 hex chars,
+// 64 bits of entropy each). Easy to type, hard to enumerate. The dashes are
+// purely cosmetic — normaliseRecoveryCode strips non-hex during verification
+// so users typing the raw 16 chars (or any grouping) also work.
 export function generateRecoveryCodes(count = 10): string[] {
   const codes: string[] = [];
   for (let i = 0; i < count; i++) {
-    const buf = crypto.randomBytes(4).toString('hex');
-    codes.push(`${buf.slice(0, 4)}-${buf.slice(4, 8)}`);
+    const buf = crypto.randomBytes(8).toString('hex'); // 64 bits
+    codes.push(`${buf.slice(0, 4)}-${buf.slice(4, 8)}-${buf.slice(8, 12)}-${buf.slice(12, 16)}`);
   }
   return codes;
 }

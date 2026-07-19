@@ -44,9 +44,14 @@ export const requireAuth: preHandlerHookHandler = async (request, _reply) => {
   }
   const live = await prisma.user.findUnique({
     where: { id: request.user.sub },
-    select: { disabledAt: true },
+    select: { disabledAt: true, globalRole: true },
   });
   if (!live || live.disabledAt) throw Errors.unauthorized('Invalid or expired token');
+  // Authorize off the LIVE global role, not the one baked into the 15-minute
+  // access token. Otherwise demoting a compromised admin (ADMIN→MEMBER) would
+  // not take effect until their current token expired, leaving a window of
+  // full admin over /api/admin/*, security settings, and backups.
+  request.user.globalRole = live.globalRole;
 };
 
 export function requireGlobalRole(...allowed: GlobalRole[]): preHandlerHookHandler {

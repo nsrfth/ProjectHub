@@ -212,6 +212,10 @@ export async function resourceAssignmentRoutes(app: FastifyInstance): Promise<vo
   r.addHook('preHandler', requireTeamRole('MEMBER', 'MANAGER'));
 
   r.patch('/:assignmentId', {
+    // Mutations require resource.manage, matching the catalog + create paths.
+    // Without it any bare team MEMBER (even one with only READ on the affected
+    // project) could edit assignments.
+    preHandler: [requirePermission('resource.manage')],
     schema: {
       tags: ['resources'],
       summary: 'Update a resource assignment',
@@ -224,6 +228,7 @@ export async function resourceAssignmentRoutes(app: FastifyInstance): Promise<vo
   });
 
   r.delete('/:assignmentId', {
+    preHandler: [requirePermission('resource.manage')],
     schema: {
       tags: ['resources'],
       summary: 'Remove a resource assignment',

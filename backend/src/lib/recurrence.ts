@@ -56,18 +56,24 @@ export function nextOccurrenceAfter(rule: RecurrenceRule, current: Date): Date {
       if (!rule.byWeekday || rule.byWeekday.length === 0) {
         return addDays(c, step * 7);
       }
-      // With byWeekday: scan forward day-by-day, but bounded — pick the
-      // next matching weekday WITHIN the current "interval block" (the
-      // week we're in, or up to step weeks ahead if we exhaust this week).
-      const wanted = new Set(rule.byWeekday);
-      // First try the rest of this week (excluding today).
-      for (let i = 1; i <= 7; i++) {
-        const candidate = addDays(c, i);
-        if (wanted.has(candidate.getUTCDay())) return candidate;
+      // With byWeekday: the next occurrence is either a wanted weekday still
+      // ahead in THIS week, or — once this week's wanted days are exhausted —
+      // the first wanted weekday of the week `step` weeks out. The previous
+      // implementation scanned only the next 7 days and returned the first
+      // match, which silently ignored `interval` (so "every 2 weeks on Mon+Wed"
+      // fired every week). Anchor on the Sunday-based week so interval blocks
+      // are whole weeks.
+      const wanted = [...new Set(rule.byWeekday)].sort((a, b) => a - b);
+      const dow = c.getUTCDay();
+      const laterThisWeek = wanted.filter((d) => d > dow);
+      if (laterThisWeek.length > 0) {
+        return addDays(c, laterThisWeek[0]! - dow);
       }
-      // Should never reach — for any non-empty wanted set, a match exists
-      // within 7 days. Defensive fallback.
-      return addDays(c, step * 7);
+      // Exhausted this week → jump to the target interval week and take its
+      // first wanted weekday.
+      const weekStart = addDays(c, -dow); // Sunday of the current week
+      const targetWeekStart = addDays(weekStart, step * 7);
+      return addDays(targetWeekStart, wanted[0]!);
     }
 
     case 'MONTHLY':

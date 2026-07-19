@@ -217,10 +217,25 @@ export function createDueDateScheduler(opts: DueSchedulerOptions): DueScheduler 
     start() {
       if (handle) return;
       const ms = opts.intervalMin * 60 * 1000;
-      tick().catch((err) => opts.logger.error({ err }, 'TASK_DUE tick failed'));
-      handle = setInterval(() => {
-        tick().catch((err) => opts.logger.error({ err }, 'TASK_DUE tick failed'));
-      }, ms);
+      // Re-entrancy guard: a tick selects rows on `dueNotifiedAt: null` and only
+      // marks them notified after per-task transactions + emails. If a tick
+      // outlasts the interval, an overlapping tick would re-select the same
+      // still-null rows and fire the notification (and email) twice. Serialize
+      // scheduled ticks; `runOnce` stays direct for deterministic tests.
+      let running = false;
+      const guardedTick = async () => {
+        if (running) return;
+        running = true;
+        try {
+          await tick();
+        } catch (err) {
+          opts.logger.error({ err }, 'TASK_DUE tick failed');
+        } finally {
+          running = false;
+        }
+      };
+      void guardedTick();
+      handle = setInterval(() => void guardedTick(), ms);
       opts.logger.info(
         { intervalMin: opts.intervalMin, defaultLeadHours: opts.defaultLeadHours },
         'TASK_DUE scheduler started',

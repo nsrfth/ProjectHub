@@ -78,6 +78,19 @@ export class AuthService {
   private readonly ldap = new LdapService();
   private readonly twoFactor = new TwoFactorService();
 
+  // A real argon2id hash, computed once, verified against on the login paths
+  // that would otherwise return without doing any hashing work (unknown email,
+  // or a local row with no passwordHash). Running an equivalent verify keeps
+  // the response-time profile of "no such user" indistinguishable from "user
+  // exists, wrong password", closing the timing-based enumeration oracle.
+  private dummyHashPromise: Promise<string> | null = null;
+  private async equalizeTiming(candidate: string): Promise<void> {
+    if (!this.dummyHashPromise) {
+      this.dummyHashPromise = hashPassword('timing-equalizer::not-a-real-password');
+    }
+    await verifyPassword(await this.dummyHashPromise, candidate).catch(() => undefined);
+  }
+
   constructor(
     private readonly env: Env,
     private readonly signer: AuthSigner,
@@ -91,9 +104,13 @@ export class AuthService {
     const user = await prisma.user.findUnique({ where: { id: session.user.id } });
     if (user?.totpEnabled) {
       // First-factor succeeded but we shouldn't have minted a full session.
-      // Revoke the just-issued refresh token and return the pending shape.
+      // Revoke ONLY the token this call just issued — not every active session.
+      // Revoking all of them let a password-only attacker force-log-out the
+      // victim from every device by replaying /login (a session-termination
+      // DoS). Targeting this token by its hash leaves the victim's other
+      // sessions intact.
       await prisma.refreshToken.updateMany({
-        where: { userId: session.user.id, revokedAt: null },
+        where: { tokenHash: sha256(session.refreshTokenRaw), revokedAt: null },
         data: { revokedAt: new Date() },
       });
       return { kind: 'pending2fa', pendingToken: this.signer.signPending(session.user.id) };
@@ -115,8 +132,18 @@ export class AuthService {
     if (!user || user.disabledAt) throw Errors.unauthorized('Invalid credentials');
     if (!user.totpEnabled) throw Errors.unauthorized('2FA not enabled for this account');
 
+    // Tie the second factor into the same per-account lockout machinery as the
+    // password step so an attacker who already has the password can't brute-
+    // force the 6-digit TOTP by fanning attempts across rotating IPs (the
+    // per-IP rate limit is the only other throttle). Active once an operator
+    // sets a non-zero maxFailedLoginAttempts policy.
+    await this.assertNotLocked(user);
     const ok = await this.twoFactor.verifyForLogin(user.id, code);
-    if (!ok) throw Errors.unauthorized('Invalid 2FA code');
+    if (!ok) {
+      await this.recordFailedLogin(user.id);
+      throw Errors.unauthorized('Invalid 2FA code');
+    }
+    await this.clearFailedLogin(user.id);
 
     return this.issueSession(user);
   }
@@ -152,7 +179,10 @@ export class AuthService {
     // ── Local user: legacy argon2 password check. ───────────────────────────
     if (user && user.authSource === 'LOCAL') {
       await this.assertNotLocked(user);
-      if (!user.passwordHash) throw Errors.unauthorized('Invalid credentials');
+      if (!user.passwordHash) {
+        await this.equalizeTiming(input.password);
+        throw Errors.unauthorized('Invalid credentials');
+      }
       const ok = await verifyPassword(user.passwordHash, input.password);
       if (!ok) {
         await this.recordFailedLogin(user.id);
@@ -211,6 +241,10 @@ export class AuthService {
       return this.issueSession(provisioned);
     }
 
+    // No user matched (and no LDAP JIT bind succeeded). Pad the timing so this
+    // "no such account" path costs the same as a real argon2 verify, denying
+    // the attacker a fast/slow oracle to enumerate registered local emails.
+    await this.equalizeTiming(input.password);
     throw Errors.unauthorized('Invalid credentials');
   }
 
@@ -528,7 +562,12 @@ export class AuthService {
   // so dev/test flows don't need a real SMTP server. Always returns the same
   // shape regardless of whether the user exists, to prevent account enumeration.
   async requestPasswordReset(email: string): Promise<{ resetToken: string | null }> {
-    const user = await prisma.user.findUnique({ where: { email } });
+    // Case-insensitive to match login (which resolves emails insensitively).
+    // A user whose stored email isn't lowercased could otherwise never reset,
+    // with the failure masked by the anti-enumeration 202.
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+    });
     if (!user) return { resetToken: null };
 
     const raw = randomTokenHex(32);

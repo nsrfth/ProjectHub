@@ -93,7 +93,12 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
       // Never log secrets or tokens. Add more redaction paths as new sensitive fields appear.
       redact: ['req.headers.authorization', 'req.headers.cookie', '*.password', '*.passwordHash'],
     },
-    trustProxy: true, // Caddy sits in front.
+    // Trust X-Forwarded-* only from private-range proxies (Caddy runs on the
+    // internal Docker network). `true` trusted EVERY hop, so a client could send
+    // its own X-Forwarded-For to forge `request.ip` and slip past the per-IP
+    // auth rate limiter. proxy-addr resolves the real client as the first
+    // address not in these ranges.
+    trustProxy: ['loopback', 'linklocal', 'uniquelocal'],
     bodyLimit: 1 * 1024 * 1024, // 1 MiB for JSON. File uploads use multipart with its own limit.
   });
 

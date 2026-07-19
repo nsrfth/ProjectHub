@@ -35,10 +35,12 @@ export async function registerSecurity(app: FastifyInstance, env: Env): Promise<
     timeWindow: env.AUTH_RATE_LIMIT_WINDOW,
   });
 
-  // Access token plugin.
+  // Access token plugin. Pin the accepted verification algorithm to HS256
+  // (what we sign with) so a token can't be presented under a different alg.
   await app.register(fastifyJwt, {
     secret: env.JWT_ACCESS_SECRET,
     sign: { expiresIn: env.JWT_ACCESS_TTL },
+    verify: { algorithms: ['HS256'] },
   });
 
   // Separate plugin instance for refresh tokens, namespaced so it doesn't shadow
@@ -49,6 +51,7 @@ export async function registerSecurity(app: FastifyInstance, env: Env): Promise<
     decoratorName: 'jwtRefreshUser',
     jwtVerify: 'jwtRefreshVerify',
     jwtSign: 'jwtRefreshSign',
+    verify: { algorithms: ['HS256'] },
   } as any);
 
   // The refresh-namespaced plugin exposes `app.jwtRefresh` for sign/verify.

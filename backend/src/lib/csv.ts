@@ -9,7 +9,7 @@ export interface CsvColumn<T> {
   value: (row: T) => Primitive;
 }
 
-function escapeField(v: Primitive): string {
+export function escapeField(v: Primitive): string {
   if (v === null || v === undefined) return '';
   let s: string;
   if (v instanceof Date) s = v.toISOString();
