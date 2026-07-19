@@ -73,17 +73,34 @@ function subjectClause(s: GrantSubjects): Prisma.ProjectAccessGrantWhereInput[] 
 }
 
 /**
- * Only ACTIVE, unexpired grants count.
+ * Where-clause matching only the grants that actually apply to this user right
+ * now: ACTIVE, unexpired, and held by one of their subjects.
  *
  * Expiry is evaluated here rather than swept by a job on purpose: an expired
  * grant must stop working at the instant it expires, not at the next sweep.
  * A sweep would leave a window where a revoked collaborator still has access,
  * which is exactly what an access review would flag.
+ *
+ * BOTH conditions are composed under `AND` because each is an OR-set, and two
+ * `OR` keys cannot coexist in one Prisma where object. An earlier version
+ * spread one in and then wrote the other:
+ *
+ *     { projectId, ...liveGrantWhere(now), OR: subjectClause(subjects) }
+ *
+ * — where the second `OR` silently overwrote the first, discarding the expiry
+ * filter entirely and leaving expired grants fully effective. It type-checked
+ * and 32 of 33 tests still passed. Keep the two OR-sets nested under AND.
  */
-function liveGrantWhere(now: Date): Prisma.ProjectAccessGrantWhereInput {
+function liveGrantWhere(
+  subjects: GrantSubjects,
+  now: Date,
+): Prisma.ProjectAccessGrantWhereInput {
   return {
     status: 'ACTIVE',
-    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    AND: [
+      { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+      { OR: subjectClause(subjects) },
+    ],
   };
 }
 
@@ -100,11 +117,7 @@ export async function grantAccessForProject(
   now: Date = new Date(),
 ): Promise<ProjectAccessLevel> {
   const rows = await prisma.projectAccessGrant.findMany({
-    where: {
-      projectId,
-      ...liveGrantWhere(now),
-      OR: subjectClause(subjects),
-    },
+    where: { projectId, ...liveGrantWhere(subjects, now) },
     select: { level: true },
   });
   if (!rows.length) return 'NONE';
@@ -117,7 +130,7 @@ export async function grantedProjectIds(
   now: Date = new Date(),
 ): Promise<string[]> {
   const rows = await prisma.projectAccessGrant.findMany({
-    where: { ...liveGrantWhere(now), OR: subjectClause(subjects) },
+    where: liveGrantWhere(subjects, now),
     select: { projectId: true },
   });
   return [...new Set(rows.map((r) => r.projectId))];
@@ -130,11 +143,7 @@ export async function grantedProjectIdsInTeam(
   now: Date = new Date(),
 ): Promise<string[]> {
   const rows = await prisma.projectAccessGrant.findMany({
-    where: {
-      ...liveGrantWhere(now),
-      OR: subjectClause(subjects),
-      project: { teamId },
-    },
+    where: { ...liveGrantWhere(subjects, now), project: { teamId } },
     select: { projectId: true },
   });
   return [...new Set(rows.map((r) => r.projectId))];
