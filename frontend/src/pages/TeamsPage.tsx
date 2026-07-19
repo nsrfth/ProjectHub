@@ -10,22 +10,6 @@ import { useT } from '@/lib/i18n';
 import TeamGroupsPanel from '@/features/groups/TeamGroupsPanel';
 import { deriveDeputies, systemRoleId } from '@/lib/deputies';
 
-  if (member.disabled) {
-    return (
-      <span className="text-xs px-1.5 py-0.5 rounded bg-danger/10 text-danger">
-        {t('team.member.status.disabled')}
-      </span>
-    );
-  }
-  if (member.locked) {
-    return (
-      <span className="text-xs px-1.5 py-0.5 rounded bg-warning/10 text-warning">
-        {t('team.member.status.locked')}
-      </span>
-    );
-  }
-  return null;
-}
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
