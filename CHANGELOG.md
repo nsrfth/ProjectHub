@@ -13,6 +13,23 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.12.0] — 2026-07-19 — Departments become the member-management surface
+
+### Changed
+- **The division Members tab is removed.** People are managed where they belong: in
+  departments. The Departments tab gains full-user search, and **adding a non-member to a
+  department auto-joins them to the division** (system Member role — never a tier, never a
+  silent escalation; integration-tested). Old `?tab=members` links fall back to Departments.
+- The delete-division dialog moved out of the removed tab and remains available from the
+  header actions menu. Deputies row and the department column are unaffected.
+
+### Trade-offs, stated plainly
+- **Tier-role assignment (سرپرست/کارشناس) lost its UI** — it lived in the removed member
+  table. Deputies (معاون) are covered by the header row; other tier changes are API/DB-only
+  until a replacement surface exists (candidate: role toggle in the department editor).
+- **Removing someone from the division entirely** (with the owned-projects blocker flow)
+  also lost its UI; department "×" only removes department membership. Same follow-up.
+
 ## [2.11.0] — 2026-07-19 — Deputies first-class + department column
 
 The division-management flow (create department → add members → designate a deputy)
