@@ -9,7 +9,13 @@ export type NotifyType =
   // v1.89: a letter was referred (ارجاع) to this user.
   | 'CORRESPONDENCE_REFERRAL'
   // v2.5.28: a personal (standalone) task is coming due.
-  | 'STANDALONE_TASK_DUE';
+  | 'STANDALONE_TASK_DUE'
+  // v2.8 (Phase 3): grant consent flow.
+  | 'GRANT_PENDING'
+  | 'GRANT_DECIDED'
+  // v1.51 group invites arrive through this channel too (payload-driven UI).
+  | 'TASK_UNBLOCKED'
+  | 'GROUP_INVITE';
 
 export interface Notification {
   id: string;

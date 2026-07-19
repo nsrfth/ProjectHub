@@ -96,6 +96,10 @@ enum NotifyType {
   // v2.5.28: a personal (standalone) task you own is coming due. Team-less —
   // see Notification.teamId (now nullable) and StandaloneTask.
   STANDALONE_TASK_DUE
+  // v2.8 (Phase 3): a project-access grant awaits YOUR approval (you are the
+  // unit manager / target team's manager), or a grant you issued was decided.
+  GRANT_PENDING
+  GRANT_DECIDED
 }
 
 // v1.90: correspondence (دبیرخانه) module enums.

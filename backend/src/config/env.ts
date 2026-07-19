@@ -242,6 +242,21 @@ const envSchema = z.object({
   // That rollback only exists because the Phase 6 table drop is deferred. Do
   // not "clean up" the legacy write paths before Phase 6.
   ACCESS_UNIFIED_GRANTS: z.enum(['off', 'dual', 'on']).default('off'),
+
+  // --- v2.8 (Phase 3): grant consent flow --------------------------------
+  // When on, grants that cross a consent boundary are created PENDING and
+  // must be accepted before they take effect (and before any legacy row is
+  // dual-written):
+  //   TEAM subject       -> accepted by a manager of the TARGET team
+  //   GROUP/unit subject -> accepted by the unit's MANAGER, once per project
+  // Own-team manager grants and COLLAB-group grants skip PENDING (consent
+  // already lives on group membership); global ADMIN always has the imposed
+  // path (D-5/D-7 register defaults). Off = every grant is created ACTIVE,
+  // which is exactly the plan's Phase 3 rollback position.
+  ACCESS_GRANT_CONSENT: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
 })
   // v1.30.2 (S-1): when the in-app self-upgrade plumbing is wired
   // (UPDATER_URL set), UPDATER_TOKEN MUST be a >=24-char string. Without

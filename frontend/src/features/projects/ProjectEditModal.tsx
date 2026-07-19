@@ -13,7 +13,7 @@ import ProjectFormFields, {
   type ProjectFormValues,
 } from '@/features/projects/ProjectFormFields';
 import ProjectDelegatesField from '@/features/projects/ProjectDelegatesField';
-import ProjectTeamSharesPanel from '@/features/projects/ProjectTeamSharesPanel';
+import ProjectGrantsPanel from '@/features/projects/ProjectGrantsPanel';
 import ProjectProfilePanel from '@/features/projects/ProjectProfilePanel';
 import ProjectOrgUnitPanel from '@/features/projects/ProjectOrgUnitPanel';
 import ProjectCostPanel from '@/features/projects/ProjectCostPanel';
@@ -121,9 +121,12 @@ export default function ProjectEditModal({
             members={members}
           />
         )}
-        {/* v2.5.58: whole-team shares — global ADMIN only. */}
-        {!nameOnly && user?.globalRole === 'ADMIN' && (
-          <ProjectTeamSharesPanel teamId={project.teamId} projectId={project.id} />
+        {/* v2.8 (Phases 2+3): the unified sharing surface — teams, groups,
+            units in one list, with consent states. Replaces the admin-only
+            ProjectTeamSharesPanel; the API enforces owner/ADMIN/project.share,
+            so rendering is not gated on ADMIN here. */}
+        {!nameOnly && (
+          <ProjectGrantsPanel teamId={project.teamId} projectId={project.id} />
         )}
         {!nameOnly && (
           <ProjectProfilePanel

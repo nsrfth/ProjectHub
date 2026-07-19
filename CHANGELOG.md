@@ -13,6 +13,40 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.8.0] — 2026-07-19 — Phases 2 & 3 engineering complete (unified sharing + consent)
+
+Phase 2's remaining engineering and all of Phase 3, verified on the pilot instance (36
+grant-suite tests + full suite at baseline). The **calendar gates remain**: Phase 2's flag
+is walked to `dual` with this release and needs ≥2 clean weeks before `on`; Phase 3's
+consent flag (`ACCESS_GRANT_CONSENT`) ships **off** and per the plan must not be enforced
+before Phase 2 reaches `on`.
+
+### Added
+
+- **The unified Sharing panel** (`ProjectGrantsPanel`) replaces the admin-only team-shares
+  panel: teams, groups and units in one list with consent states, usable by owner / ADMIN /
+  `project.share` holders (D-7 register default). Plus a **pending-approvals inbox** in the
+  notification bell for unit managers and target-team managers.
+- **Grant consent flow** (Phase 3). One architectural rule makes it correct in every
+  `ACCESS_UNIFIED_GRANTS` mode: *the legacy row is written when — and only when — the grant
+  is ACTIVE*. TEAM shares await the target team's manager; UNIT participation awaits the
+  unit's MANAGER (once per project per unit); COLLAB groups stay immediate (consent already
+  lives on membership — the Phase 2 semantics note); USER grants are immediate; global
+  ADMIN keeps the imposed path (D-5). Declines leave zero access in all modes,
+  integration-tested. Per-task acceptance remains rejected.
+- **Reverse dual-writes**: the legacy surfaces (`setTeamShares`, group `setProjects`) now
+  mirror into the grant table, so shares made anywhere keep the two models in lockstep and
+  dual-mode divergence logs stay clean. The full Phase 3 exit scenario (share → accept →
+  unit assigns → specialist self-serves) runs under `dual` with **zero divergence events**.
+- **`GET /api/admin/access-report`** — every grant as CSV with resolved names (ISO 27001
+  A.5.18 evidence). Notes the flag mode so a reviewer knows which model was authoritative.
+- New notification types `GRANT_PENDING` / `GRANT_DECIDED` (native-enum migration).
+
+### Operations (pilot instance)
+
+`backfill:grants` executed; `ACCESS_UNIFIED_GRANTS=dual` — **the two-week divergence
+window starts now**. `ACCESS_GRANT_CONSENT` stays off until Phase 2 is at `on`.
+
 ## [2.7.0] — 2026-07-19 — Phase 1 complete (units, role tiers, assignment scoping)
 
 Completes the Phase 1 call-site wiring the 2.6.x entry below listed as "not yet wired".

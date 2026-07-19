@@ -662,6 +662,41 @@ export class ProjectsService {
           })),
         });
       }
+      // v2.8 (Phase 2): keep the unified grant table in lockstep. This is the
+      // ADMIN-only legacy surface, so grants land ACTIVE (the imposed path) —
+      // and without this mirror every share made here would log a divergence
+      // in dual mode. Replace-set semantics: drop TEAM grants not in the new
+      // set, upsert the rest.
+      await tx.projectAccessGrant.deleteMany({
+        where: {
+          projectId,
+          subjectType: 'TEAM',
+          ...(shares.length ? { subjectId: { notIn: shares.map((s) => s.teamId) } } : {}),
+        },
+      });
+      for (const s of shares) {
+        const level = s.level === 'FULL' ? ('WRITE' as const) : ('READ' as const);
+        await tx.projectAccessGrant.upsert({
+          where: {
+            projectId_subjectType_subjectId_level: {
+              projectId, subjectType: 'TEAM', subjectId: s.teamId, level,
+            },
+          },
+          update: { status: 'ACTIVE', grantedById: actorId },
+          create: {
+            projectId, subjectType: 'TEAM', subjectId: s.teamId, level,
+            status: 'ACTIVE', grantedById: actorId, source: 'legacy:team-shares',
+          },
+        });
+        // The opposite level for this team, if any, no longer matches the
+        // replace-set intent.
+        await tx.projectAccessGrant.deleteMany({
+          where: {
+            projectId, subjectType: 'TEAM', subjectId: s.teamId,
+            level: level === 'WRITE' ? 'READ' : 'WRITE',
+          },
+        });
+      }
       await logActivity(tx, {
         teamId,
         actorId,

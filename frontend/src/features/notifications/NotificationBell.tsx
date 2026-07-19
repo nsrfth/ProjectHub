@@ -6,6 +6,7 @@ import { getAccessToken, onTokenChange } from '@/lib/api';
 import { formatRelativeTime, formatShamsiTimestamp } from '@/lib/shamsi';
 import { IconBell } from '@/features/nav/icons';
 import GroupInvitesPanel from '@/features/groups/GroupInvitesPanel';
+import PendingGrantApprovalsPanel from '@/features/projects/PendingGrantApprovalsPanel';
 import { useT } from '@/lib/i18n';
 
 // v1.24: bell now lives INSIDE the TopNav flex container (no longer
@@ -161,6 +162,12 @@ export default function NotificationBell(): JSX.Element {
           '{ref}',
           String(p.referenceNumber ?? p.subject ?? ''),
         );
+      case 'GRANT_PENDING':
+        return t('grants.notify.pending').replace('{project}', String(p.projectName ?? ''));
+      case 'GRANT_DECIDED':
+        return t('grants.notify.decided')
+          .replace('{project}', String(p.projectName ?? ''))
+          .replace('{decision}', String(p.decision ?? ''));
       default:
         return n.type;
     }
@@ -218,6 +225,7 @@ export default function NotificationBell(): JSX.Element {
           </div>
 
           <GroupInvitesPanel />
+          <PendingGrantApprovalsPanel />
 
           {items.length === 0 && (
             <p className="text-sm text-text-muted italic p-3">{t('notifications.empty')}</p>

@@ -7,6 +7,7 @@ import { authRoutes } from './routes/auth.js';
 import { teamsRoutes } from './routes/teams.js';
 import { projectsCrossTeamRoutes, projectsRoutes } from './routes/projects.js';
 import { projectTeamSharesRoutes } from './routes/projectTeamShares.js';
+import { grantApprovalsRoutes, projectGrantsRoutes } from './routes/projectGrants.js';
 import { ganttRoutes, scheduleVarianceRoutes } from './routes/gantt.js';
 import { projectStatusRoutes } from './routes/projectStatus.js';
 import { projectBaselinesRoutes } from './routes/projectBaselines.js';
@@ -153,6 +154,13 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     // v1.40: cross-team list — same service, no :teamId in the URL.
     await api.register(projectsCrossTeamRoutes, { prefix: '/projects' });
     // v2.5.58: whole-team shares (global-ADMIN managed).
+    // v2.8 (Phases 2+3): the unified sharing surface + approval inbox. The
+    // legacy team-shares routes below stay mounted through the dual period
+    // and are retired (410) in Phase 6.
+    await api.register(projectGrantsRoutes, {
+      prefix: '/teams/:teamId/projects/:projectId/grants',
+    });
+    await api.register(grantApprovalsRoutes, { prefix: '/me/grant-approvals' });
     await api.register(projectTeamSharesRoutes, {
       prefix: '/teams/:teamId/projects/:projectId/team-shares',
     });

@@ -47,6 +47,63 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // API tokens. Sessions pass implicitly (no token scopes attached).
   r.addHook('preHandler', requireScope('admin'));
 
+  // v2.8 (Phase 2): the ISO 27001 A.5.18 access-review artifact — every
+  // project-access grant as CSV, one row per grant, with resolved names so a
+  // reviewer doesn't need database access to read it. Streams as a download.
+  // The quarterly review procedure (Phase 6 doc) is built around this export.
+  r.get('/access-report', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Export all project-access grants as CSV (ISO A.5.18 evidence)',
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (_req, reply) => {
+      const { prisma } = await import('../data/prisma.js');
+      const rows = await prisma.projectAccessGrant.findMany({
+        include: {
+          project: { select: { name: true, team: { select: { name: true } } } },
+          grantedBy: { select: { email: true } },
+        },
+        orderBy: [{ projectId: 'asc' }, { grantedAt: 'asc' }],
+      });
+      // Resolve subject names in bulk — one query per subject type, not per row.
+      const ids = (t: string) => [...new Set(rows.filter((r) => r.subjectType === t).map((r) => r.subjectId))];
+      const [users, groups, teams] = await Promise.all([
+        prisma.user.findMany({ where: { id: { in: ids('USER') } }, select: { id: true, email: true } }),
+        prisma.userGroup.findMany({ where: { id: { in: ids('GROUP') } }, select: { id: true, name: true, kind: true } }),
+        prisma.team.findMany({ where: { id: { in: ids('TEAM') } }, select: { id: true, name: true } }),
+      ]);
+      const nameOf = new Map<string, string>([
+        ...users.map((u) => [u.id, u.email] as const),
+        ...groups.map((g) => [g.id, `${g.name} (${g.kind})`] as const),
+        ...teams.map((t) => [t.id, t.name] as const),
+      ]);
+      const esc = (v: string | null | undefined) =>
+        v == null ? '' : /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+      const mode = loadEnv().ACCESS_UNIFIED_GRANTS;
+      const header =
+        `# TaskHub access report, generated ${new Date().toISOString()}, ACCESS_UNIFIED_GRANTS=${mode}\n` +
+        (mode !== 'on'
+          ? '# NOTE: legacy tables are still authoritative in this mode; grants marked source=legacy:* mirror them.\n'
+          : '') +
+        'team,project,subjectType,subject,level,status,source,grantedBy,grantedAt,expiresAt\n';
+      const body = rows
+        .map((r) =>
+          [
+            esc(r.project.team.name), esc(r.project.name), r.subjectType,
+            esc(nameOf.get(r.subjectId) ?? r.subjectId), r.level, r.status,
+            esc(r.source), esc(r.grantedBy?.email ?? '(system)'),
+            r.grantedAt.toISOString(), r.expiresAt?.toISOString() ?? '',
+          ].join(','),
+        )
+        .join('\n');
+      return reply
+        .header('content-type', 'text/csv; charset=utf-8')
+        .header('content-disposition', `attachment; filename="access-report-${Date.now()}.csv"`)
+        .send(header + body + '\n');
+    },
+  });
+
   r.get('/users', {
     schema: {
       tags: ['admin'],

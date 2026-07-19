@@ -78,6 +78,18 @@ services:
       # retention are admin-configurable in Settings → Backups (persisted
       # to InstanceSetting). BACKUP_DIR lives on the named volume so dumps
       # survive container rebuilds.
+      # v2.6–v2.8 (Access & Organization Redesign): all default-off/inert.
+      # See .env.example for the flag-walk discipline on each.
+      DIRECTORY_SYNC_ENABLED: ${DIRECTORY_SYNC_ENABLED:-false}
+      DIRECTORY_SYNC_INTERVAL_MIN: ${DIRECTORY_SYNC_INTERVAL_MIN:-1440}
+      DIRECTORY_SYNC_PAGE_SIZE: ${DIRECTORY_SYNC_PAGE_SIZE:-500}
+      DIRECTORY_SYNC_MAX_USERS: ${DIRECTORY_SYNC_MAX_USERS:-10000}
+      DIRECTORY_SYNC_DRY_RUN: ${DIRECTORY_SYNC_DRY_RUN:-false}
+      DIRECTORY_SYNC_REVOKE_GLOBAL_ROLE: ${DIRECTORY_SYNC_REVOKE_GLOBAL_ROLE:-false}
+      DIRECTORY_SYNC_TIMEOUT_SEC: ${DIRECTORY_SYNC_TIMEOUT_SEC:-300}
+      ACCESS_UNIT_SCOPE: ${ACCESS_UNIT_SCOPE:-false}
+      ACCESS_UNIFIED_GRANTS: ${ACCESS_UNIFIED_GRANTS:-off}
+      ACCESS_GRANT_CONSENT: ${ACCESS_GRANT_CONSENT:-false}
       BACKUP_ENABLED: ${BACKUP_ENABLED:-false}
       BACKUP_DIR: ${BACKUP_DIR:-/app/backups}
       BACKUP_CHECK_INTERVAL_MIN: ${BACKUP_CHECK_INTERVAL_MIN:-15}

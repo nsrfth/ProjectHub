@@ -474,6 +474,34 @@ export class UserGroupsService {
           data: unique.map((projectId) => ({ projectId, groupId })),
         });
       }
+      // v2.8 (Phase 2): mirror into the unified grant table so this legacy
+      // surface never produces dual-mode divergence. Levelless legacy grants
+      // map to a WRITE grant — the member's own accessLevel still rules under
+      // legacy resolution, and under `on` the backfill-documented semantics
+      // apply (READONLY-member nuance lives in the backfill's --per-member
+      // mode; this panel is COLLAB-group project assignment).
+      await tx.projectAccessGrant.deleteMany({
+        where: {
+          subjectType: 'GROUP',
+          subjectId: groupId,
+          source: 'legacy:group-projects',
+          ...(unique.length ? { projectId: { notIn: unique } } : {}),
+        },
+      });
+      for (const projectId of unique) {
+        await tx.projectAccessGrant.upsert({
+          where: {
+            projectId_subjectType_subjectId_level: {
+              projectId, subjectType: 'GROUP', subjectId: groupId, level: 'WRITE',
+            },
+          },
+          update: { status: 'ACTIVE' },
+          create: {
+            projectId, subjectType: 'GROUP', subjectId: groupId, level: 'WRITE',
+            status: 'ACTIVE', grantedById: actorId, source: 'legacy:group-projects',
+          },
+        });
+      }
     });
     await logActivity(prisma, {
       actorId,
