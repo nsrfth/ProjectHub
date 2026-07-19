@@ -13,6 +13,15 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.14.0] — 2026-07-19 — Department member tier picker (سرپرست / کارشناس)
+
+Closes the v2.12.0 trade-off: tier assignment has a UI again, in its natural home. Each
+department member row gains a two-option tier select — **سرپرست (Supervisor)** /
+**کارشناس (Expert)** — resolved per division by role name (post-rename FA first, EN
+fallback; system roles never offered). A member holding some other role shows it as a
+disabled current value until a tier is chosen. Changing a tier refreshes the deputies row
+too (same roster). Hidden when a division lacks the tier roles.
+
 ## [2.13.1] — 2026-07-19 — Department manager picker
 
 Each department gets a dedicated **مدیرکل picker** in its editor: choose the director from

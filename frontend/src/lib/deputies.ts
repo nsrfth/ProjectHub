@@ -41,3 +41,19 @@ export function departmentManager<M extends UnitMemberLike>(
 ): M | null {
   return members.find((m) => m.unitId === unitId && m.unitRole === 'MANAGER') ?? null;
 }
+
+// v2.14: resolve the two department-member tier roles for a division. They
+// are DATA (editable per-division rows, renamed by the v2.10 script), so we
+// match by name — post-rename FA names first, pre-rename EN names as
+// fallback — and only among non-system roles (معاون is never offered here).
+export function tierRoles(roles: DeputyRoleLike[]): {
+  supervisorId: string | null;
+  specialistId: string | null;
+} {
+  const find = (names: string[]): string | null =>
+    roles.find((r) => !r.isSystem && names.includes(r.name.trim().toLowerCase()))?.id ?? null;
+  return {
+    supervisorId: find(['سرپرست', 'supervisor']),
+    specialistId: find(['کارشناس', 'specialist', 'expert']),
+  };
+}

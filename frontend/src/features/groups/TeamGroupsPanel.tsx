@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import * as groupsApi from '@/features/groups/api';
 import * as projectsApi from '@/features/projects/api';
-import { listTeamMembersForAssignees, type TeamMember } from '@/features/teams/api';
+import { listTeamMembersForAssignees, updateMemberRole, type TeamMember } from '@/features/teams/api';
+import * as rolesApi from '@/features/roles/api';
+import { tierRoles } from '@/lib/deputies';
 import { useT } from '@/lib/i18n';
 import { groupRoleLabelKey } from '@/lib/displayRoleName';
 import { visibleTeamMembers } from '@/lib/systemUser';
@@ -44,6 +46,13 @@ export default function TeamGroupsPanel({
     queryKey: ['teams', teamId, 'assignees'],
     queryFn: () => listTeamMembersForAssignees(teamId),
   });
+  // v2.14: division role catalogue, for the department tier picker.
+  const { data: rolesResp } = useQuery({
+    queryKey: ['roles', teamId],
+    queryFn: () => rolesApi.listRoles(teamId),
+    staleTime: 30_000,
+  });
+  const divisionRoles = rolesResp?.items ?? [];
   const visibleMembers = visibleTeamMembers(rosterMembers);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -79,6 +88,9 @@ export default function TeamGroupsPanel({
 
   const invalidate = async (): Promise<void> => {
     await qc.invalidateQueries({ queryKey: ['groups', teamId] });
+    // Tier changes live on the TEAM roster (roleId), which also feeds the
+    // deputies row — refresh it alongside the group detail.
+    await qc.invalidateQueries({ queryKey: ['teams', teamId, 'assignees'] });
     if (selectedId) await qc.invalidateQueries({ queryKey: ['groups', teamId, selectedId] });
   };
 
@@ -177,6 +189,7 @@ export default function TeamGroupsPanel({
             kind={kind}
             detail={detail}
             teamMembers={visibleMembers}
+            divisionRoles={divisionRoles}
             projects={teamProjects}
             userQuery={userQuery}
             setUserQuery={setUserQuery}
@@ -203,6 +216,7 @@ function GroupEditor({
   kind,
   detail,
   teamMembers,
+  divisionRoles,
   projects,
   userQuery,
   setUserQuery,
@@ -219,6 +233,7 @@ function GroupEditor({
   kind: groupsApi.UserGroupKind;
   detail: groupsApi.UserGroupDetail;
   teamMembers: TeamMember[];
+  divisionRoles: { id: string; name: string; isSystem: boolean }[];
   projects: projectsApi.Project[];
   userQuery: string;
   setUserQuery: (v: string) => void;
@@ -242,6 +257,17 @@ function GroupEditor({
 
   const memberIds = new Set(detail.members.map((m) => m.userId));
   const teamPickList = teamMembers.filter((m) => !memberIds.has(m.userId));
+  // v2.14: department members carry one of two division tiers. Resolved per
+  // division by name (they are data roles); the picker hides if the division
+  // has neither.
+  const { supervisorId, specialistId } = tierRoles(divisionRoles);
+  const rosterByUser = new Map(teamMembers.map((m) => [m.userId, m]));
+  const setTier = (userId: string, roleId: string): void => {
+    setMemberError(null);
+    void updateMemberRole(teamId, userId, { roleId })
+      .then(onInvalidate)
+      .catch((err) => setMemberError(errorMessage(err, t('groups.createFailed'))));
+  };
 
   // v2.10: the one-department-per-person 409 gets the friendly message; other
   // failures show the server's own wording.
@@ -331,7 +357,39 @@ function GroupEditor({
               {!isUnit && m.status === 'DECLINED' && (
                 <span className="rounded bg-red-100 text-red-800 px-1">{t('groups.invite.declined')}</span>
               )}
-              {isUnit ? null : (
+              {isUnit ? (
+                supervisorId && specialistId ? (
+                  (() => {
+                    const roster = rosterByUser.get(m.userId);
+                    const current =
+                      roster?.roleId === supervisorId || roster?.roleId === specialistId
+                        ? roster.roleId
+                        : '';
+                    return (
+                      <select
+                        value={current}
+                        onChange={(e) => {
+                          if (e.target.value) setTier(m.userId, e.target.value);
+                        }}
+                        className="rounded border px-1 py-0.5 text-xs bg-surface"
+                        data-testid="unit-tier-select"
+                      >
+                        {!current && (
+                          <option value="" disabled>
+                            {roster?.roleName ?? '—'}
+                          </option>
+                        )}
+                        <option value={supervisorId}>
+                          {divisionRoles.find((r) => r.id === supervisorId)?.name}
+                        </option>
+                        <option value={specialistId}>
+                          {divisionRoles.find((r) => r.id === specialistId)?.name}
+                        </option>
+                      </select>
+                    );
+                  })()
+                ) : null
+              ) : (
                 <select
                   value={m.accessLevel}
                   className="rounded border px-1 py-0.5 text-xs bg-surface"

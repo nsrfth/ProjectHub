@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { departmentManager, deriveDeputies, systemRoleId } from './deputies';
+import { departmentManager, deriveDeputies, systemRoleId, tierRoles } from './deputies';
 
 const roles = [
   { id: 'r_mgr', name: 'Manager', isSystem: true },
@@ -40,5 +40,25 @@ describe('departmentManager (v2.13 create-project autofill)', () => {
   });
   it('returns null when the department has no manager', () => {
     expect(departmentManager(roster, 'sec')).toBeNull();
+  });
+});
+
+describe('tierRoles (v2.14 department tier picker)', () => {
+  it('resolves post-rename FA names and pre-rename EN fallbacks', () => {
+    const fa = tierRoles([
+      { id: 'a', name: 'سرپرست', isSystem: false },
+      { id: 'b', name: 'کارشناس', isSystem: false },
+    ]);
+    expect(fa).toEqual({ supervisorId: 'a', specialistId: 'b' });
+    const en = tierRoles([
+      { id: 'c', name: 'Supervisor', isSystem: false },
+      { id: 'd', name: 'Expert', isSystem: false },
+    ]);
+    expect(en).toEqual({ supervisorId: 'c', specialistId: 'd' });
+  });
+  it('never offers system roles, even name-matching ones', () => {
+    expect(
+      tierRoles([{ id: 'x', name: 'Supervisor', isSystem: true }]).supervisorId,
+    ).toBeNull();
   });
 });
