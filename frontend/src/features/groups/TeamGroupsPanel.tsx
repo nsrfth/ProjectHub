@@ -5,6 +5,7 @@ import * as groupsApi from '@/features/groups/api';
 import * as projectsApi from '@/features/projects/api';
 import { listTeamMembersForAssignees, type TeamMember } from '@/features/teams/api';
 import { useT } from '@/lib/i18n';
+import { groupRoleLabelKey } from '@/lib/displayRoleName';
 import { visibleTeamMembers } from '@/lib/systemUser';
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -15,9 +16,29 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Element {
+/**
+ * v2.10 (nomenclature wave): kind-aware. One component, two renderings:
+ *
+ *   kind="UNIT"   — the Departments (ادارات کل) tab. Direct membership only,
+ *                   no invitation flow, no access levels (server pins FULL),
+ *                   MANAGER badge means the department director («مدیرکل»),
+ *                   one-department-per-person surfaced as a friendly 409.
+ *   kind="COLLAB" — the original collaboration-groups behaviour, untouched.
+ *
+ * The constraints themselves live server-side (v2.7.0); this component only
+ * surfaces them.
+ */
+export default function TeamGroupsPanel({
+  teamId,
+  kind,
+}: {
+  teamId: string;
+  kind: groupsApi.UserGroupKind;
+}): JSX.Element {
   const t = useT();
   const qc = useQueryClient();
+  const isUnit = kind === 'UNIT';
+  const L = (unitKey: string, groupKey: string): string => t(isUnit ? unitKey : groupKey);
 
   const { data: rosterMembers = [] } = useQuery({
     queryKey: ['teams', teamId, 'assignees'],
@@ -32,10 +53,11 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
   const [userQuery, setUserQuery] = useState('');
   const [addAccess, setAddAccess] = useState<groupsApi.GroupAccessLevel>('FULL');
 
-  const { data: groups = [], isLoading } = useQuery({
+  const { data: allGroups = [], isLoading } = useQuery({
     queryKey: ['groups', teamId],
     queryFn: () => groupsApi.listGroups(teamId),
   });
+  const groups = allGroups.filter((g) => g.kind === kind);
 
   const { data: teamProjects = [] } = useQuery({
     queryKey: ['projects', teamId],
@@ -52,7 +74,7 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
   const { data: searchHits = [] } = useQuery({
     queryKey: ['groups', teamId, 'user-search', userQuery],
     queryFn: () => groupsApi.searchUsers(teamId, userQuery),
-    enabled: userQuery.trim().length >= 2,
+    enabled: !isUnit && userQuery.trim().length >= 2,
   });
 
   const invalidate = async (): Promise<void> => {
@@ -61,7 +83,8 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
   };
 
   const createMut = useMutation({
-    mutationFn: () => groupsApi.createGroup(teamId, { name: newName.trim(), description: newDesc || null }),
+    mutationFn: () =>
+      groupsApi.createGroup(teamId, { name: newName.trim(), description: newDesc || null, kind }),
     onSuccess: async (g) => {
       setNewName('');
       setNewDesc('');
@@ -87,8 +110,8 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
 
   return (
     <section className="mt-6 pt-6 border-t">
-      <h3 className="font-medium mb-2">{t('groups.title')}</h3>
-      <p className="text-xs text-text-muted mb-3">{t('groups.description')}</p>
+      <h3 className="font-medium mb-2">{L('units.title', 'groups.title')}</h3>
+      <p className="text-xs text-text-muted mb-3">{L('units.description', 'groups.description')}</p>
 
       <form
         className="flex flex-wrap gap-2 mb-4"
@@ -102,8 +125,9 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
           required
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          placeholder={t('groups.namePlaceholder')}
+          placeholder={L('units.namePlaceholder', 'groups.namePlaceholder')}
           className="rounded border px-2 py-1 text-sm bg-surface flex-1 min-w-[10rem]"
+          data-testid={isUnit ? 'unit-name-input' : 'group-name-input'}
         />
         <input
           type="text"
@@ -117,14 +141,14 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
           disabled={createMut.isPending || !newName.trim()}
           className="text-sm bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded px-3 py-1 disabled:opacity-50"
         >
-          {t('groups.create')}
+          {L('units.create', 'groups.create')}
         </button>
       </form>
       {createError && <p role="alert" className="text-xs text-danger mb-2">{createError}</p>}
 
       {isLoading && <p className="text-sm text-slate-500">{t('groups.loading')}</p>}
       {!isLoading && groups.length === 0 && (
-        <p className="text-sm text-slate-500">{t('groups.empty')}</p>
+        <p className="text-sm text-slate-500">{L('units.empty', 'groups.empty')}</p>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -139,7 +163,7 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
                 }`}
               >
                 {g.name}
-                <span className="ml-2 text-xs opacity-70">
+                <span className="ms-2 text-xs opacity-70">
                   {g.memberCount} · {g.grantedProjectCount}
                 </span>
               </button>
@@ -147,9 +171,10 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
           ))}
         </ul>
 
-        {selectedId && detail && !detailLoading && (
+        {selectedId && detail && !detailLoading && detail.kind === kind && (
           <GroupEditor
             teamId={teamId}
+            kind={kind}
             detail={detail}
             teamMembers={visibleMembers}
             projects={teamProjects}
@@ -159,7 +184,8 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
             addAccess={addAccess}
             setAddAccess={setAddAccess}
             onDelete={() => {
-              if (window.confirm(t('groups.confirmDelete'))) deleteMut.mutate(selectedId);
+              if (window.confirm(L('units.confirmDelete', 'groups.confirmDelete')))
+                deleteMut.mutate(selectedId);
             }}
             onSaveProjects={(ids) => setProjectsMut.mutate(ids)}
             onInvalidate={invalidate}
@@ -174,6 +200,7 @@ export default function TeamGroupsPanel({ teamId }: { teamId: string }): JSX.Ele
 
 function GroupEditor({
   teamId,
+  kind,
   detail,
   teamMembers,
   projects,
@@ -189,6 +216,7 @@ function GroupEditor({
   savePending,
 }: {
   teamId: string;
+  kind: groupsApi.UserGroupKind;
   detail: groupsApi.UserGroupDetail;
   teamMembers: TeamMember[];
   projects: projectsApi.Project[];
@@ -204,7 +232,9 @@ function GroupEditor({
   savePending: boolean;
 }): JSX.Element {
   const t = useT();
+  const isUnit = kind === 'UNIT';
   const [projectIds, setProjectIds] = useState<Set<string>>(new Set());
+  const [memberError, setMemberError] = useState<string | null>(null);
 
   useEffect(() => {
     setProjectIds(new Set(detail.projects.map((p) => p.projectId)));
@@ -212,6 +242,30 @@ function GroupEditor({
 
   const memberIds = new Set(detail.members.map((m) => m.userId));
   const teamPickList = teamMembers.filter((m) => !memberIds.has(m.userId));
+
+  // v2.10: the one-department-per-person 409 gets the friendly message; other
+  // failures show the server's own wording.
+  const addMember = (userId: string): void => {
+    setMemberError(null);
+    void groupsApi
+      .addGroupMember(teamId, detail.id, userId, isUnit ? 'FULL' : addAccess)
+      .then(onInvalidate)
+      .catch((err) => {
+        if (isUnit && axios.isAxiosError(err) && err.response?.status === 409) {
+          setMemberError(t('units.conflict.oneUnit'));
+        } else {
+          setMemberError(errorMessage(err, t('groups.createFailed')));
+        }
+      });
+  };
+
+  const setRole = (userId: string, role: groupsApi.GroupRole): void => {
+    setMemberError(null);
+    void groupsApi
+      .updateGroupMemberRole(teamId, detail.id, userId, role)
+      .then(onInvalidate)
+      .catch((err) => setMemberError(errorMessage(err, t('groups.createFailed'))));
+  };
 
   return (
     <div className="border rounded p-3 text-sm space-y-3 border-border">
@@ -234,41 +288,61 @@ function GroupEditor({
 
       <div>
         <p className="text-xs font-medium text-slate-500 mb-1">{t('groups.members')}</p>
+        {memberError && <p role="alert" className="text-xs text-danger mb-1">{memberError}</p>}
         <ul className="space-y-1 mb-2">
           {detail.members.map((m) => (
-            <li key={m.id} className="flex flex-wrap items-center gap-2 text-xs">
+            <li key={m.id} className="flex flex-wrap items-center gap-2 text-xs" data-testid="group-member-row">
               <span>{m.name}</span>
               <span className="text-slate-400">{m.email}</span>
-              {m.external && (
+              {m.role === 'MANAGER' && (
+                <span className="rounded bg-primary/10 text-primary px-1 font-medium">
+                  {t(groupRoleLabelKey(kind, 'MANAGER'))}
+                </span>
+              )}
+              {!isUnit && m.external && (
                 <span className="rounded bg-amber-100 text-amber-900 px-1">{t('groups.external')}</span>
               )}
-              {m.status === 'PENDING' && (
+              {!isUnit && m.status === 'PENDING' && (
                 <span className="rounded bg-slate-200 px-1">{t('groups.invite.pending')}</span>
               )}
-              {m.status === 'DECLINED' && (
+              {!isUnit && m.status === 'DECLINED' && (
                 <span className="rounded bg-red-100 text-red-800 px-1">{t('groups.invite.declined')}</span>
               )}
-              <select
-                value={m.accessLevel}
-                className="rounded border px-1 py-0.5 text-xs bg-surface"
-                onChange={(e) => {
-                  void groupsApi
-                    .updateGroupMemberAccess(
-                      teamId,
-                      detail.id,
-                      m.userId,
-                      e.target.value as groupsApi.GroupAccessLevel,
-                    )
-                    .then(onInvalidate);
-                }}
-              >
-                <option value="FULL">{t('groups.accessLevel.full')}</option>
-                <option value="READONLY">{t('groups.accessLevel.readonly')}</option>
-              </select>
+              {isUnit ? (
+                <button
+                  type="button"
+                  className="text-xs underline text-text-muted hover:text-text"
+                  onClick={() => setRole(m.userId, m.role === 'MANAGER' ? 'MEMBER' : 'MANAGER')}
+                  data-testid="unit-role-toggle"
+                >
+                  {m.role === 'MANAGER'
+                    ? t('units.demoteToMember')
+                    : t('units.promoteToManager')}
+                </button>
+              ) : (
+                <select
+                  value={m.accessLevel}
+                  className="rounded border px-1 py-0.5 text-xs bg-surface"
+                  onChange={(e) => {
+                    void groupsApi
+                      .updateGroupMemberAccess(
+                        teamId,
+                        detail.id,
+                        m.userId,
+                        e.target.value as groupsApi.GroupAccessLevel,
+                      )
+                      .then(onInvalidate);
+                  }}
+                >
+                  <option value="FULL">{t('groups.accessLevel.full')}</option>
+                  <option value="READONLY">{t('groups.accessLevel.readonly')}</option>
+                </select>
+              )}
               <button
                 type="button"
                 className="text-danger underline"
                 onClick={() => {
+                  setMemberError(null);
                   void groupsApi.removeGroupMember(teamId, detail.id, m.userId).then(onInvalidate);
                 }}
               >
@@ -280,18 +354,16 @@ function GroupEditor({
 
         {teamPickList.length > 0 && (
           <div className="mb-2">
-            <p className="text-xs text-slate-500 mb-1">{t('groups.addTeamMember')}</p>
+            <p className="text-xs text-slate-500 mb-1">
+              {isUnit ? t('units.addTeamMember') : t('groups.addTeamMember')}
+            </p>
             <div className="flex flex-wrap gap-1">
               {teamPickList.map((m) => (
                 <button
                   key={m.userId}
                   type="button"
                   className="text-xs border rounded px-2 py-0.5 hover:bg-bg-elevated"
-                  onClick={() => {
-                    void groupsApi
-                      .addGroupMember(teamId, detail.id, m.userId, addAccess)
-                      .then(onInvalidate);
-                  }}
+                  onClick={() => addMember(m.userId)}
                 >
                   + {m.name}
                 </button>
@@ -300,44 +372,46 @@ function GroupEditor({
           </div>
         )}
 
-        <div>
-          <p className="text-xs text-slate-500 mb-1">{t('groups.searchUsers')}</p>
-          <input
-            type="search"
-            value={userQuery}
-            onChange={(e) => setUserQuery(e.target.value)}
-            placeholder={t('groups.searchUsersPlaceholder')}
-            className="w-full rounded border px-2 py-1 text-xs bg-surface mb-1"
-          />
-          <select
-            value={addAccess}
-            onChange={(e) => setAddAccess(e.target.value as groupsApi.GroupAccessLevel)}
-            className="rounded border px-1 py-0.5 text-xs bg-surface mb-1"
-          >
-            <option value="FULL">{t('groups.accessLevel.full')}</option>
-            <option value="READONLY">{t('groups.accessLevel.readonly')}</option>
-          </select>
-          <ul className="max-h-24 overflow-y-auto space-y-1">
-            {searchHits
-              .filter((u) => !memberIds.has(u.id))
-              .map((u) => (
-                <li key={u.id}>
-                  <button
-                    type="button"
-                    className="text-xs w-full text-start hover:underline"
-                    onClick={() => {
-                      void groupsApi
-                        .addGroupMember(teamId, detail.id, u.id, addAccess)
-                        .then(onInvalidate);
-                      setUserQuery('');
-                    }}
-                  >
-                    {u.name} ({u.email})
-                  </button>
-                </li>
-              ))}
-          </ul>
-        </div>
+        {/* Units are department rosters: team members only, no cross-team
+            invitations — the whole search-and-invite flow is COLLAB-only. */}
+        {!isUnit && (
+          <div>
+            <p className="text-xs text-slate-500 mb-1">{t('groups.searchUsers')}</p>
+            <input
+              type="search"
+              value={userQuery}
+              onChange={(e) => setUserQuery(e.target.value)}
+              placeholder={t('groups.searchUsersPlaceholder')}
+              className="w-full rounded border px-2 py-1 text-xs bg-surface mb-1"
+            />
+            <select
+              value={addAccess}
+              onChange={(e) => setAddAccess(e.target.value as groupsApi.GroupAccessLevel)}
+              className="rounded border px-1 py-0.5 text-xs bg-surface mb-1"
+            >
+              <option value="FULL">{t('groups.accessLevel.full')}</option>
+              <option value="READONLY">{t('groups.accessLevel.readonly')}</option>
+            </select>
+            <ul className="max-h-24 overflow-y-auto space-y-1">
+              {searchHits
+                .filter((u) => !memberIds.has(u.id))
+                .map((u) => (
+                  <li key={u.id}>
+                    <button
+                      type="button"
+                      className="text-xs w-full text-start hover:underline"
+                      onClick={() => {
+                        addMember(u.id);
+                        setUserQuery('');
+                      }}
+                    >
+                      {u.name} ({u.email})
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <div>

@@ -1,6 +1,6 @@
 {
   "name": "taskhub-backend",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -25,7 +25,8 @@
     "backfill:roles": "tsx scripts/reports/role-backfill.ts",
     "backfill:grants": "tsx scripts/reports/grant-backfill.ts",
     "seed:role-tiers": "tsx scripts/reports/seed-role-tiers.ts",
-    "report:ownership": "tsx scripts/reports/ownership-coverage.ts"
+    "report:ownership": "tsx scripts/reports/ownership-coverage.ts",
+    "rename:role-tiers": "tsx scripts/reports/rename-role-tiers.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed-router.ts"

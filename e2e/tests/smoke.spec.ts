@@ -139,3 +139,18 @@ test.afterAll(async ({ browser }) => {
     await page.close();
   }
 });
+
+// v2.10 (nomenclature wave): the Division page carries the three-tab bar and
+// the Departments tab renders under its FA name. Minimal by design — full
+// unit-management flows are not smoke material.
+test('6 — the Division page shows the Departments tab', async ({ appPage: page }) => {
+  await page.goto('/teams');
+  const unitsTab = page.getByTestId('team-tab-units');
+  // The tab bar only renders once a division is selected; select the first if needed.
+  if (!(await unitsTab.isVisible().catch(() => false))) {
+    await page.locator('main a, main button').first().click().catch(() => {});
+  }
+  await expect(unitsTab).toBeVisible();
+  await unitsTab.click();
+  await expect(page).toHaveURL(/tab=units/);
+});

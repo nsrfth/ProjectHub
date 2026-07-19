@@ -1,6 +1,14 @@
 # ProjectHub — User Manual
 
-Version **v2.9.0** (2026-07-19)
+Version **v2.10.0** (2026-07-19)
+
+
+> **Terminology (v2.10).** The product now uses your organizational vocabulary:
+> what was a **Team** is a **Division** (معاونت); an AD-synced unit inside it is a
+> **Department** (اداره کل) run by a **Director** (مدیرکل); the division's system
+> Manager role displays as **Deputy** (معاون). Collaboration groups keep their
+> name. Only labels changed — URLs, APIs, and permissions are untouched, so
+> existing links and integrations keep working.
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 

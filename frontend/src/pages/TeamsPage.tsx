@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import * as teamsApi from '@/features/teams/api';
@@ -8,6 +9,7 @@ import { formatShamsiTimestampDate } from '@/lib/shamsi';
 import { visibleTeamMembers } from '@/lib/systemUser';
 import { useT } from '@/lib/i18n';
 import TeamGroupsPanel from '@/features/groups/TeamGroupsPanel';
+import { displayRoleName } from '@/lib/displayRoleName';
 
 function MemberStatusBadges({ member, t }: { member: teamsApi.TeamMember; t: (k: string) => string }): JSX.Element | null {
   if (member.disabled) {
@@ -39,6 +41,22 @@ export default function TeamsPage(): JSX.Element {
   const { teams, currentTeamId, setCurrentTeamId, refresh } = useTeams();
   const qc = useQueryClient();
   const t = useT();
+  // v2.10 (Q1): division-page tabs, persisted in the URL like TasksPage's view.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const activeTab: 'members' | 'units' | 'groups' =
+    rawTab === 'units' || rawTab === 'groups' ? rawTab : 'members';
+  const setActiveTab = (tab: 'members' | 'units' | 'groups'): void => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (tab === 'members') next.delete('tab');
+        else next.set('tab', tab);
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -479,6 +497,32 @@ export default function TeamsPage(): JSX.Element {
                 </div>
               </div>
 
+              {/* v2.10 (Q1): اعضا | ادارات کل | گروه‌های همکاری */}
+              <div className="mb-4 inline-flex rounded border border-border overflow-hidden" role="tablist">
+                {([
+                  ['members', 'tabs.team.members'],
+                  ['units', 'tabs.team.units'],
+                  ['groups', 'tabs.team.collabGroups'],
+                ] as const).map(([tab, key], i) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === tab}
+                    onClick={() => setActiveTab(tab)}
+                    data-testid={`team-tab-${tab}`}
+                    className={`px-4 py-1.5 text-sm ${i > 0 ? 'border-s border-border ' : ''}${
+                      activeTab === tab
+                        ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                        : 'bg-surface text-text hover:bg-bg-elevated'
+                    }`}
+                  >
+                    {t(key)}
+                  </button>
+                ))}
+              </div>
+
+              {activeTab === 'members' && (<>
               {removeTarget && removeBlockers && (
                 <div
                   className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -749,14 +793,17 @@ export default function TeamsPage(): JSX.Element {
                                 {!m.roleId && <option value="">— ({m.role})</option>}
                                 {teamRoles.map((r) => (
                                   <option key={r.id} value={r.id}>
-                                    {r.name}
-                                    {r.isSystem ? ' (system)' : ''}
+                                    {displayRoleName(r, t)}
+                                    {r.isSystem ? ` (${t('roles.systemTag')})` : ''}
                                   </option>
                                 ))}
                               </select>
                             ) : (
                               <span className="text-xs uppercase tracking-wide text-slate-500">
-                                {m.roleName ?? m.role}
+                                {(() => {
+                                  const r = teamRoles.find((x) => x.id === m.roleId);
+                                  return r ? displayRoleName(r, t) : (m.roleName ?? m.role);
+                                })()}
                               </span>
                             )
                           ) : (
@@ -891,8 +938,13 @@ export default function TeamsPage(): JSX.Element {
                 </div>
               )}
 
-              {canManageGroups && currentTeamId && (
-                <TeamGroupsPanel teamId={currentTeamId} />
+              </>)}
+
+              {activeTab === 'units' && canManageGroups && currentTeamId && (
+                <TeamGroupsPanel teamId={currentTeamId} kind="UNIT" />
+              )}
+              {activeTab === 'groups' && canManageGroups && currentTeamId && (
+                <TeamGroupsPanel teamId={currentTeamId} kind="COLLAB" />
               )}
             </>
           )}

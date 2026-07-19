@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { useTeams } from '@/features/teams/TeamsContext';
 import * as rolesApi from '@/features/roles/api';
 import { useT } from '@/lib/i18n';
+import { displayRoleName } from '@/lib/displayRoleName';
 
 // v1.23: per-team custom-role CRUD + permission matrix. Lists every role in
 // the current team; a click expands an editor with the permission matrix.
@@ -222,7 +223,12 @@ function RoleCard({
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="font-medium truncate">{role.name}</h3>
+            <h3 className="font-medium truncate">
+              {displayRoleName(role, t)}
+              {role.isSystem && displayRoleName(role, t) !== role.name && (
+                <span className="ms-1 text-xs text-text-muted font-normal">({role.name})</span>
+              )}
+            </h3>
             {role.isSystem && (
               <span className="text-[10px] uppercase tracking-wide bg-slate-200 dark:bg-slate-700 text-text rounded px-1.5 py-0.5">
                 System

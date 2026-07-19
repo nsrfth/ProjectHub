@@ -13,6 +13,44 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.10.0] — 2026-07-19 — Organizational nomenclature wave (معاونت / اداره کل)
+
+Label-layer only: **zero migrations, zero new endpoints.** Schema identifiers, API paths,
+permission keys and routes are untouched; `teamId` stays the tenancy root everywhere.
+
+### Added
+
+- **Division page tabs** (اعضا | ادارات کل | گروه‌های همکاری), active tab persisted in
+  `?tab=`. **This closes the v2.9.0 "Not built: Groups unit tabs" item.**
+- **Departments tab**: full manual unit management — create (`kind:'UNIT'`), direct
+  member add (division members only), Director designation via the existing member-role
+  endpoint, and the one-department-per-person 409 surfaced with a friendly message.
+  Collaboration-groups tab keeps the original behaviour and invitation flow, untouched.
+- **`displayRoleName`**: system roles keep their DB names (scripts and Phase 6 Gate B
+  match on them) but display under the org vocabulary — system Manager renders as
+  **«معاون» / Deputy** (Q2). Custom roles render verbatim, always. Applied at: TeamsPage
+  role picker + member role label, RolesPage headings.
+- **Role-label matrix**: unit MANAGER = «مدیرکل» / Director; collab-group MANAGER =
+  «مدیر گروه» / Group manager.
+- **`rename:role-tiers` script** (G-1/G-2 defaults): renames the editable tier roles
+  Supervisor→سرپرست, Specialist→کارشناس (data, not display-mapped — admins own those
+  rows); deletes each division's redundant "Department manager" tier **iff unassigned**,
+  reporting `TIER_STILL_ASSIGNED` otherwise. Dry-run by default, idempotent, exits
+  non-zero on conflicts.
+- **i18n sweep**: 69 Team-sense keys EN+FA (Team→Division, تیم→معاونت) with
+  grammar-sensitive hand-fixes; 21 new keys per language (`tabs.team.*`, `units.*`,
+  `roles.system.*`) in strict EN/FA parity; user manuals gain a terminology-mapping note.
+
+### Notes
+
+- AD unit mapping (`DirectoryGroupMapping.userGroupId`) deliberately untouched — Q3
+  defers adoption to simply creating mappings; the v2.7.0 machinery already exists.
+- Pre-existing FA gaps (86 EN-only keys: `recurrence.*`, placeholders…) predate this wave
+  and are not part of the sweep's parity guarantee.
+- Component-level UI tests are delivered as pure-logic units (`displayRoleName`,
+  role-label matrix) matching the repo's node-environment vitest setup — the frontend has
+  no DOM test harness, and the pilot box's network cannot install one.
+
 ## [2.9.0] — 2026-07-19 — Phases 4 & 5 engineering; Phase 6 prepared, not executed
 
 ### Added — Phase 4 (org membership becomes synced data)

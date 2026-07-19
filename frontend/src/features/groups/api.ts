@@ -2,6 +2,10 @@ import { api } from '@/lib/api';
 
 export type GroupAccessLevel = 'FULL' | 'READONLY';
 export type GroupInviteStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED';
+// v2.10: UNIT = department (اداره کل) — direct membership, one per person;
+// COLLAB = collaboration group, the original invitation-based behaviour.
+export type UserGroupKind = 'UNIT' | 'COLLAB';
+export type GroupRole = 'MANAGER' | 'MEMBER';
 
 export interface UserGroupSummary {
   id: string;
@@ -12,6 +16,7 @@ export interface UserGroupSummary {
   grantedProjectCount: number;
   createdAt: string;
   updatedAt: string;
+  kind: UserGroupKind;
 }
 
 export interface UserGroupMember {
@@ -24,6 +29,7 @@ export interface UserGroupMember {
   external: boolean;
   invitedAt: string;
   respondedAt: string | null;
+  role: GroupRole;
 }
 
 export interface UserGroupProject {
@@ -67,7 +73,7 @@ export async function searchUsers(teamId: string, q: string): Promise<UserSearch
 
 export async function createGroup(
   teamId: string,
-  input: { name: string; description?: string | null },
+  input: { name: string; description?: string | null; kind?: UserGroupKind },
 ): Promise<UserGroupDetail> {
   return (await api.post<UserGroupDetail>(`/teams/${teamId}/groups`, input)).data;
 }
@@ -85,12 +91,29 @@ export async function addGroupMember(
   groupId: string,
   userId: string,
   accessLevel: GroupAccessLevel = 'FULL',
+  role: GroupRole = 'MEMBER',
 ): Promise<UserGroupDetail> {
   return (
     await api.post<UserGroupDetail>(`/teams/${teamId}/groups/${groupId}/members`, {
       userId,
       accessLevel,
+      role,
     })
+  ).data;
+}
+
+// v2.10: designate / demote the department director (unit MANAGER).
+export async function updateGroupMemberRole(
+  teamId: string,
+  groupId: string,
+  userId: string,
+  role: GroupRole,
+): Promise<UserGroupDetail> {
+  return (
+    await api.patch<UserGroupDetail>(
+      `/teams/${teamId}/groups/${groupId}/members/${userId}/role`,
+      { role },
+    )
   ).data;
 }
 
