@@ -89,39 +89,6 @@ export default function TeamsPage(): JSX.Element {
     enabled: !!currentTeamId,
   });
 
-  const [addMemberQuery, setAddMemberQuery] = useState('');
-  const [debouncedAddMemberQuery, setDebouncedAddMemberQuery] = useState('');
-  const [inviteRole, setInviteRole] = useState<teamsApi.TeamRole>('MEMBER');
-  const [inviteError, setInviteError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedAddMemberQuery(addMemberQuery.trim()), 300);
-    return () => window.clearTimeout(timer);
-  }, [addMemberQuery]);
-
-  const { data: addMemberHits = [], isFetching: addMemberSearching } = useQuery({
-    queryKey: ['teams', currentTeamId, 'add-member-search', debouncedAddMemberQuery],
-    queryFn: () => teamsApi.searchAddableUsers(currentTeamId!, debouncedAddMemberQuery),
-    enabled: !!currentTeamId && debouncedAddMemberQuery.length >= 2,
-  });
-
-  const inviteMut = useMutation({
-    mutationFn: (input: { userId: string; role: teamsApi.TeamRole }) =>
-      teamsApi.addMember(currentTeamId!, { userId: input.userId, role: input.role }),
-    onSuccess: async () => {
-      setAddMemberQuery('');
-      setDebouncedAddMemberQuery('');
-      setInviteError(null);
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ['teams', 'detail', currentTeamId] }),
-        qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'members'] }),
-        qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'assignees'] }),
-        qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'add-member-search'] }),
-      ]);
-    },
-    onError: (err) => setInviteError(errorMessage(err, 'Could not add member')),
-  });
-
   // v1.23: role catalogue for the role-change dropdown.
   const { data: rolesResp } = useQuery({
     queryKey: ['roles', currentTeamId],
@@ -142,45 +109,6 @@ export default function TeamsPage(): JSX.Element {
     },
   });
 
-  const DEFAULT_PAGE_SIZE = 25;
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [roleFilter, setRoleFilter] = useState<teamsApi.TeamRole | ''>('');
-  const [statusFilter, setStatusFilter] = useState<teamsApi.TeamMemberStatusFilter | ''>('');
-  const [kindFilter, setKindFilter] = useState<teamsApi.TeamMemberKind>('all');
-  const [sortBy, setSortBy] = useState<teamsApi.TeamMemberSortBy>('joinedAt');
-  const [sortDir, setSortDir] = useState<teamsApi.SortDir>('asc');
-  const [jumpPage, setJumpPage] = useState('');
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 300);
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [search, roleFilter, statusFilter, kindFilter, sortBy, sortDir, currentTeamId]);
-
-  const listParams: teamsApi.ListTeamMembersParams = {
-    page,
-    pageSize,
-    search: search || undefined,
-    role: roleFilter || undefined,
-    status: statusFilter || undefined,
-    kind: kindFilter,
-    sortBy,
-    sortDir,
-  };
-
-  const { data: membersPage, isLoading: membersLoading, isFetching: membersFetching } = useQuery({
-    queryKey: ['teams', currentTeamId, 'members', listParams],
-    queryFn: () => teamsApi.listTeamMembers(currentTeamId!, listParams),
-    enabled: !!currentTeamId,
-  });
-
-  const roster = visibleTeamMembers(membersPage?.items ?? []);
   // v2.11: unpaginated roster for the deputies row — the paged `roster` above
   // could hide a deputy sitting on page 2.
   const { data: fullRoster = [] } = useQuery({
@@ -189,32 +117,6 @@ export default function TeamsPage(): JSX.Element {
     enabled: !!currentTeamId,
   });
   const allMembers = visibleTeamMembers(fullRoster);
-  const totalPages = membersPage?.totalPages ?? 0;
-  const totalItems = membersPage?.totalItems ?? 0;
-  const currentPage = membersPage?.page ?? page;
-
-  function toggleSort(column: teamsApi.TeamMemberSortBy): void {
-    if (sortBy === column) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortBy(column);
-      setSortDir('asc');
-    }
-  }
-
-  function sortIndicator(column: teamsApi.TeamMemberSortBy): string {
-    if (sortBy !== column) return '';
-    return sortDir === 'asc' ? ' ↑' : ' ↓';
-  }
-
-  function submitJumpPage(e: FormEvent): void {
-    e.preventDefault();
-    const n = Number.parseInt(jumpPage, 10);
-    if (!Number.isFinite(n) || n < 1) return;
-    setPage(Math.min(n, Math.max(1, totalPages)));
-    setJumpPage('');
-  }
-
   const isManager = detail?.myRole === 'MANAGER';
   const canEditDetails = detail?.capabilities?.editDetails ?? isManager;
   const canDelete = detail?.capabilities?.deleteTeam ?? false;
@@ -226,85 +128,6 @@ export default function TeamsPage(): JSX.Element {
   const [showActions, setShowActions] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<teamsApi.TeamMember | null>(null);
-  const [removeBlockers, setRemoveBlockers] = useState<teamsApi.MemberRemovalBlockers | null>(null);
-  const [removeBlockersLoading, setRemoveBlockersLoading] = useState(false);
-  const [reassignOwnerTo, setReassignOwnerTo] = useState('');
-  const [removeForce, setRemoveForce] = useState(false);
-  const [removeError, setRemoveError] = useState<string | null>(null);
-
-  const { data: reassignCandidates = [] } = useQuery({
-    queryKey: ['teams', currentTeamId, 'assignees'],
-    queryFn: () => teamsApi.listTeamMembersForAssignees(currentTeamId!),
-    enabled: !!currentTeamId && !!removeTarget,
-  });
-
-  const reassignOptions = reassignCandidates.filter((m) => m.userId !== removeTarget?.userId);
-
-  async function invalidateMemberLists(): Promise<void> {
-    await Promise.all([
-      qc.invalidateQueries({ queryKey: ['teams', 'detail', currentTeamId] }),
-      qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'members'] }),
-      qc.invalidateQueries({ queryKey: ['teams', currentTeamId, 'assignees'] }),
-    ]);
-  }
-
-  const removeMut = useMutation({
-    mutationFn: (input: { userId: string; opts?: teamsApi.RemoveMemberOptions }) =>
-      teamsApi.removeMember(currentTeamId!, input.userId, input.opts),
-    onSuccess: async () => {
-      closeRemoveDialog();
-      await invalidateMemberLists();
-    },
-    onError: (err) => setRemoveError(errorMessage(err, 'Could not remove member')),
-  });
-
-  async function beginRemoveMember(member: teamsApi.TeamMember): Promise<void> {
-    if (!currentTeamId) return;
-    setRemoveError(null);
-    setReassignOwnerTo('');
-    setRemoveForce(false);
-    setRemoveBlockersLoading(true);
-    try {
-      const blockers = await teamsApi.getMemberRemovalBlockers(currentTeamId, member.userId);
-      const hasBlockers =
-        blockers.ownedProjectCount > 0 || blockers.accountableProjectCount > 0;
-      if (!hasBlockers) {
-        const msg = t('team.remove.confirm').replace('{name}', member.name);
-        if (window.confirm(msg)) {
-          removeMut.mutate({ userId: member.userId });
-        }
-        return;
-      }
-      setRemoveTarget(member);
-      setRemoveBlockers(blockers);
-    } catch (err) {
-      window.alert(errorMessage(err, 'Could not load removal blockers'));
-    } finally {
-      setRemoveBlockersLoading(false);
-    }
-  }
-
-  function closeRemoveDialog(): void {
-    setRemoveTarget(null);
-    setRemoveBlockers(null);
-    setRemoveError(null);
-    setReassignOwnerTo('');
-    setRemoveForce(false);
-  }
-
-  function confirmRemoveWithBlockers(): void {
-    if (!removeTarget || !removeBlockers) return;
-    if (removeBlockers.ownedProjectCount > 0 && !reassignOwnerTo && !removeForce) return;
-    removeMut.mutate({
-      userId: removeTarget.userId,
-      opts: {
-        ...(reassignOwnerTo ? { reassignOwnerTo } : {}),
-        ...(removeForce ? { force: true } : {}),
-      },
-    });
-  }
-
   const renameMut = useMutation({
     mutationFn: (name: string) => teamsApi.updateTeam(currentTeamId!, { name }),
     onSuccess: async () => {
@@ -590,6 +413,58 @@ export default function TeamsPage(): JSX.Element {
               })()}
 
               {/* v2.12: division member management now lives in the departments. */}
+              {showDeleteDialog && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="delete-team-title"
+                >
+                  <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
+                    <h3 id="delete-team-title" className="text-lg font-semibold mb-2">
+                      {t('team.actions.delete')}
+                    </h3>
+                    <p className="text-sm text-slate-600 mb-3">
+                      Are you sure you want to delete <strong>{detail.name}</strong>? This action
+                      cannot be undone.
+                    </p>
+                    {detail.deleteBlockers && !detail.deleteBlockers.canDelete && (
+                      <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-warning">
+                        <p className="font-medium mb-1">Cannot delete team because:</p>
+                        <ul className="list-disc ps-5 space-y-0.5">
+                          {detail.deleteBlockers.reasons.map((r) => (
+                            <li key={r}>{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {deleteError && <p className="text-xs text-danger mb-2" role="alert">{deleteError}</p>}
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteDialog(false);
+                          setDeleteError(null);
+                        }}
+                        className="border rounded px-3 py-1.5 text-sm hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          deleteMut.isPending ||
+                          (detail.deleteBlockers !== null && !detail.deleteBlockers.canDelete)
+                        }
+                        onClick={() => deleteMut.mutate()}
+                        className="bg-danger text-white rounded px-3 py-1.5 text-sm disabled:opacity-50"
+                      >
+                        {deleteMut.isPending ? t('team.actions.deleting') : t('team.actions.delete')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {activeTab === 'units' && canManageGroups && currentTeamId && (
                 <TeamGroupsPanel teamId={currentTeamId} kind="UNIT" />
