@@ -13,6 +13,12 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.10.1] — 2026-07-19 — Nomenclature: hardcoded TeamsPage literals
+
+The v2.10.0 sweep covered the i18n files; the Divisions page itself still carried nine
+hardcoded English literals ("Teams", "Your teams", "Select or create a team.", rename/
+delete actions…). All are now i18n keys (`team.page.*`, `team.actions.*`), EN + FA.
+
 ## [2.10.0] — 2026-07-19 — Organizational nomenclature wave (معاونت / اداره کل)
 
 Label-layer only: **zero migrations, zero new endpoints.** Schema identifiers, API paths,

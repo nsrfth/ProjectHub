@@ -1535,5 +1535,12 @@
   "roles.system.manager": "معاون",
   "roles.system.member": "عضو",
   "roles.system.pmo": "PMO",
-  "roles.systemTag": "سیستمی"
+  "roles.systemTag": "سیستمی",
+  "team.page.title": "معاونت‌ها",
+  "team.page.yourTeams": "معاونت‌های شما",
+  "team.page.selectHint": "یک معاونت را انتخاب یا ایجاد کنید.",
+  "team.rename.emptyError": "نام معاونت نمی‌تواند خالی باشد",
+  "team.actions.rename": "تغییر نام معاونت",
+  "team.actions.delete": "حذف معاونت",
+  "team.actions.deleting": "در حال حذف…"
 }

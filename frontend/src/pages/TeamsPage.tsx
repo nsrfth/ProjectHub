@@ -330,11 +330,11 @@ export default function TeamsPage(): JSX.Element {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-semibold mb-6">Teams</h1>
+      <h1 className="text-2xl font-semibold mb-6">{t('team.page.title')}</h1>
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <aside className="md:col-span-1 bg-white rounded shadow p-4 space-y-4">
-          <h2 className="font-medium">Your teams</h2>
+          <h2 className="font-medium">{t('team.page.yourTeams')}</h2>
           <ul className="space-y-1">
             {teams.length === 0 && (
               <li className="text-sm text-slate-500">No teams yet — create one.</li>
@@ -386,7 +386,7 @@ export default function TeamsPage(): JSX.Element {
         </aside>
 
         <main className="md:col-span-2 bg-white rounded shadow p-4">
-          {!currentTeamId && <p className="text-sm text-slate-500">Select or create a team.</p>}
+          {!currentTeamId && <p className="text-sm text-slate-500">{t('team.page.selectHint')}</p>}
           {currentTeamId && detailLoading && <p className="text-sm text-slate-500">Loading…</p>}
           {detail && (
             <>
@@ -399,13 +399,13 @@ export default function TeamsPage(): JSX.Element {
                         e.preventDefault();
                         const trimmed = draftName.trim();
                         if (!trimmed) {
-                          setRenameError('Team name cannot be empty');
+                          setRenameError(t('team.rename.emptyError'));
                           return;
                         }
                         renameMut.mutate(trimmed);
                       }}
                     >
-                      <span className="block text-xs text-slate-500">Team name</span>
+                      <span className="block text-xs text-slate-500">{t('team.placeholder.name')}</span>
                       <input
                         type="text"
                         required
@@ -474,7 +474,7 @@ export default function TeamsPage(): JSX.Element {
                               onClick={startRename}
                               className="w-full text-start px-3 py-1.5 hover:bg-slate-50"
                             >
-                              Rename team
+                              {t('team.actions.rename')}
                             </button>
                           )}
                           {canDelete && (
@@ -487,7 +487,7 @@ export default function TeamsPage(): JSX.Element {
                               }}
                               className="w-full text-start px-3 py-1.5 text-danger hover:bg-red-50"
                             >
-                              Delete team
+                              {t('team.actions.delete')}
                             </button>
                           )}
                         </div>
@@ -619,7 +619,7 @@ export default function TeamsPage(): JSX.Element {
                 >
                   <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
                     <h3 id="delete-team-title" className="text-lg font-semibold mb-2">
-                      Delete team
+                      {t('team.actions.delete')}
                     </h3>
                     <p className="text-sm text-slate-600 mb-3">
                       Are you sure you want to delete <strong>{detail.name}</strong>? This action
@@ -656,7 +656,7 @@ export default function TeamsPage(): JSX.Element {
                         onClick={() => deleteMut.mutate()}
                         className="bg-danger text-white rounded px-3 py-1.5 text-sm disabled:opacity-50"
                       >
-                        {deleteMut.isPending ? 'Deleting…' : 'Delete team'}
+                        {deleteMut.isPending ? t('team.actions.deleting') : t('team.actions.delete')}
                       </button>
                     </div>
                   </div>

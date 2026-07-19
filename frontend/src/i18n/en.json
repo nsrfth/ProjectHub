@@ -1622,5 +1622,12 @@
   "roles.system.manager": "Deputy",
   "roles.system.member": "Member",
   "roles.system.pmo": "PMO",
-  "roles.systemTag": "system"
+  "roles.systemTag": "system",
+  "team.page.title": "Divisions",
+  "team.page.yourTeams": "Your divisions",
+  "team.page.selectHint": "Select or create a division.",
+  "team.rename.emptyError": "Division name cannot be empty",
+  "team.actions.rename": "Rename division",
+  "team.actions.delete": "Delete division",
+  "team.actions.deleting": "Deleting…"
 }
