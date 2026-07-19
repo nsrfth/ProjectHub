@@ -2,6 +2,7 @@ import { Prisma, type OrgUnitType } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { buildCurrencyRollups, computeProjectBudgetMetrics } from '../lib/budgetReportMath.js';
 import { Errors } from '../lib/errors.js';
+import { applyOrgGrantPolicies } from '../lib/projectGrants.js';
 import {
   assertNoCycle,
   assertValidParentType,
@@ -275,6 +276,27 @@ export class OrgUnitsService {
       action: 'project.org_unit_set',
       meta: { projectId, orgUnitId: input.orgUnitId },
     });
+
+    // v2.9 (Phase 5): standing policies fire when a project ENTERS an org
+    // subtree — in this codebase the org attachment is the creation of that
+    // relationship, so this is the plan's "applied once at project creation".
+    // Applying is idempotent per (project, subject, level); detaching or
+    // moving out of a subtree deliberately KEEPS previously-materialized
+    // grants ("policy deletion never revokes" extends to moves — the
+    // sourcePolicyId revoke script is the cleanup path when a move should
+    // shed them).
+    if (input.orgUnitId) {
+      const applied = await applyOrgGrantPolicies(projectId, input.orgUnitId);
+      if (applied > 0) {
+        await logActivity(prisma, {
+          teamId,
+          actorId,
+          action: 'project.org_policies_applied',
+          meta: { projectId, orgUnitId: input.orgUnitId, applied },
+        });
+      }
+    }
+
     return {
       projectId: updated.id,
       orgUnitId: updated.orgUnitId,

@@ -13,6 +13,44 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.9.0] — 2026-07-19 — Phases 4 & 5 engineering; Phase 6 prepared, not executed
+
+### Added — Phase 4 (org membership becomes synced data)
+
+- **`SITE`** joins the org vocabulary (D-8: its own value — PROGRAM-as-site would pollute
+  every by-type roll-up). **`OrgUnitMembership`** with `SYNC | MANUAL` source: the
+  directory sync owns only rows it created; admin placements for local users survive every
+  run. Multiple org nodes per person are legal (unlike units).
+- **Org pass in the directory sync** via `DirectoryGroupMapping.orgUnitId` (D-3 pattern);
+  org-only mappings are now valid. **`seed-org-tree.ts`**: the tree is operator-supplied
+  JSON — D-2 (ATS placement) is answered by whoever writes the file, no names hardcoded.
+
+### Added — Phase 5 (org grants & standing policies — inert until Phase 2 is `on`)
+
+- **ORG_UNIT subject resolution, downward via the materialized path**: a grant on a
+  holding covers its sites' members; cross-root isolation is structural (no SBC path
+  contains MDL's id). Read only under `ACCESS_UNIFIED_GRANTS=on`, so nothing changes
+  during the running dual window.
+- **`OrgUnitGrantPolicy`** applied once when a project enters an org subtree (the
+  attachment IS the creation of that relationship here); grants stamped `sourcePolicyId` —
+  a bare string so it survives policy deletion — with `revoke-policy-grants.ts` as the
+  R-6 bulk-cleanup path. Policy deletion/moves never revoke retroactively, per the plan.
+- Recorded framing reversal: OrgUnit membership+grants are now access-relevant;
+  `TeamOrgUnit` stays non-RBAC exactly as its comment says.
+
+### Phase 6 — PREPARED, NOT EXECUTED
+
+`docs/PHASE6_RETIREMENT.md` (runbook + preconditions checklist), Gate B script
+(`scripts/phase6/verify-no-teamrole-authz.sh`), and the table-drop SQL as a **`.draft`
+outside `prisma/migrations/` so no deploy can auto-apply it**. The quarterly A.5.18
+review procedure is effective immediately; the destructive steps wait for their
+calendar gates. Not deferred caution — the drops would destroy the dual-mode rollback
+that is currently live.
+
+### Not built (remaining UI)
+
+Org membership read UI, policy tab on the org tree, Groups unit tabs.
+
 ## [2.8.0] — 2026-07-19 — Phases 2 & 3 engineering complete (unified sharing + consent)
 
 Phase 2's remaining engineering and all of Phase 3, verified on the pilot instance (36

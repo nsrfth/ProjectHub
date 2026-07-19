@@ -1,0 +1,11 @@
+-- Phase 6 — legacy access-table drops. DRAFT, DELIBERATELY NOT A MIGRATION.
+-- Stored outside prisma/migrations/ so no deploy can auto-apply it. To
+-- execute: satisfy every gate in docs/PHASE6_RETIREMENT.md, take + VERIFY a
+-- backup, then move this into a migration folder in the same release that
+-- removes the dual-write code paths (applying it without that release breaks
+-- setTeamShares/setProjects, which still write these tables).
+DROP TABLE IF EXISTS "ProjectTeamShare";
+DROP TABLE IF EXISTS "ProjectGroupGrant";
+-- ProjectEditDelegate is NOT dropped: it keeps the capabilities concern.
+-- The TeamRole column on TeamMembership is NOT dropped here: enum-column
+-- removal is a separate, later cleanup once nothing displays it either.

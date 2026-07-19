@@ -38,7 +38,7 @@ export interface GrantSubjects {
  * access, same as before. Grant-level PENDING arrives in Phase 3.
  */
 export async function resolveGrantSubjects(userId: string): Promise<GrantSubjects> {
-  const [groups, teams] = await Promise.all([
+  const [groups, teams, orgNodes] = await Promise.all([
     prisma.userGroupMember.findMany({
       where: { userId, status: 'ACCEPTED' },
       select: { groupId: true },
@@ -47,16 +47,83 @@ export async function resolveGrantSubjects(userId: string): Promise<GrantSubject
       where: { userId },
       select: { teamId: true },
     }),
+    // v2.9 (Phase 5): the user's org nodes, with materialized paths.
+    prisma.orgUnitMembership.findMany({
+      where: { userId },
+      select: { orgUnit: { select: { path: true } } },
+    }),
   ]);
+
+  // Downward-only inheritance via the path: a grant on node X covers members
+  // of X's whole subtree, so a user at /MDL/KVSM satisfies ORG_UNIT subjects
+  // KVSM *and* MDL. The path segments ARE the ancestor ids — that is what the
+  // materialized path exists for — so no recursive walk is needed, and a
+  // grant on the MDL root can never reach an SBC member structurally: no SBC
+  // path contains MDL's id.
+  const orgUnitIds = [
+    ...new Set(orgNodes.flatMap((m) => m.orgUnit.path.split('/').filter(Boolean))),
+  ];
 
   return {
     userId,
     groupIds: groups.map((g) => g.groupId),
     teamIds: teams.map((t) => t.teamId),
-    // Phase 5. Empty until OrgUnitMembership exists, so ORG_UNIT grants
-    // resolve to no-access — which is correct: none can be created yet.
-    orgUnitIds: [],
+    orgUnitIds,
   };
+}
+
+/**
+ * v2.9 (Phase 5): apply standing org policies to a just-created project.
+ *
+ * Called from projectsService.create AFTER the project row exists. Applies
+ * once — policies never re-materialize on edit, and deleting a policy never
+ * revokes (the plan's explicit semantics; `sourcePolicyId` is what makes a
+ * bad policy cleanly revocable instead).
+ *
+ * Grants land ACTIVE with source 'policy'. They are read only under
+ * ACCESS_UNIFIED_GRANTS=on (ORG_UNIT subjects have no legacy counterpart), so
+ * this is inert until Phase 2's flag walk completes — by design.
+ */
+export async function applyOrgGrantPolicies(
+  projectId: string,
+  projectOrgUnitId: string | null,
+): Promise<number> {
+  if (!projectOrgUnitId) return 0;
+  const node = await prisma.orgUnit.findUnique({
+    where: { id: projectOrgUnitId },
+    select: { path: true },
+  });
+  if (!node) return 0;
+
+  // Policies whose anchor is the node itself or any ancestor — again the path
+  // segments are exactly the candidate anchor ids.
+  const anchorIds = node.path.split('/').filter(Boolean);
+  const policies = await prisma.orgUnitGrantPolicy.findMany({
+    where: { enabled: true, anchorOrgUnitId: { in: anchorIds } },
+  });
+
+  let applied = 0;
+  for (const p of policies) {
+    await prisma.projectAccessGrant.upsert({
+      where: {
+        projectId_subjectType_subjectId_level: {
+          projectId, subjectType: p.subjectType, subjectId: p.subjectId, level: p.level,
+        },
+      },
+      update: {},
+      create: {
+        projectId,
+        subjectType: p.subjectType,
+        subjectId: p.subjectId,
+        level: p.level,
+        status: 'ACTIVE',
+        source: 'policy',
+        sourcePolicyId: p.id,
+      },
+    });
+    applied += 1;
+  }
+  return applied;
 }
 
 /** Prisma OR-clause matching every grant subject this user satisfies. */
