@@ -1,0 +1,67 @@
+# Staging overlay — v2.6 (Phase 0c, decision D-6: adopt).
+#
+# Use with an explicit project name so staging gets its OWN volume namespace
+# and never shares state with a production stack on the same host:
+#
+#   docker compose -p taskhub-staging \
+#     --env-file .env.staging \
+#     -f docker-compose.yml -f docker-compose.staging.yml \
+#     up -d --build
+#
+# THE PROJECT NAME IS NOT OPTIONAL. Compose derives volume names from it.
+# Running this overlay without `-p` reuses the production stack's
+# postgres_data, uploads_data and backups_data volumes — that is not a staging
+# environment, that is production with different ports.
+#
+# What this overlay changes and why:
+#   - ports moved off 80/443 so both stacks can share a host
+#   - no ACME: staging is internal, HTTP only, no public certificate
+#   - EVERY scheduler forced off: staging must never send a reminder email to
+#     a real user, fire a webhook at a real endpoint, or walk the real
+#     directory. Enable one deliberately when rehearsing that specific job.
+#   - directory sync pinned to dry-run: staging routinely holds a restored
+#     production snapshot, and the DNs in it point at the real AD.
+#
+# Full runbook, including the snapshot-restore procedure that Phase 2's
+# backfill rehearsal depends on: docs/STAGING.md
+
+services:
+  caddy:
+    ports:
+      - "${STAGING_HTTP_PORT:-8080}:80"
+    environment:
+      # No ACME on staging. Internal hostname, plain HTTP.
+      ACME_EMAIL: ""
+      TLS_DIRECTIVE: ""
+
+  backend:
+    environment:
+      # Make the environment legible in the UI and in logs, so nobody
+      # mistakes a staging tab for production.
+      TASKHUB_VERSION: ${TASKHUB_VERSION:-staging}
+
+      # --- schedulers: all off unless explicitly rehearsing one ---------
+      # Staging frequently runs against restored production data. A reminder
+      # scheduler here emails real people about real tasks.
+      TASK_DUE_ENABLED: "false"
+      WEBHOOK_DISPATCH_ENABLED: "false"
+      RECURRENCE_ENABLED: "false"
+      BACKUP_ENABLED: "false"
+
+      # --- directory sync (Phase 0a) ------------------------------------
+      # Off by default. When you DO enable it to rehearse, DRY_RUN stays
+      # pinned true here: a staging stack restored from a production snapshot
+      # contains real directory DNs, and a live run would write memberships
+      # derived from the real AD into a database that may later be diffed
+      # against production.
+      DIRECTORY_SYNC_ENABLED: ${DIRECTORY_SYNC_ENABLED:-false}
+      DIRECTORY_SYNC_DRY_RUN: "true"
+      DIRECTORY_SYNC_REVOKE_GLOBAL_ROLE: "false"
+      DIRECTORY_SYNC_INTERVAL_MIN: ${DIRECTORY_SYNC_INTERVAL_MIN:-60}
+      DIRECTORY_SYNC_PAGE_SIZE: ${DIRECTORY_SYNC_PAGE_SIZE:-500}
+      DIRECTORY_SYNC_MAX_USERS: ${DIRECTORY_SYNC_MAX_USERS:-10000}
+      DIRECTORY_SYNC_TIMEOUT_SEC: ${DIRECTORY_SYNC_TIMEOUT_SEC:-300}
+
+      # Outbound mail off by default — see docs/STAGING.md for the Mailpit
+      # sidecar if you need to inspect what WOULD have been sent.
+      SMTP_HOST: ${SMTP_HOST:-}

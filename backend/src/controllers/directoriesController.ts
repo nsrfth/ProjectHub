@@ -1,7 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { DirectoryService } from '../services/directoryService.js';
 import type { LdapService } from '../services/ldapService.js';
+import type { DirectorySyncService } from '../services/directorySyncService.js';
 import type { ScimCredentialsService } from '../services/scimCredentialsService.js';
+import type { Env } from '../config/env.js';
 import type {
   DirectoryCreateBody,
   DirectoryUpdateBody,
@@ -32,11 +34,16 @@ function serialise(d: {
   groupMemberAttr: string;
   allowJIT: boolean;
   syncRolesFromGroups: boolean;
+  syncEnabled: boolean;
+  syncTrustMemberOf: boolean;
+  lastSyncAt: Date | null;
+  lastSyncStatus: string | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
   return {
     ...d,
+    lastSyncAt: d.lastSyncAt ? d.lastSyncAt.toISOString() : null,
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
   };
@@ -47,7 +54,41 @@ export class DirectoriesController {
     private readonly svc: DirectoryService,
     private readonly ldap: LdapService,
     private readonly scimCreds: ScimCredentialsService,
+    private readonly sync: DirectorySyncService,
+    private readonly env: Env,
   ) {}
+
+  // v2.6 (Phase 0a): run the directory sync on demand.
+  //
+  // Bypasses Directory.syncEnabled deliberately, so an operator can rehearse
+  // against a directory before opting it in permanently. It does NOT bypass
+  // dry-run: the body defaults dryRun to true, so the destructive form is
+  // always an explicit choice.
+  //
+  // DIRECTORY_SYNC_DRY_RUN=true still forces observation mode even when the
+  // caller asks for a live run — the env flag is the operator's floor and a
+  // UI button must not be able to raise it.
+  runSync = async (
+    req: FastifyRequest<{ Params: IdParams; Body: { dryRun: boolean } }>,
+    reply: FastifyReply,
+  ) => {
+    // 404s before we start a scan if the directory is gone.
+    await this.svc.get(req.params.directoryId);
+
+    const summary = await this.sync.runForDirectory(req.params.directoryId, {
+      pageSize: this.env.DIRECTORY_SYNC_PAGE_SIZE,
+      maxUsers: this.env.DIRECTORY_SYNC_MAX_USERS,
+      timeoutSec: this.env.DIRECTORY_SYNC_TIMEOUT_SEC,
+      revokeGlobalRole: this.env.DIRECTORY_SYNC_REVOKE_GLOBAL_ROLE,
+      dryRun: this.env.DIRECTORY_SYNC_DRY_RUN || req.body.dryRun,
+    });
+
+    return reply.send({
+      ...summary,
+      startedAt: summary.startedAt.toISOString(),
+      finishedAt: summary.finishedAt.toISOString(),
+    });
+  };
 
   list = async (_req: FastifyRequest, reply: FastifyReply) => {
     const items = await this.svc.list();

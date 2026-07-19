@@ -1,0 +1,200 @@
+import type { GlobalRole, Prisma } from '@prisma/client';
+import { prisma } from '../data/prisma.js';
+import type { ProjectAccessLevel, ProjectAccessScope } from './projectAccess.js';
+
+// v2.6 (Phase 2): the unified grant resolver.
+//
+// This is the NEW path. It lives beside the legacy resolver in projectAccess.ts
+// for the whole dual-read period rather than replacing it in place, because the
+// only credible way to rewrite the function consulted on every authenticated
+// request is to run both and compare — a diff review cannot prove parity across
+// six overlapping access paths.
+//
+// Six paths collapse to one table:
+//   ProjectGroupGrant           -> GROUP subject
+//   ProjectTeamShare            -> TEAM subject
+//   ProjectEditDelegate (access)-> USER subject
+//   (Phase 5) org unit          -> ORG_UNIT subject
+// Owner, ADMIN, and the permission-derived rungs (write_all / read_all /
+// project.edit) are NOT grants — they are properties of the caller, not of the
+// project, so they stay where they are and are evaluated by the caller.
+
+/**
+ * Subjects a user "is", for grant matching.
+ *
+ * Resolved once per access check rather than per grant: a project with twenty
+ * grants would otherwise issue twenty membership lookups.
+ */
+export interface GrantSubjects {
+  userId: string;
+  groupIds: string[];
+  teamIds: string[];
+  orgUnitIds: string[];
+}
+
+/**
+ * ACCEPTED group membership is what carries consent today — the grant itself is
+ * imposed. Phase 2 preserves that exactly: a PENDING group membership yields no
+ * access, same as before. Grant-level PENDING arrives in Phase 3.
+ */
+export async function resolveGrantSubjects(userId: string): Promise<GrantSubjects> {
+  const [groups, teams] = await Promise.all([
+    prisma.userGroupMember.findMany({
+      where: { userId, status: 'ACCEPTED' },
+      select: { groupId: true },
+    }),
+    prisma.teamMembership.findMany({
+      where: { userId },
+      select: { teamId: true },
+    }),
+  ]);
+
+  return {
+    userId,
+    groupIds: groups.map((g) => g.groupId),
+    teamIds: teams.map((t) => t.teamId),
+    // Phase 5. Empty until OrgUnitMembership exists, so ORG_UNIT grants
+    // resolve to no-access — which is correct: none can be created yet.
+    orgUnitIds: [],
+  };
+}
+
+/** Prisma OR-clause matching every grant subject this user satisfies. */
+function subjectClause(s: GrantSubjects): Prisma.ProjectAccessGrantWhereInput[] {
+  const clauses: Prisma.ProjectAccessGrantWhereInput[] = [
+    { subjectType: 'USER', subjectId: s.userId },
+  ];
+  if (s.groupIds.length) clauses.push({ subjectType: 'GROUP', subjectId: { in: s.groupIds } });
+  if (s.teamIds.length) clauses.push({ subjectType: 'TEAM', subjectId: { in: s.teamIds } });
+  if (s.orgUnitIds.length) {
+    clauses.push({ subjectType: 'ORG_UNIT', subjectId: { in: s.orgUnitIds } });
+  }
+  return clauses;
+}
+
+/**
+ * Only ACTIVE, unexpired grants count.
+ *
+ * Expiry is evaluated here rather than swept by a job on purpose: an expired
+ * grant must stop working at the instant it expires, not at the next sweep.
+ * A sweep would leave a window where a revoked collaborator still has access,
+ * which is exactly what an access review would flag.
+ */
+function liveGrantWhere(now: Date): Prisma.ProjectAccessGrantWhereInput {
+  return {
+    status: 'ACTIVE',
+    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+  };
+}
+
+/**
+ * The grant-derived access level for one project.
+ *
+ * Returns only what the GRANT TABLE says. Owner / ADMIN / permission rungs are
+ * the caller's job — keeping them out means this function has exactly one
+ * responsibility and the dual-read comparison stays meaningful.
+ */
+export async function grantAccessForProject(
+  projectId: string,
+  subjects: GrantSubjects,
+  now: Date = new Date(),
+): Promise<ProjectAccessLevel> {
+  const rows = await prisma.projectAccessGrant.findMany({
+    where: {
+      projectId,
+      ...liveGrantWhere(now),
+      OR: subjectClause(subjects),
+    },
+    select: { level: true },
+  });
+  if (!rows.length) return 'NONE';
+  return rows.some((r) => r.level === 'WRITE') ? 'WRITE' : 'READ';
+}
+
+/** Project ids this user reaches through any live grant. */
+export async function grantedProjectIds(
+  subjects: GrantSubjects,
+  now: Date = new Date(),
+): Promise<string[]> {
+  const rows = await prisma.projectAccessGrant.findMany({
+    where: { ...liveGrantWhere(now), OR: subjectClause(subjects) },
+    select: { projectId: true },
+  });
+  return [...new Set(rows.map((r) => r.projectId))];
+}
+
+/** Project ids this user reaches through a live grant, restricted to one team. */
+export async function grantedProjectIdsInTeam(
+  teamId: string,
+  subjects: GrantSubjects,
+  now: Date = new Date(),
+): Promise<string[]> {
+  const rows = await prisma.projectAccessGrant.findMany({
+    where: {
+      ...liveGrantWhere(now),
+      OR: subjectClause(subjects),
+      project: { teamId },
+    },
+    select: { projectId: true },
+  });
+  return [...new Set(rows.map((r) => r.projectId))];
+}
+
+// ---------------------------------------------------------------------------
+// Divergence logging
+// ---------------------------------------------------------------------------
+
+export interface DivergenceContext {
+  projectId: string;
+  teamId: string;
+  userId: string;
+  globalRole: GlobalRole;
+  scope: ProjectAccessScope;
+}
+
+/**
+ * Records a legacy-vs-unified disagreement during `dual` mode.
+ *
+ * Written to SecurityAuditEvent rather than only to the log stream because the
+ * phase exit criterion is "zero unexplained divergence entries over two weeks",
+ * and that has to be queryable after the fact. Log lines get rotated away;
+ * production here has no log aggregation (risk R-4).
+ *
+ * Deliberately best-effort: a failure to record a divergence must never fail
+ * the request that triggered it. The whole point of `dual` is that it is
+ * invisible to users.
+ */
+export async function recordDivergence(
+  ctx: DivergenceContext,
+  legacy: ProjectAccessLevel,
+  unified: ProjectAccessLevel,
+): Promise<void> {
+  try {
+    await prisma.securityAuditEvent.create({
+      data: {
+        kind: 'access.divergence',
+        actorId: ctx.userId,
+        details: {
+          projectId: ctx.projectId,
+          teamId: ctx.teamId,
+          scope: ctx.scope,
+          globalRole: ctx.globalRole,
+          legacy,
+          unified,
+          // Which direction matters: unified being MORE permissive is a
+          // potential privilege escalation and must block the flag walk;
+          // unified being LESS permissive is a potential lockout. Both are
+          // bugs, but they get triaged differently.
+          direction:
+            rank(unified) > rank(legacy) ? 'unified_more_permissive' : 'unified_less_permissive',
+        },
+      },
+    });
+  } catch {
+    // Swallowed by design — see above.
+  }
+}
+
+function rank(a: ProjectAccessLevel): number {
+  return a === 'WRITE' ? 2 : a === 'READ' ? 1 : 0;
+}

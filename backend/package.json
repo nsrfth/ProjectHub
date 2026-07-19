@@ -1,6 +1,6 @@
 {
   "name": "taskhub-backend",
-  "version": "2.5.59",
+  "version": "2.6.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -18,7 +18,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:setup": "DATABASE_URL=postgresql://taskhub:taskhub@postgres-test:5432/taskhub_test?schema=public prisma migrate deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json",
+    "report:role-coverage": "tsx scripts/reports/role-coverage.ts",
+    "report:directory-coverage": "tsx scripts/reports/directory-coverage.ts",
+    "backfill:roles": "tsx scripts/reports/role-backfill.ts",
+    "backfill:grants": "tsx scripts/reports/grant-backfill.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed-router.ts"

@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2.5.59 (unified — frontend, backend, and manual share one number) (2026-07-18)
+**Version:** v2.6.0 (unified — frontend, backend, and manual share one number) (2026-07-19)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -496,6 +496,62 @@ Login POST /api/auth/login
 
 Bind passwords and SCIM tokens are encrypted with `MASTER_KEY`. LDAP group
 → role mappings run post-bind when `syncRolesFromGroups` is enabled.
+
+## Scheduled directory sync (v2.6)
+
+Group mapping used to happen **at login only**. That is fine for role changes
+— an active user re-derives them at their next sign-in — but it silently fails
+for the users who matter most to the access redesign: **someone who has never
+signed in has no local row at all**, because LDAP provisioning is
+just-in-time. Under the unit-scoped assignment arriving in Phase 1C, such a
+person has no unit, so no supervisor can assign them work. The population least
+likely to have signed in recently is exactly the field staff the programme
+exists to serve.
+
+`directorySyncService` therefore enumerates the **directory**, not the local
+user table:
+
+```
+scheduler tick (daily, DIRECTORY_SYNC_ENABLED + Directory.syncEnabled)
+  → preflight mappings   DN collisions abort; dangling teamId / escaped-comma DNs skip
+  → pass 1  LdapService.enumerateUsers   paged; truncation ABORTS, never partially applies
+  → pass 2  fetchGroupMembers per MAPPED GROUP  (skipped when syncTrustMemberOf)
+  → per user, in one transaction: global role, team upserts, scoped removals
+  → optional global-role demotion, behind a last-admin interlock
+  → summary persisted to Directory.lastSyncSummary
+```
+
+Four decisions worth keeping:
+
+**Paging is a correctness requirement, not a performance one.** Active
+Directory truncates a response at `MaxPageSize` (1000) and reports
+sizeLimitExceeded. An unpaged walk looks successful while omitting everyone
+past the cap — and since the job treats "absent from the directory" as "no
+longer entitled", a truncated view would de-provision them. Truncation aborts
+the directory with zero writes.
+
+**Pass 2 is per mapped group, not per user.** `memberOf` is an AD back-link
+that OpenLDAP does not populate without the memberof overlay, so it cannot be
+trusted alone. The obvious fix — call `fetchGroups` per user — issues an
+unbounded subtree search per account. Inverting it to one search per *mapping*
+is O(mappings), typically single digits.
+
+**Conflicts are reported, never resolved by precedence.** This is a deliberate
+divergence from `applyDirectoryGroups`, which picks the highest global role and
+lets the last team mapping win. At an interactive login that is tolerable — one
+user, an admin present to notice. In an unattended job touching every account
+it is a silent privilege-escalation path. Note especially that "mappings
+disagree" and "no mapping grants a role" must stay distinct: both leave the
+desired role null, but the second is a revocation signal and the first must
+produce no change at all.
+
+**Global-role revocation is off by default.** Losing an admin group currently
+never demotes anyone, which is a real ISO A.5.16 gap — but enabling revocation
+makes a bad `baseDN` or `userFilter` typo capable of demoting every
+administrator in one unattended run. Hence: opt-in, suppressed on any aborted
+run, last-admin interlock, and every demotion audited.
+
+Full rationale and the rollout sequence: `docs/DIRECTORY_SYNC.md`.
 
 ## Instance security policy (v1.43)
 

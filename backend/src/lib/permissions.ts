@@ -23,6 +23,17 @@ export const PERMISSIONS = [
   // v1.29: add / remove dependency edges between tasks. Default = Manager
   // only — curating the dependency graph is a curator's job. Admins bypass.
   'task.manage_dependencies',
+  // v2.6 (Phase 1C): assign work to ANYONE eligible on the project, ignoring
+  // unit scope. Without it, a supervisor may only assign within their own unit
+  // plus collaborators explicitly granted the project.
+  //
+  // This is also the escape hatch for the unresolved-unit case: a person the
+  // directory sync could not place in a unit is assignable ONLY by a holder of
+  // this permission, and appears on the unit-coverage exception report. The
+  // system degrades to "a manager can still assign anyone" rather than to
+  // "nobody can assign this person", which is what an un-escaped scope rule
+  // would do to exactly the field staff this programme is for.
+  'task.assign_any',
 
   // Comment moderation.
   'comment.delete_others',
@@ -33,6 +44,15 @@ export const PERMISSIONS = [
   'project.edit',
   'project.delete',
   'project.set_accountable',
+  // v2.6 (Phase 2): grant another subject access to a project — the single
+  // permission behind the unified Sharing panel.
+  //
+  // Deliberately separate from `project.edit`: sharing a project outward is a
+  // different act from renaming it, and collapsing them would mean every
+  // manager who can rename a project can also expose it to another team.
+  // Whole-team sharing additionally requires the Phase 3 request-and-accept
+  // flow (D-5/D-7); global ADMIN retains an imposed path.
+  'project.share',
   // v1.79: WRITE access (nested scope) to EVERY project in the team — add /
   // modify tasks, comments, dependencies, etc. in any team project without
   // owning it or holding a FULL group grant. Deliberately DISTINCT from
@@ -152,12 +172,14 @@ export const PERMISSION_GROUPS: Record<string, readonly Permission[]> = {
     'task.change_responsible',
     'task.change_assignee',
     'task.manage_dependencies',
+    'task.assign_any',
   ],
   Comments: ['comment.delete_others'],
   Projects: [
     'project.edit',
     'project.delete',
     'project.set_accountable',
+    'project.share',
     'project.write_all',
     'project.read_all',
   ],
@@ -216,7 +238,36 @@ export function isValidPermission(value: string): value is Permission {
 // Default permission contents for the two seeded system roles per team. The
 // migration uses the same defaults; keeping them here is also handy for the
 // "Reset to defaults" affordance the UI might offer later.
-export const DEFAULT_MANAGER_PERMISSIONS: readonly Permission[] = PERMISSIONS;
+// v2.6 (Phase 1B/1C): permission keys introduced AFTER the v1.23 RBAC
+// migration. The legacy fallback path must never auto-grant these.
+//
+// Why this list exists at all:
+//
+// `hasPermission` is dual-path — it consults the custom role only when
+// `TeamMembership.roleId` is non-null, and otherwise falls back to the sets
+// below. Because the manager default WAS literally `PERMISSIONS`, every new
+// key added anywhere in this file was instantly granted to every legacy-manager
+// membership still on the fallback path, and no edit to a seeded role template
+// could take it away. That is the programme's risk R-1, and it is not
+// hypothetical: `task.change_assignee` has existed since v1.23 with zero
+// enforcement sites, so keys and enforcement have already drifted once.
+//
+// The Phase 1B backfill (zero null `roleId` instance-wide) is the real fix and
+// removes the fallback path entirely in Phase 6. This list is the belt to that
+// braces: until the backfill is verified complete on every installation, a new
+// key stays inert on the fallback path instead of silently escalating.
+//
+// Do NOT add pre-v2.6 keys here — that would REVOKE capabilities legacy
+// managers already rely on. This is only for keys that never existed during the
+// dual-path era.
+const POST_RBAC_MIGRATION_PERMISSIONS: readonly string[] = [
+  'task.assign_any',
+  'project.share',
+];
+
+export const DEFAULT_MANAGER_PERMISSIONS: readonly Permission[] = PERMISSIONS.filter(
+  (p) => !POST_RBAC_MIGRATION_PERMISSIONS.includes(p),
+);
 export const DEFAULT_MEMBER_PERMISSIONS: readonly Permission[] = [
   'task.delete',
   'task.modify_dates',

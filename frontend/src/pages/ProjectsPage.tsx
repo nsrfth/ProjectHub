@@ -394,6 +394,7 @@ export default function ProjectsPage(): JSX.Element {
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
+              data-testid="projects-new"
               className="inline-flex items-center gap-1 rounded-md bg-primary hover:bg-primary-hover text-primary-contrast text-sm font-medium px-3 py-1.5"
             >
               + New project
@@ -548,7 +549,12 @@ export default function ProjectsPage(): JSX.Element {
       )}
 
       {!isLoading && viewMode === 'all' && (
-        <section className="bg-surface rounded shadow p-4">
+        // data-testid (v2.6, Phase 0b): marks the loaded "all projects" view.
+        // The e2e suite must distinguish it from the buckets view, which
+        // renders a different component and is remembered in localStorage —
+        // otherwise a prior run leaves the app in a mode where the row
+        // selectors silently match nothing.
+        <section className="bg-surface rounded shadow p-4" data-testid="projects-list">
           <h2 className="text-sm font-medium mb-2">
             All projects ({filteredProjects.length})
           </h2>

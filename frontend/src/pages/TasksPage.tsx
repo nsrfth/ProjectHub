@@ -373,6 +373,7 @@ export default function TasksPage(): JSX.Element {
               placeholder={t('tasks.placeholder.newTitle')}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              data-testid="task-create-title"
               className="flex-1 min-w-[200px] rounded border-border px-2 py-1 border text-sm dark:bg-slate-800"
             />
             <select
@@ -388,6 +389,7 @@ export default function TasksPage(): JSX.Element {
             <button
               type="submit"
               disabled={createMut.isPending}
+              data-testid="task-create-submit"
               className="bg-slate-900 text-white rounded px-3 py-1 text-sm font-medium disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
             >
               {createMut.isPending ? 'Adding…' : 'Add task'}
@@ -760,7 +762,14 @@ function TaskList({
             const expanded = expandedTaskIds.has(row.id);
             return (
               <Fragment key={row.id}>
-                <tr className="border-t border-border hover:bg-bg">
+                {/* data-testid + data-task-id (v2.6, Phase 0b): the only way
+                    for the e2e suite to target a specific task row — nothing
+                    else in this <tr> carries the id. */}
+                <tr
+                  className="border-t border-border hover:bg-bg"
+                  data-testid="task-row"
+                  data-task-id={row.id}
+                >
                   <td className="px-3 py-2 max-w-[20rem]">
                     <div className="flex items-start gap-1.5 min-w-0">
                       {hasSubtasks ? (

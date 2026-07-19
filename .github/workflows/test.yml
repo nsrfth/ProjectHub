@@ -124,3 +124,129 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE_URL: /api
+
+  # v2.6 (Phase 0b): end-to-end smoke.
+  #
+  # Gates the Phase 2 access-resolver flag transitions — that phase rewrites
+  # the resolver consulted on effectively every authenticated request, and
+  # nothing else here proves the application still works after the flag moves.
+  #
+  # Boots a real backend + Vite dev server against a real Postgres, seeds the
+  # admin account, and drives five flows through Chromium.
+  e2e:
+    name: e2e (smoke)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: taskhub
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: taskhub_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taskhub -d taskhub_e2e"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://taskhub:testpass@localhost:5432/taskhub_e2e?schema=public
+      NODE_ENV: development
+      PORT: '4000'
+      JWT_ACCESS_SECRET: ci_access_secret_at_least_32_chars_long_xx
+      JWT_REFRESH_SECRET: ci_refresh_secret_at_least_32_chars_long_x
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 30d
+      CORS_ORIGINS: http://localhost:5173
+      COOKIE_SECURE: 'false'
+      UPLOAD_DIR: /tmp/uploads
+      AUTH_RATE_LIMIT_MAX: '100000'
+      AUTH_RATE_LIMIT_WINDOW: 1 minute
+      MASTER_KEY: '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
+      # Every scheduler stays off. The e2e job must not fire background work.
+      TASK_DUE_ENABLED: 'false'
+      WEBHOOK_DISPATCH_ENABLED: 'false'
+      RECURRENCE_ENABLED: 'false'
+      BACKUP_ENABLED: 'false'
+      DIRECTORY_SYNC_ENABLED: 'false'
+      E2E_BASE_URL: http://localhost:5173
+      E2E_EMAIL: admin@taskhub.local
+      E2E_PASSWORD: admin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend
+        working-directory: backend
+        run: npm ci
+
+      - name: Migrate + seed
+        working-directory: backend
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+          npx prisma db seed
+
+      # curl loop rather than `npx wait-on`: wait-on is not a dependency of
+      # either package, so npx would fetch an unpinned version from the network
+      # mid-job. Not worth the supply-chain surface for "poll a URL".
+      - name: Start backend
+        working-directory: backend
+        run: |
+          npm run dev > /tmp/backend.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:4000/api/health > /dev/null; then
+              echo "backend up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "backend failed to start; log follows:"; cat /tmp/backend.log; exit 1
+
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+
+      # --strictPort matters: vite.config.ts does not set it, so a busy 5173
+      # would make Vite silently bind 5174 and every test would then hit a
+      # baseURL with nothing behind it.
+      - name: Start frontend
+        working-directory: frontend
+        run: |
+          npm run dev -- --port 5173 --strictPort > /tmp/frontend.log 2>&1 &
+          for i in $(seq 1 120); do
+            if curl -fsS http://localhost:5173 > /dev/null; then
+              echo "frontend up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "frontend failed to start; log follows:"; cat /tmp/frontend.log; exit 1
+
+      - name: Install e2e + browser
+        working-directory: e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Run smoke suite
+        working-directory: e2e
+        run: npm test
+
+      # Server logs are usually more informative than the trace when the
+      # failure is "the app never came up".
+      - name: Upload artefacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+            /tmp/backend.log
+            /tmp/frontend.log
+          retention-days: 7

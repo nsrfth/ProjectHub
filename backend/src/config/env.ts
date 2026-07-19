@@ -166,6 +166,82 @@ const envSchema = z.object({
   // list each host explicitly. The test suite sets `127.0.0.1` here
   // so the existing receiver-stub tests keep passing.
   WEBHOOK_ALLOWED_HOSTS: z.string().default(''),
+
+  // --- v2.6 (Phase 0a): scheduled directory sync ------------------------
+  // Evaluates DirectoryGroupMapping for EVERY user in a directory, not just
+  // those who happen to log in. Login-time mapping (authService) is unchanged
+  // and keeps working; this is the safety net for users who never sign in —
+  // under unit-scoped assignment those users are otherwise unassignable.
+  //
+  // Same opt-in shape as the other schedulers: disabled by default so tests
+  // and dev runs never walk a directory. Multi-instance deploys: enable on
+  // exactly one node — the in-process overlap guard is per-process and gives
+  // no cross-replica mutual exclusion.
+  //
+  // Per-directory opt-in ALSO required (Directory.syncEnabled). Both must be
+  // true. See docs/DIRECTORY_SYNC.md.
+  DIRECTORY_SYNC_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  // Daily by default. The job exists to propagate joiner/mover/leaver events,
+  // whose real-world latency is already measured in days, and a full directory
+  // walk is far more expensive than the minute-scale jobs above.
+  DIRECTORY_SYNC_INTERVAL_MIN: z.coerce.number().int().positive().default(1440),
+  // LDAP paged-results page size. Keep under Active Directory's MaxPageSize
+  // (1000 by default) — exceeding it makes the server refuse the page.
+  DIRECTORY_SYNC_PAGE_SIZE: z.coerce.number().int().positive().default(500),
+  // Safety cap. A directory returning more than this aborts the run rather
+  // than processing a set we may have only partially seen.
+  DIRECTORY_SYNC_MAX_USERS: z.coerce.number().int().positive().default(10000),
+  // Observation mode: run the full scan and conflict detection, write nothing.
+  // Intended to be left ON in production for the first two weeks.
+  DIRECTORY_SYNC_DRY_RUN: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  // Global-role demotion when no mapping grants one any more.
+  //
+  // DEFAULT FALSE, DELIBERATELY. Today a user who loses their ADMIN group is
+  // never demoted (authService only writes globalRole when a mapping supplies
+  // one), which is a real access-review gap. But turning revocation on makes a
+  // bad baseDN, a userFilter typo, or an empty directory response capable of
+  // demoting every administrator in one unattended run. Enable only after
+  // reviewing dry-run output. A last-admin interlock applies regardless.
+  DIRECTORY_SYNC_REVOKE_GLOBAL_ROLE: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  // Per-directory wall-clock budget. Exceeding it aborts that directory
+  // (without writes) rather than letting one unreachable DC stall the run.
+  DIRECTORY_SYNC_TIMEOUT_SEC: z.coerce.number().int().positive().default(300),
+
+  // --- v2.6 (Phase 1C): unit-scoped assignment ---------------------------
+  // When on, a supervisor may only assign work within their own unit plus
+  // collaborators explicitly granted the project; `task.assign_any` holders
+  // are unrestricted. Off by default — turning this on changes who can assign
+  // whom, and the Phase 1 exit criteria require a two-week pilot on one team
+  // before it goes wider.
+  ACCESS_UNIT_SCOPE: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  // --- v2.6 (Phase 2): unified project-access grants ---------------------
+  // Three positions, walked in order — never jump straight to `on`:
+  //
+  //   off   legacy resolution only. ProjectGroupGrant / ProjectTeamShare are
+  //         authoritative. The new grant table is written but never read.
+  //   dual  BOTH resolvers run on every check. The LEGACY answer is returned,
+  //         so behaviour is unchanged; disagreements are logged as
+  //         `access.divergence`. This is the observation window — the phase
+  //         exit criteria require >=2 weeks with zero unexplained entries.
+  //   on    the unified resolver is authoritative. Legacy tables are still
+  //         written and still present, so `off` remains an instant rollback.
+  //
+  // That rollback only exists because the Phase 6 table drop is deferred. Do
+  // not "clean up" the legacy write paths before Phase 6.
+  ACCESS_UNIFIED_GRANTS: z.enum(['off', 'dual', 'on']).default('off'),
 })
   // v1.30.2 (S-1): when the in-app self-upgrade plumbing is wired
   // (UPDATER_URL set), UPDATER_TOKEN MUST be a >=24-char string. Without

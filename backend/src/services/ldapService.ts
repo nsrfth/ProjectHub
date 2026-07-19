@@ -39,6 +39,19 @@ export function escapeFilter(value: string): string {
   return out;
 }
 
+// v2.6 (Phase 0a): result of a bulk directory enumeration.
+//
+// `truncated` means we did NOT see the whole directory — either the server
+// refused a full walk or the result exceeded the configured cap. When it is
+// true, `users` is empty by construction: a partial user set is worse than no
+// user set, because the sync job's revocation rules treat "absent from the
+// directory" as "no longer entitled".
+export interface LdapEnumerationResult {
+  users: LdapAuthResult[];
+  truncated: boolean;
+  truncationReason?: string;
+}
+
 export type LdapTransport = 'plain' | 'starttls' | 'ldaps';
 
 // Strip accidental ldap:// / ldaps:// prefixes from the host field.
@@ -281,6 +294,107 @@ export class LdapService {
         attributes: ['dn'],
       });
       return searchEntries.map((e) => e.dn);
+    });
+  }
+
+  // v2.6 (Phase 0a): bulk enumeration for the scheduled directory sync.
+  //
+  // Every other method here resolves ONE user, because every other caller is a
+  // login. The sync job needs the whole directory: its entire purpose is to
+  // reach users who have never signed in, and those users have no row in our
+  // database to iterate over.
+  //
+  // Paging is not optional. Active Directory caps a single search response at
+  // MaxPageSize (1000 by default) and returns sizeLimitExceeded rather than the
+  // rest. An unpaged enumeration would therefore look successful while silently
+  // omitting everyone past the cap — and a sync job that also revokes access
+  // would then de-provision them. `truncated` is returned, never swallowed, so
+  // the caller can abort instead of acting on a partial view.
+  //
+  // Manager DNs are deliberately NOT resolved here. Doing so costs one extra
+  // search per user; the login paths that do resolve them handle one user at a
+  // time. Bulk profile refresh keeps managerName null and leaves it to the
+  // login path.
+  async enumerateUsers(
+    directory: Directory,
+    opts: { pageSize: number; maxUsers: number },
+  ): Promise<LdapEnumerationResult> {
+    if (!directory.host || !directory.baseDN || !directory.bindDN || !directory.bindPasswordEnc) {
+      throw Errors.badRequest('Directory LDAP connection is not fully configured');
+    }
+    const bindPassword = decrypt(directory.bindPasswordEnc);
+    const filter = directory.userFilter ?? `(${directory.userIdAttr}=*)`;
+
+    return withClient(directory, async (client) => {
+      await client.bind(directory.bindDN!, bindPassword);
+
+      let searchEntries: Record<string, unknown>[];
+      try {
+        const res = await client.search(directory.baseDN!, {
+          scope: 'sub',
+          filter,
+          attributes: PROFILE_ATTRS(directory),
+          paged: { pageSize: opts.pageSize },
+        });
+        searchEntries = res.searchEntries as unknown as Record<string, unknown>[];
+      } catch (err) {
+        // A server-side size or admin limit means we did NOT see everyone.
+        // Surface it as truncation rather than letting it look like an outage.
+        const msg = (err as Error).message?.toLowerCase() ?? '';
+        if (msg.includes('size limit') || msg.includes('sizelimit') || msg.includes('admin limit')) {
+          return {
+            users: [],
+            truncated: true,
+            truncationReason: `directory refused a full enumeration: ${(err as Error).message}`,
+          };
+        }
+        throw err;
+      }
+
+      if (searchEntries.length > opts.maxUsers) {
+        return {
+          users: [],
+          truncated: true,
+          truncationReason:
+            `directory returned ${searchEntries.length} users, over the configured ` +
+            `DIRECTORY_SYNC_MAX_USERS cap of ${opts.maxUsers}`,
+        };
+      }
+
+      const users = searchEntries.map((entry) => ({
+        ...profileFromEntry(directory, entry, String(entry.dn), null),
+        groups: entryAttrMulti(entry, 'memberOf'),
+      }));
+
+      return { users, truncated: false };
+    });
+  }
+
+  // v2.6 (Phase 0a): pass 2 of the sync scan — read one group's members.
+  //
+  // memberOf is an Active Directory back-link. OpenLDAP with groupOfNames does
+  // not populate it unless the memberof overlay is configured, so relying on it
+  // alone silently under-grants on those directories.
+  //
+  // This is called once per DISTINCT MAPPED GROUP, not once per user. The naive
+  // alternative — calling fetchGroups() per user — issues an unbounded subtree
+  // search per account, which for a few thousand users is a denial of service
+  // against your own domain controller.
+  async fetchGroupMembers(directory: Directory, groupDn: string): Promise<string[]> {
+    if (!directory.host || !directory.bindDN || !directory.bindPasswordEnc) return [];
+    const bindPassword = decrypt(directory.bindPasswordEnc);
+    return withClient(directory, async (client) => {
+      await client.bind(directory.bindDN!, bindPassword);
+      const { searchEntries } = await client.search(groupDn, {
+        scope: 'base',
+        filter: '(objectClass=*)',
+        attributes: [directory.groupMemberAttr],
+      });
+      if (!searchEntries.length) return [];
+      return entryAttrMulti(
+        searchEntries[0]! as unknown as Record<string, unknown>,
+        directory.groupMemberAttr,
+      );
     });
   }
 

@@ -25,6 +25,10 @@ export const directoryCreateBody = z.object({
   groupMemberAttr: z.string().min(1).max(60).default('member'),
   allowJIT: z.boolean().default(true),
   syncRolesFromGroups: z.boolean().default(false),
+  // v2.6 (Phase 0a): scheduled sync opt-in, separate from the login-time
+  // syncRolesFromGroups above. See docs/DIRECTORY_SYNC.md §9.
+  syncEnabled: z.boolean().default(false),
+  syncTrustMemberOf: z.boolean().default(false),
 });
 
 export const directoryUpdateBody = directoryCreateBody.partial();
@@ -55,6 +59,10 @@ export const directoryResponse = z.object({
   groupMemberAttr: z.string(),
   allowJIT: z.boolean(),
   syncRolesFromGroups: z.boolean(),
+  syncEnabled: z.boolean(),
+  syncTrustMemberOf: z.boolean(),
+  lastSyncAt: z.string().nullable(),
+  lastSyncStatus: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -64,6 +72,57 @@ export const directoryListResponse = z.object({
 });
 
 export const directoryIdParams = z.object({ directoryId: z.string() });
+
+// --- v2.6 (Phase 0a): scheduled directory sync ------------------------
+
+export const directorySyncBody = z.object({
+  // Observation mode: full scan + conflict detection, zero writes. Defaults
+  // TRUE so an admin who clicks without thinking rehearses rather than acts.
+  dryRun: z.boolean().default(true),
+});
+
+export const directorySyncConflictSchema = z.object({
+  code: z.enum([
+    'GLOBAL_ROLE_CONFLICT',
+    'TEAM_ROLE_CONFLICT',
+    'MAPPING_TARGET_MISSING',
+    'MAPPING_DN_COLLISION',
+    'MAPPING_DN_ESCAPED',
+    'IDENTITY_COLLISION',
+    'USER_MISSING_EMAIL',
+    'LAST_ADMIN_PROTECTED',
+  ]),
+  message: z.string(),
+  userId: z.string().optional(),
+  externalId: z.string().optional(),
+  teamId: z.string().optional(),
+  mappingIds: z.array(z.string()).optional(),
+});
+
+export const directorySyncDirectoryResultSchema = z.object({
+  directoryId: z.string(),
+  directorySlug: z.string(),
+  status: z.enum(['OK', 'ABORTED', 'SKIPPED']),
+  abortReason: z.string().optional(),
+  usersEnumerated: z.number().int(),
+  usersMatched: z.number().int(),
+  usersUnmatched: z.number().int(),
+  usersProvisioned: z.number().int(),
+  usersSkippedNoJit: z.number().int(),
+  membershipsAdded: z.number().int(),
+  membershipsUpdated: z.number().int(),
+  membershipsRemoved: z.number().int(),
+  globalRolesChanged: z.number().int(),
+  conflicts: z.array(directorySyncConflictSchema),
+});
+
+export const directorySyncResponse = z.object({
+  runId: z.string(),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+  dryRun: z.boolean(),
+  directories: z.array(directorySyncDirectoryResultSchema),
+});
 
 // DirectoryGroupMapping schemas — group DN → role.
 //

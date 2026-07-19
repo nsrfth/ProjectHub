@@ -3,6 +3,13 @@ import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { getDelegateCapabilities } from './delegateCaps.js';
 import { listMembershipPermissions } from '../middleware/requirePermission.js';
+import { loadEnv } from '../config/env.js';
+import {
+  grantAccessForProject,
+  grantedProjectIdsInTeam,
+  recordDivergence,
+  resolveGrantSubjects,
+} from './projectGrants.js';
 
 export type ProjectAccessLevel = 'NONE' | 'READ' | 'WRITE';
 
@@ -167,6 +174,96 @@ export async function resolveProjectAccess(
   globalRole: GlobalRole,
   scope: ProjectAccessScope = 'nested',
 ): Promise<ProjectAccessLevel> {
+  // v2.6 (Phase 2): three-position flag walk. See config/env.ts.
+  const mode = loadEnv().ACCESS_UNIFIED_GRANTS;
+
+  if (mode === 'off') {
+    return resolveProjectAccessLegacy(projectId, teamId, userId, globalRole, scope);
+  }
+
+  if (mode === 'on') {
+    return resolveProjectAccessUnified(projectId, teamId, userId, globalRole, scope);
+  }
+
+  // dual: run both, RETURN THE LEGACY ANSWER, log disagreements.
+  //
+  // Returning legacy is the entire safety property of this mode — behaviour is
+  // bit-identical to `off`, so a bug in the new resolver cannot lock anyone out
+  // or let anyone in while we are still measuring it.
+  const legacy = await resolveProjectAccessLegacy(projectId, teamId, userId, globalRole, scope);
+  try {
+    const unified = await resolveProjectAccessUnified(projectId, teamId, userId, globalRole, scope);
+    if (unified !== legacy) {
+      await recordDivergence({ projectId, teamId, userId, globalRole, scope }, legacy, unified);
+    }
+  } catch {
+    // A throw in the shadow path must never fail a request that the legacy
+    // resolver already answered.
+  }
+  return legacy;
+}
+
+/**
+ * v2.6 (Phase 2): unified resolution.
+ *
+ * The caller-derived rungs (ADMIN, owner, write_all, read_all, project.edit,
+ * delegate capabilities) are IDENTICAL to legacy and deliberately duplicated
+ * rather than shared — during dual mode the two functions must be able to
+ * disagree, and a shared helper would mask exactly the class of bug we are
+ * watching for. They converge again in Phase 6 when legacy is deleted.
+ *
+ * What changes: the three grant rungs (group grant, team share, delegate
+ * access) collapse into one `ProjectAccessGrant` lookup.
+ */
+async function resolveProjectAccessUnified(
+  projectId: string,
+  teamId: string,
+  userId: string,
+  globalRole: GlobalRole,
+  scope: ProjectAccessScope,
+): Promise<ProjectAccessLevel> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { teamId: true, ownerId: true },
+  });
+  if (!project || project.teamId !== teamId) return 'NONE';
+  if (globalRole === 'ADMIN') return 'WRITE';
+  if (project.ownerId === userId) return 'WRITE';
+
+  // Preserved deliberately: `project.write_all` early-returns WRITE on every
+  // team project. This makes Phase 3's acceptance flows structurally
+  // inapplicable to department managers — which is consistent with Phase 3's
+  // skip rule, and is documented here so nobody "fixes" it later.
+  if (await callerHasWriteAll(teamId, userId, globalRole)) return 'WRITE';
+
+  const delegateCaps = await getDelegateCapabilities(projectId, userId);
+  if (delegateCaps.has('FULL')) return 'WRITE';
+
+  let access: ProjectAccessLevel = delegateCaps.size > 0 ? 'READ' : 'NONE';
+
+  // Note on the `read_all` "never escalates to WRITE" comment in the legacy
+  // path: that is true of this RUNG, not of the resolver's final value. A
+  // read_all holder who also holds a WRITE grant still ends up with WRITE, via
+  // maxAccess below. Both resolvers behave this way; it is not a divergence.
+  if (await callerHasReadAll(teamId, userId, globalRole)) {
+    access = maxAccess(access, 'READ');
+  }
+
+  if (scope === 'view' && (await callerHasProjectEdit(teamId, userId, globalRole))) {
+    access = maxAccess(access, 'READ');
+  }
+
+  const subjects = await resolveGrantSubjects(userId);
+  return maxAccess(access, await grantAccessForProject(projectId, subjects));
+}
+
+async function resolveProjectAccessLegacy(
+  projectId: string,
+  teamId: string,
+  userId: string,
+  globalRole: GlobalRole,
+  scope: ProjectAccessScope = 'nested',
+): Promise<ProjectAccessLevel> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: { teamId: true, ownerId: true },
@@ -317,6 +414,82 @@ export async function listEligibleTaskResponsibleCandidates(
   );
 }
 
+/**
+ * v2.6 (Phase 1C): the unit-scope condition.
+ *
+ * Layered ON TOP of eligibility, never instead of it. Eligibility answers "may
+ * this person hold a role on this project at all" (team member, granted group
+ * member, FULL-shared guest team). Scope answers "may THIS assigner give it to
+ * them". A user must pass both.
+ *
+ * Returns true (permit) when:
+ *   - the flag is off — the entire feature is inert
+ *   - the assigner holds `task.assign_any` — the manager tier, unrestricted
+ *   - assigner and target share a unit in this team
+ *   - the TARGET has no unit at all
+ *
+ * That last clause is the deliberate degradation, and it is the difference
+ * between a system that fails safe and one that fails useless. A person the
+ * directory sync could not place in a unit would otherwise be assignable by
+ * NOBODY — and the population most likely to lack a unit is exactly the field
+ * staff this programme exists to serve. Instead they stay assignable by
+ * `task.assign_any` holders and appear on the unit-coverage exception report.
+ *
+ * Note the asymmetry: an ASSIGNER with no unit can still only assign unitless
+ * targets, because the shared-unit test fails for everyone else. That is
+ * intentional — an unscoped assigner is not a super-user.
+ */
+export async function isWithinAssignmentScope(
+  teamId: string,
+  assignerUserId: string,
+  targetUserId: string,
+  assignerGlobalRole: GlobalRole,
+): Promise<boolean> {
+  if (!loadEnv().ACCESS_UNIT_SCOPE) return true;
+  if (assignerGlobalRole === 'ADMIN') return true;
+  if (assignerUserId === targetUserId) return true;
+
+  const membership = await prisma.teamMembership.findUnique({
+    where: { userId_teamId: { userId: assignerUserId, teamId } },
+  });
+  if (membership) {
+    const perms = await listMembershipPermissions(membership, assignerGlobalRole);
+    if (perms.has('*') || perms.has('task.assign_any')) return true;
+  }
+
+  // `isUnit`/`teamId` on UserGroupMember are denormalized and trigger-maintained
+  // (see the Phase 1A migration) precisely so this lookup is a single indexed
+  // read on a path that runs on every assignment.
+  const [assignerUnit, targetUnit] = await Promise.all([
+    prisma.userGroupMember.findFirst({
+      where: { userId: assignerUserId, teamId, isUnit: true, status: 'ACCEPTED' },
+      select: { groupId: true },
+    }),
+    prisma.userGroupMember.findFirst({
+      where: { userId: targetUserId, teamId, isUnit: true, status: 'ACCEPTED' },
+      select: { groupId: true },
+    }),
+  ]);
+
+  // Target has no unit — assignable only by task.assign_any holders, who
+  // already returned true above. Everyone else is refused here.
+  if (!targetUnit) return false;
+  if (!assignerUnit) return false;
+  return assignerUnit.groupId === targetUnit.groupId;
+}
+
+/** The unit a user belongs to in a team, or null. Used by the exception report. */
+export async function resolveUserUnit(
+  teamId: string,
+  userId: string,
+): Promise<{ groupId: string; role: 'MANAGER' | 'MEMBER' } | null> {
+  const row = await prisma.userGroupMember.findFirst({
+    where: { userId, teamId, isUnit: true, status: 'ACCEPTED' },
+    select: { groupId: true, role: true },
+  });
+  return row ? { groupId: row.groupId, role: row.role } : null;
+}
+
 export async function isUserEligibleTaskResponsible(
   teamId: string,
   projectId: string,
@@ -380,6 +553,24 @@ export async function projectListWhereForCaller(
   if (await callerHasWriteAll(teamId, userId, globalRole)) return { OR: [{ teamId }, sharedClause] };
   // v2.5.54: a project.read_all holder (PMO) sees every team project read-only.
   if (await callerHasReadAll(teamId, userId, globalRole)) return { OR: [{ teamId }, sharedClause] };
+
+  // v2.6 (Phase 2): the list filter MUST agree with resolveProjectAccess, or a
+  // project appears in the list and then 404s when opened (or worse, the
+  // reverse). Under `on` the grant table is the single source for both.
+  //
+  // `dual` uses the legacy filter, matching the resolver's dual behaviour —
+  // divergence is measured on the resolver, which is the authorization
+  // decision; the list is a projection of it.
+  if (loadEnv().ACCESS_UNIFIED_GRANTS === 'on') {
+    const subjects = await resolveGrantSubjects(userId);
+    const grantedIds = await grantedProjectIdsInTeam(teamId, subjects);
+    return {
+      OR: [
+        { teamId, ownerId: userId },
+        ...(grantedIds.length ? [{ id: { in: grantedIds } }] : []),
+      ],
+    };
+  }
 
   const groupIds = await groupGrantedProjectIdsInTeam(teamId, userId);
   return {

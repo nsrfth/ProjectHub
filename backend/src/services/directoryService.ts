@@ -31,6 +31,10 @@ export interface DirectoryView {
   groupMemberAttr: string;
   allowJIT: boolean;
   syncRolesFromGroups: boolean;
+  syncEnabled: boolean;
+  syncTrustMemberOf: boolean;
+  lastSyncAt: Date | null;
+  lastSyncStatus: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,6 +60,10 @@ function toView(d: Directory): DirectoryView {
     groupMemberAttr: d.groupMemberAttr,
     allowJIT: d.allowJIT,
     syncRolesFromGroups: d.syncRolesFromGroups,
+    syncEnabled: d.syncEnabled,
+    syncTrustMemberOf: d.syncTrustMemberOf,
+    lastSyncAt: d.lastSyncAt,
+    lastSyncStatus: d.lastSyncStatus,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   };
@@ -96,6 +104,8 @@ export class DirectoryService {
         groupMemberAttr: input.groupMemberAttr,
         allowJIT: input.allowJIT,
         syncRolesFromGroups: input.syncRolesFromGroups,
+        syncEnabled: input.syncEnabled,
+        syncTrustMemberOf: input.syncTrustMemberOf,
       },
     });
     return toView(row);
@@ -133,6 +143,8 @@ export class DirectoryService {
     if (input.groupMemberAttr !== undefined) data.groupMemberAttr = input.groupMemberAttr;
     if (input.allowJIT !== undefined) data.allowJIT = input.allowJIT;
     if (input.syncRolesFromGroups !== undefined) data.syncRolesFromGroups = input.syncRolesFromGroups;
+    if (input.syncEnabled !== undefined) data.syncEnabled = input.syncEnabled;
+    if (input.syncTrustMemberOf !== undefined) data.syncTrustMemberOf = input.syncTrustMemberOf;
 
     const row = await prisma.directory.update({ where: { id }, data });
     return toView(row);

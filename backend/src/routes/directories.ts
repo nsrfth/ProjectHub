@@ -3,10 +3,12 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { DirectoryService } from '../services/directoryService.js';
 import { LdapService } from '../services/ldapService.js';
+import { DirectorySyncService } from '../services/directorySyncService.js';
 import { ScimCredentialsService } from '../services/scimCredentialsService.js';
 import { DirectoriesController } from '../controllers/directoriesController.js';
 import { requireAuth, requireGlobalAdmin } from '../middleware/auth.js';
 import { requireScope } from '../middleware/requireScope.js';
+import { loadEnv } from '../config/env.js';
 import {
   directoryCreateBody,
   directoryUpdateBody,
@@ -15,6 +17,8 @@ import {
   directoryIdParams,
   directoryTestBody,
   directoryTestResponse,
+  directorySyncBody,
+  directorySyncResponse,
   groupMappingCreateBody,
   groupMappingResponse,
   groupMappingListResponse,
@@ -35,7 +39,8 @@ export async function directoriesRoutes(app: FastifyInstance): Promise<void> {
   const svc = new DirectoryService();
   const ldap = new LdapService();
   const scimCreds = new ScimCredentialsService();
-  const ctrl = new DirectoriesController(svc, ldap, scimCreds);
+  const sync = new DirectorySyncService(ldap, app.log);
+  const ctrl = new DirectoriesController(svc, ldap, scimCreds, sync, loadEnv());
   const r = app.withTypeProvider<ZodTypeProvider>();
 
   r.addHook('preHandler', requireAuth);
@@ -109,6 +114,21 @@ export async function directoriesRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.testConnection,
+  });
+
+  // v2.6 (Phase 0a). Body defaults dryRun=true, so the destructive form is
+  // always an explicit choice; DIRECTORY_SYNC_DRY_RUN=true overrides it back
+  // to observation mode regardless of what the caller asks for.
+  r.post('/:directoryId/sync', {
+    schema: {
+      tags: ['directories'],
+      summary: 'Run the directory sync now (dry run by default)',
+      params: directoryIdParams,
+      body: directorySyncBody,
+      response: { 200: directorySyncResponse },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.runSync,
   });
 
   r.get('/:directoryId/mappings', {

@@ -4,7 +4,10 @@ import { createDueDateScheduler } from './scheduler/dueDateScheduler.js';
 import { createWebhookDispatcher } from './scheduler/webhookDispatcher.js';
 import { createRecurrenceScheduler } from './scheduler/recurrenceScheduler.js';
 import { createBackupScheduler } from './scheduler/backupScheduler.js';
+import { createDirectorySyncScheduler } from './scheduler/directorySyncScheduler.js';
 import { BackupsService } from './services/backupsService.js';
+import { DirectorySyncService } from './services/directorySyncService.js';
+import { LdapService } from './services/ldapService.js';
 import { clearMaintenance } from './lib/maintenance.js';
 import { bootstrapSystemManagerOnAllTeams, bootstrapSystemUserFlag } from './lib/systemUser.js';
 
@@ -63,6 +66,25 @@ async function main(): Promise<void> {
     : null;
   backupScheduler?.start();
 
+  // v2.6 (Phase 0a): scheduled directory sync. Same opt-in shape; a directory
+  // must ALSO have syncEnabled set in Settings → Directories. Enable the env
+  // flag on exactly one node — the overlap guard is per-process.
+  const directorySyncScheduler = env.DIRECTORY_SYNC_ENABLED
+    ? createDirectorySyncScheduler({
+        service: new DirectorySyncService(new LdapService(), app.log),
+        intervalMin: env.DIRECTORY_SYNC_INTERVAL_MIN,
+        run: {
+          pageSize: env.DIRECTORY_SYNC_PAGE_SIZE,
+          maxUsers: env.DIRECTORY_SYNC_MAX_USERS,
+          timeoutSec: env.DIRECTORY_SYNC_TIMEOUT_SEC,
+          revokeGlobalRole: env.DIRECTORY_SYNC_REVOKE_GLOBAL_ROLE,
+          dryRun: env.DIRECTORY_SYNC_DRY_RUN,
+        },
+        logger: app.log,
+      })
+    : null;
+  directorySyncScheduler?.start();
+
   // v1.30.4 (S-5): plug real scheduler-stoppers + process.exit into the
   // app lifecycle so the backup-restore route can drain cleanly. Defaults
   // installed inside buildApp are no-ops — fine for tests, replaced here
@@ -72,6 +94,7 @@ async function main(): Promise<void> {
     webhookDispatcher?.stop();
     recurrenceScheduler?.stop();
     backupScheduler?.stop();
+    directorySyncScheduler?.stop();
   };
   app.lifecycle.processExit = (code) => process.exit(code);
 
@@ -82,6 +105,7 @@ async function main(): Promise<void> {
       webhookDispatcher?.stop();
       recurrenceScheduler?.stop();
       backupScheduler?.stop();
+      directorySyncScheduler?.stop();
       await app.close();
       process.exit(0);
     } catch (err) {

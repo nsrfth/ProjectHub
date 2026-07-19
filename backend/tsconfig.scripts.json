@@ -1,0 +1,16 @@
+{
+  // The main tsconfig sets rootDir: "src" and include: ["src/**/*.ts"], so
+  // standalone scripts under scripts/ are invisible to `npm run typecheck` and
+  // tsx runs them without any type checking at all.
+  //
+  // This config exists so report scripts are still type-checked in CI, under
+  // exactly the same strictness as src/ (strict + noUncheckedIndexedAccess).
+  // It emits nothing — these files are always run through tsx.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

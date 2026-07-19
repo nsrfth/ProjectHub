@@ -13,6 +13,128 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [Unreleased] — Phases 1 & 2, Access & Organization Redesign
+
+**Nothing in this entry is enabled by default.** Both phases ship behind flags that
+default off, and every schema change is additive. See the "Not yet wired" list — this is a
+partial landing, not a complete phase.
+
+### Added — Phase 1 (units, role tiers, assignment scoping)
+
+- **Units.** `UserGroup.kind` (`UNIT` | `COLLAB`, defaulting COLLAB so no existing group
+  changes meaning) and `UserGroupMember.role` (`MANAGER` | `MEMBER`). A UNIT is a section
+  inside a department: AD-synced, direct membership, exactly one per person per team.
+  - The one-unit rule is a **partial unique index**, not a service-layer check, so it holds
+    under concurrent writes. It needs `teamId`/`isUnit` denormalized onto the membership row
+    (a partial index cannot reference another table), and those columns are maintained by a
+    **database trigger** rather than by convention — a stale value here would be an
+    authorization bug, not a reporting glitch.
+- **Directory anchor for units** (decision D-3 = security groups): a nullable `userGroupId`
+  on the existing DN-keyed `DirectoryGroupMapping`. Security groups won D-3 precisely
+  because that table is already DN-keyed, so the anchor costs one column instead of a second
+  mapping table.
+- **`task.assign_any`** permission — the manager tier, and the escape hatch for people the
+  sync could not place in a unit.
+- **`npm run backfill:roles`** — the Phase 1B gate. Seeds system roles, points every null
+  `roleId` at the role matching its legacy enum, verifies zero remain. Writes a rollback
+  record **before** mutating, so `--rollback <file>` re-nulls exactly those rows and nothing
+  else. Dry run by default.
+
+### Fixed — Phase 1
+
+- **New permission keys no longer auto-grant to legacy managers.** `DEFAULT_MANAGER_PERMISSIONS`
+  was literally `PERMISSIONS`, so every key added anywhere in `lib/permissions.ts` was
+  instantly granted to every membership still on the legacy fallback path — and no edit to a
+  seeded role template could take it away. That is programme risk R-1, and it was not
+  hypothetical: `task.change_assignee` has existed since v1.23 with zero enforcement sites.
+  Keys introduced after the v1.23 RBAC migration are now excluded from the fallback set. The
+  1B backfill remains the real fix; this is the belt to that braces.
+
+### Added — Phase 2 (unified grants)
+
+- **`ProjectAccessGrant`** — one table replacing six overlapping access paths.
+  `USER | GROUP | TEAM | ORG_UNIT` × `READ | WRITE`, with status, expiry, grantor, source,
+  and a policy stamp for Phase 5. `ORG_UNIT` is declared now and resolves to no-access until
+  Phase 5; adding the enum value later would be a migration on live rows.
+- **`ACCESS_UNIFIED_GRANTS=off|dual|on`.** In `dual`, both resolvers run and the **legacy
+  answer is returned** — behaviour is bit-identical to `off`, so a bug in the new resolver
+  cannot lock anyone out while it is being measured. Disagreements are recorded as
+  `access.divergence` `SecurityAuditEvent` rows (queryable after the fact; log lines rotate
+  away, and this deployment has no log aggregation — risk R-4).
+- **`npm run backfill:grants`** — idempotent by construction via the unique index, so the
+  "completes idempotently twice" exit criterion is structural rather than aspirational.
+  Refuses to run in group-subject mode when a group holds **mixed** FULL/READONLY members,
+  because collapsing per-member levels onto a group-level grant would silently escalate the
+  READONLY ones; `--per-member` reproduces legacy exactly.
+- **`project.share`** permission, deliberately separate from `project.edit` — sharing a
+  project outward is a different act from renaming it.
+
+### Not yet wired (deliberate, and the phases are NOT complete)
+
+Landed as reviewable foundations. Still required before either phase can be called done:
+
+- Assignment scoping is implemented (`isWithinAssignmentScope`) but **not yet called** from
+  `tasksService` / `subtasksService`. Task-side assignee validation is greenfield; the
+  subtasks-only `assertAssigneeInTeam` is not yet unified onto the shared helper; subtask
+  self-service must be specified against **both** gates in `subtasksService.update()`.
+- The directory sync job does not yet evaluate the new `userGroupId` unit mapping.
+- No access-report CSV endpoint (the ISO A.5.18 artifact) and no unified Sharing panel UI —
+  the two disjoint surfaces are still in place.
+- Role-tier templates (Department manager / Supervisor / Specialist) are not seeded.
+
+## [2.6.0] — 2026-07-19 — Phase 0, Access & Organization Redesign
+
+Foundations for the access redesign programme. Nothing here is enabled by default; every
+new capability requires an explicit opt-in. See `docs/DIRECTORY_SYNC.md` and `docs/STAGING.md`.
+
+### ⚠️ Changed — breaking behaviour
+
+- **LDAP group-DN matching no longer ignores whitespace inside attribute values.**
+  `normalizeLdapDn` previously ran `.replace(/\s+/g, '')`, stripping **all** whitespace rather
+  than just the optional spaces around RDN separators. Two genuinely distinct groups therefore
+  normalised to the same key — `CN=Ops Team,…` and `CN=OpsTeam,…` both became `cn=opsteam,…` —
+  so a member of one matched a mapping for the other and was granted membership in the wrong
+  team. Only separators are normalised now.
+
+  **This affects login-time mapping, not just the new scheduled sync**, because
+  `authService.applyDirectoryGroups` shares the same helper. On any installation where an
+  admin's pasted mapping DN differed from Active Directory's only by intra-value whitespace,
+  that mapping was matching **incorrectly** and now stops matching — the affected users lose
+  the grant at their next login. That is the correction, but it is user-visible.
+
+  **Before upgrading**, run `cd backend && npm run report:directory-coverage`. It reports
+  `MAPPING_DN_COLLISION` for any mappings affected and tells you whether the corrected
+  normaliser separates them or they are genuine duplicates.
+
+### Added
+
+- **Scheduled directory sync (Phase 0a).** Evaluates `DirectoryGroupMapping` for *every* user
+  a directory reports, not only those who happen to sign in. Login-time mapping was the only
+  path before, so a user who had never logged in derived nothing from a mapping — and under the
+  unit-scoped assignment coming in Phase 1C, such a user cannot be assigned work at all.
+  Off by default: requires both `DIRECTORY_SYNC_ENABLED=true` (one node only) and
+  `Directory.syncEnabled` per directory.
+  - Paged LDAP enumeration (`LdapService.enumerateUsers`) — Active Directory truncates at
+    `MaxPageSize` (1000) without it, and a silently truncated sync looks like success while
+    omitting everyone past the cap.
+  - Conflicts are **reported errors, never silent picks** — a departure from the login path,
+    which resolves disagreements by precedence. Codes: `GLOBAL_ROLE_CONFLICT`,
+    `TEAM_ROLE_CONFLICT`, `MAPPING_TARGET_MISSING`, `MAPPING_DN_COLLISION`,
+    `MAPPING_DN_ESCAPED`, `IDENTITY_COLLISION`, `USER_MISSING_EMAIL`, `LAST_ADMIN_PROTECTED`.
+  - Optional global-role revocation (`DIRECTORY_SYNC_REVOKE_GLOBAL_ROLE`, **default off**),
+    closing a real gap where losing an admin group never demoted anyone. Guarded by a
+    last-admin interlock and suppressed entirely on any run that failed to see the whole
+    directory.
+  - Dry-run mode (`DIRECTORY_SYNC_DRY_RUN`) — full scan and conflict detection, zero writes.
+  - `POST /api/settings/directories/:id/sync` for an on-demand run; dry run by default.
+- **Pre-flight reports (Phase 0d).** `npm run report:role-coverage` (gates the Phase 1B
+  `roleId` backfill; exits non-zero while any membership sits on the legacy fallback path) and
+  `npm run report:directory-coverage` (mapping health, DN collisions, known population).
+- **End-to-end smoke harness (Phase 0b).** Playwright, five flows, in `e2e/`. Gates the
+  Phase 2 access-resolver flag transitions. Adds the first `data-testid` hooks to the frontend.
+- **Staging overlay (Phase 0c).** `docker-compose.staging.yml` plus a runbook covering the
+  production-snapshot restore and sanitisation that Phase 2's backfill rehearsal depends on.
+
 ## [2.5.59] — 2026-07-18
 
 **Year timeline: calendar-aware month axis + green progress overlay.**

@@ -74,11 +74,19 @@ export default function ProjectListRow({
   const fmt = (s: string | null): string => formatBudget(s, project.budgetCurrency, locale);
 
   return (
-    <li className="py-3">
+    // data-testid + data-project-id (v2.6, Phase 0b): the e2e smoke suite needs
+    // to target a SPECIFIC project. Nothing else in this row carries the id,
+    // and every other hook here is either an i18n string or a Tailwind class.
+    <li className="py-3" data-testid="project-row" data-project-id={project.id}>
       <div className="flex items-start justify-between gap-4">
         <div className="text-start min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <button type="button" onClick={onOpen} className="font-medium truncate hover:underline">
+            <button
+              type="button"
+              onClick={onOpen}
+              data-testid="project-open"
+              className="font-medium truncate hover:underline"
+            >
               {project.name}
             </button>
             {project.code && (

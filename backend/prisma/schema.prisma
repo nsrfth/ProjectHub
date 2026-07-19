@@ -305,6 +305,21 @@ model Directory {
   allowJIT          Boolean @default(true)
   // Roll group memberships into TaskHub roles on every login.
   syncRolesFromGroups Boolean @default(false)
+  // v2.6 (Phase 0a): scheduled directory sync. DELIBERATELY separate from
+  // syncRolesFromGroups, which gates login-time mapping only. Overloading that
+  // flag would silently start a nightly directory walk on every install that
+  // had enabled login-time mapping — a behaviour change on upgrade.
+  // A directory can be sync-enabled without changing login behaviour, and the
+  // reverse. See docs/DIRECTORY_SYNC.md §9.
+  syncEnabled       Boolean @default(false)
+  // Skip pass 2 (per-mapped-group member expansion) when memberOf is known to
+  // be reliable — true on Active Directory, false on OpenLDAP without the
+  // memberof overlay. Defaults false: a missing group is an under-grant, and
+  // under-grants are exactly what blocks assignment.
+  syncTrustMemberOf Boolean @default(false)
+  lastSyncAt        DateTime?
+  lastSyncStatus    String?   // 'OK' | 'ABORTED' | 'SKIPPED'
+  lastSyncSummary   Json?     // DirectorySyncDirectoryResult, for the admin UI
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -366,11 +381,28 @@ model DirectoryGroupMapping {
   roleId          String?
   role            Role?      @relation(fields: [roleId], references: [id], onDelete: SetNull)
 
+  // v2.6 (Phase 1A), decision D-3 = security groups.
+  //
+  // D-3 asked what AD anchors unit membership to: security groups, OU DNs, or
+  // user attributes. Security groups won because this table is ALREADY
+  // DN-keyed — so the anchor needs one nullable column here rather than a
+  // separate mapping table with its own sync semantics. The OU/attribute
+  // options would each have required that second table.
+  //
+  // Null on every existing row: a mapping that grants team membership but no
+  // unit is still perfectly valid, and that is what all of them are today.
+  // SetNull on group delete, matching `roleId` above — removing a unit
+  // degrades the mapping to "team membership only" rather than cascading it
+  // away and silently dropping the team grant too.
+  userGroupId     String?
+  userGroup       UserGroup? @relation(fields: [userGroupId], references: [id], onDelete: SetNull)
+
   directory       Directory  @relation(fields: [directoryId], references: [id], onDelete: Cascade)
 
   @@unique([directoryId, externalGroupDn])
   @@index([directoryId])
   @@index([roleId])
+  @@index([userGroupId])
 }
 
 model User {
@@ -438,6 +470,9 @@ model User {
   @@index([directoryId])
 
   memberships    TeamMembership[]
+  // v2.6 (Phase 2): grants this user issued (audit trail, not grants they hold —
+  // those are found by subjectId, which is polymorphic and therefore unrelated).
+  issuedProjectGrants ProjectAccessGrant[] @relation("ProjectGrantsIssued")
   ownedProjects  Project[]        @relation("ProjectOwner")
   accountableForProjects Project[] @relation("ProjectAccountable")
   managedOrgUnits OrgUnit[]       @relation("OrgUnitManager")
@@ -807,6 +842,10 @@ model Project {
   accountable   User?         @relation("ProjectAccountable", fields: [accountableId], references: [id], onDelete: SetNull)
   tasks         Task[]
   groupGrants   ProjectGroupGrant[]
+  // v2.6 (Phase 2): the unified grant table. Coexists with groupGrants /
+  // teamShares below for the whole dual-read period — those stay authoritative
+  // until the flag reaches `on`, and are only dropped in Phase 6.
+  accessGrants  ProjectAccessGrant[]
   // v2.5.58: whole-team shares (guest teams this project is mounted into).
   teamShares    ProjectTeamShare[]
   editDelegates ProjectEditDelegate[]
@@ -1086,11 +1125,37 @@ model TeamOrgUnit {
 
 // v1.50 / v1.51: team-scoped user groups for granting project access without
 // changing project ownership. v1.51 adds cross-team invites + access levels.
+// v2.6 (Phase 1A): groups now carry a `kind`.
+//
+//   COLLAB — the shipped behaviour, unchanged. Invitation-based, cross-team
+//            members allowed, carries project grants. Every dotted line.
+//   UNIT   — a section inside a department. AD-synced, direct membership (no
+//            invitations), accessLevel pinned FULL, exactly ONE per person per
+//            team. The smallest box whose manager assigns daily work.
+//
+// Default COLLAB so the migration needs zero backfill and every existing group
+// keeps its exact semantics.
+enum UserGroupKind {
+  UNIT
+  COLLAB
+}
+
+// v2.6 (Phase 1A): a member's standing WITHIN the group. Distinct from
+// `accessLevel` (which is about project access) and from TeamRole (which is
+// about the department). A UNIT's MANAGER is the supervisor who accepts unit
+// participation in projects (Phase 3) and assigns work inside the unit.
+enum GroupRole {
+  MANAGER
+  MEMBER
+}
+
 model UserGroup {
   id          String   @id @default(cuid())
   teamId      String
   name        String
   description String?
+  // v2.6 (Phase 1A). See UserGroupKind.
+  kind        UserGroupKind @default(COLLAB)
   // v1.98 (PMIS R2): optional per-group default project profile — the highest-
   // priority defaulting carrier (group ▸ team ▸ system NEUTRAL) the project-
   // create picker pre-fills from. SetNull so deleting the profile just clears
@@ -1103,6 +1168,9 @@ model UserGroup {
   members  UserGroupMember[]
   grants   ProjectGroupGrant[]
   defaultProfile ProjectProfile? @relation("GroupDefaultProfile", fields: [defaultProfileId], references: [id], onDelete: SetNull)
+  // v2.6 (Phase 1A, D-3): directory mappings that place people into this group.
+  // Only meaningful for kind = UNIT; a COLLAB group is invitation-based.
+  directoryMappings DirectoryGroupMapping[]
 
   @@unique([teamId, name])
   @@index([teamId])
@@ -1118,6 +1186,26 @@ model UserGroupMember {
   invitedAt   DateTime          @default(now())
   respondedAt DateTime?
   external    Boolean           @default(false)
+  // v2.6 (Phase 1A): standing within the group. See GroupRole.
+  role        GroupRole         @default(MEMBER)
+
+  // v2.6 (Phase 1A): DENORMALIZED from the parent group, and denormalized for
+  // exactly one reason — the single-unit-per-person rule.
+  //
+  // That rule is "at most one UNIT membership per (user, team)". Enforcing it
+  // in Postgres needs a partial unique index on (userId, teamId), but teamId
+  // lives on UserGroup, and a partial index cannot reference another table.
+  // There is no expression-join escape hatch. So the column is carried here.
+  //
+  // `isUnit` is likewise denormalized from UserGroup.kind, because the index
+  // predicate cannot join either.
+  //
+  // Both are maintained by a trigger (see the migration) rather than by service
+  // discipline: a denormalized column kept correct "by convention" is one
+  // forgotten code path away from letting a person hold two units, which is the
+  // exact thing the constraint exists to prevent.
+  teamId      String?
+  isUnit      Boolean           @default(false)
 
   group     UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1126,6 +1214,86 @@ model UserGroupMember {
   @@unique([groupId, userId])
   @@index([userId, status])
   @@index([groupId])
+  // The partial unique index that actually enforces one-unit-per-person is
+  // raw SQL in the migration — Prisma cannot express a WHERE clause on an
+  // index. This plain index supports the lookups that back it.
+  @@index([userId, teamId, isUnit])
+}
+
+// v2.6 (Phase 2): the ONE grant table.
+//
+// Replaces six overlapping access paths with a single auditable record:
+// ProjectGroupGrant, ProjectTeamShare, and the delegate *access* rung all
+// collapse into rows here. Delegate *capabilities* (ProjectEditDelegate.
+// capabilities) stay a separate concern — they are about which fields a person
+// may edit, not whether they can reach the project at all.
+//
+// One table means one sharing panel, one audit export (ISO 27001 A.5.18), and
+// one place to reason about who can see a project. Today that reasoning is
+// spread across resolveProjectAccess plus three list-filter helpers that must
+// be kept manually in agreement — a class of bug this removes rather than
+// documents.
+//
+// ORG_UNIT is declared now but not resolved until Phase 5. Adding the enum
+// value later would be a migration on live rows; adding it now is free.
+enum ProjectGrantSubject {
+  USER
+  GROUP
+  TEAM
+  ORG_UNIT
+}
+
+enum ProjectGrantLevel {
+  READ
+  WRITE
+}
+
+// PENDING/DECLINED are declared now, used in Phase 3. Phase 2 writes ACTIVE
+// only, so the flag transition changes no user-visible consent behaviour.
+enum ProjectGrantStatus {
+  PENDING
+  ACTIVE
+  DECLINED
+}
+
+model ProjectAccessGrant {
+  id          String              @id @default(cuid())
+  projectId   String
+  subjectType ProjectGrantSubject
+  // Polymorphic: a User.id, UserGroup.id, Team.id, or OrgUnit.id depending on
+  // subjectType. Deliberately NOT four nullable FK columns — that shape makes
+  // "exactly one is set" a check constraint nobody maintains, and makes every
+  // query a four-way coalesce. The cost is no referential integrity, so the
+  // resolver treats an unresolvable subject as no-access and the access report
+  // surfaces it (same posture as DirectoryGroupMapping.teamId today).
+  subjectId   String
+  level       ProjectGrantLevel
+  status      ProjectGrantStatus  @default(ACTIVE)
+
+  // Audit trail. `grantedById` is the human who did it — null for rows the
+  // Phase 2 backfill created, which is exactly how you tell them apart.
+  grantedById String?
+  grantedAt   DateTime            @default(now())
+  // Free-text provenance for backfilled rows ('backfill:group', 'backfill:team',
+  // 'backfill:delegate') and, from Phase 5, 'policy'.
+  source      String?
+  // Phase 5 stamps the OrgUnitGrantPolicy that materialized this row, so a bad
+  // policy can be bulk-revoked. Deleting a policy never revokes retroactively.
+  sourcePolicyId String?
+  // Null = never expires. Checked by the resolver, not by a cleanup job — an
+  // expired grant must stop working immediately, not at the next sweep.
+  expiresAt   DateTime?
+
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  grantedBy   User?               @relation("ProjectGrantsIssued", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  // One grant per (project, subject, level). Two levels for the same subject
+  // is legal and resolves to the higher — simpler than a partial index, and it
+  // makes "upgrade READ to WRITE" an insert rather than an update race.
+  @@unique([projectId, subjectType, subjectId, level])
+  @@index([projectId, status])
+  @@index([subjectType, subjectId, status])
+  @@index([sourcePolicyId])
 }
 
 model ProjectGroupGrant {
