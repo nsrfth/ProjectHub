@@ -13,6 +13,13 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.15.1] — 2026-07-19 — Department manager label + localized tier options
+
+The department head is now labelled **Manager / «مدیر»** (was Director / «مدیرکل») across
+the badge, picker, and hint texts. The member tier select shows localized labels —
+**Supervisor / Expert-Specialist** in EN, «سرپرست / کارشناس» in FA — instead of raw
+database role names (resolution by name is unchanged).
+
 ## [2.15.0] — 2026-07-19 — Full division removal restored (owned-projects blockers)
 
 Closes the last v2.12.0 trade-off. Department member rows gain **«حذف از معاونت»**

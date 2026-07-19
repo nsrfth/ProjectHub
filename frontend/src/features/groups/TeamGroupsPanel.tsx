@@ -402,12 +402,8 @@ function GroupEditor({
                             {roster?.roleName ?? '—'}
                           </option>
                         )}
-                        <option value={supervisorId}>
-                          {divisionRoles.find((r) => r.id === supervisorId)?.name}
-                        </option>
-                        <option value={specialistId}>
-                          {divisionRoles.find((r) => r.id === specialistId)?.name}
-                        </option>
+                        <option value={supervisorId}>{t('units.tier.supervisor')}</option>
+                        <option value={specialistId}>{t('units.tier.specialist')}</option>
                       </select>
                     );
                   })()
