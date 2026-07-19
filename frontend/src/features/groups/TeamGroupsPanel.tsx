@@ -74,7 +74,7 @@ export default function TeamGroupsPanel({
   const { data: searchHits = [] } = useQuery({
     queryKey: ['groups', teamId, 'user-search', userQuery],
     queryFn: () => groupsApi.searchUsers(teamId, userQuery),
-    enabled: !isUnit && userQuery.trim().length >= 2,
+    enabled: userQuery.trim().length >= 2,
   });
 
   const invalidate = async (): Promise<void> => {
@@ -372,10 +372,10 @@ function GroupEditor({
           </div>
         )}
 
-        {/* Units are department rosters: team members only, no cross-team
-            invitations — the whole search-and-invite flow is COLLAB-only. */}
-        {!isUnit && (
-          <div>
+        {/* v2.12: departments search ALL users — adding a non-member
+            auto-joins them to the division server-side. COLLAB groups keep
+            the invite semantics (out-of-division hits become invitations). */}
+        <div>
             <p className="text-xs text-slate-500 mb-1">{t('groups.searchUsers')}</p>
             <input
               type="search"
@@ -384,14 +384,16 @@ function GroupEditor({
               placeholder={t('groups.searchUsersPlaceholder')}
               className="w-full rounded border px-2 py-1 text-xs bg-surface mb-1"
             />
-            <select
-              value={addAccess}
-              onChange={(e) => setAddAccess(e.target.value as groupsApi.GroupAccessLevel)}
-              className="rounded border px-1 py-0.5 text-xs bg-surface mb-1"
-            >
-              <option value="FULL">{t('groups.accessLevel.full')}</option>
-              <option value="READONLY">{t('groups.accessLevel.readonly')}</option>
-            </select>
+            {!isUnit && (
+              <select
+                value={addAccess}
+                onChange={(e) => setAddAccess(e.target.value as groupsApi.GroupAccessLevel)}
+                className="rounded border px-1 py-0.5 text-xs bg-surface mb-1"
+              >
+                <option value="FULL">{t('groups.accessLevel.full')}</option>
+                <option value="READONLY">{t('groups.accessLevel.readonly')}</option>
+              </select>
+            )}
             <ul className="max-h-24 overflow-y-auto space-y-1">
               {searchHits
                 .filter((u) => !memberIds.has(u.id))
@@ -410,8 +412,7 @@ function GroupEditor({
                   </li>
                 ))}
             </ul>
-          </div>
-        )}
+        </div>
       </div>
 
       <div>
