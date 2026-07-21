@@ -8,6 +8,7 @@ import type {
   ListUsersQuery,
   LdapTestAuthBody,
   SetUserDisabledBody,
+  TransferDepartmentBody,
   UpdateUserProfileBody,
 } from '../schemas/admin.js';
 import { Errors } from '../lib/errors.js';
@@ -153,5 +154,27 @@ export class AdminController {
     if (!req.user) throw Errors.unauthorized();
     const updated = await this.svc.updateUserProfile(req.user.sub, req.params.userId, req.body);
     return reply.send(serializeUser(updated));
+  };
+
+  // v2.19: project ↔ department administration.
+  listDepartments = async (_req: FastifyRequest, reply: FastifyReply) => {
+    return reply.send(await this.svc.listDepartments());
+  };
+
+  listProjectDepartments = async (_req: FastifyRequest, reply: FastifyReply) => {
+    return reply.send(await this.svc.listProjectDepartments());
+  };
+
+  transferProjectDepartment = async (
+    req: FastifyRequest<{ Params: { projectId: string }; Body: TransferDepartmentBody }>,
+    reply: FastifyReply,
+  ) => {
+    if (!req.user) throw Errors.unauthorized();
+    const result = await this.svc.transferProjectDepartment(
+      req.user.sub,
+      req.params.projectId,
+      req.body.toGroupId,
+    );
+    return reply.send(result);
   };
 }

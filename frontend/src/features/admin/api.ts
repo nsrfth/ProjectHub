@@ -164,3 +164,48 @@ export async function updateUserProfile(
 ): Promise<AdminUser> {
   return (await api.patch<AdminUser>(`/admin/users/${userId}/profile`, input)).data;
 }
+
+// v2.19: project ↔ department administration.
+export interface AdminDepartment {
+  id: string;
+  name: string;
+  teamId: string;
+  teamName: string;
+  memberCount: number;
+}
+
+export interface AdminProjectDepartment {
+  projectId: string;
+  projectName: string;
+  teamId: string;
+  teamName: string;
+  department: { id: string; name: string } | null;
+}
+
+export interface TransferDepartmentResult {
+  projectId: string;
+  projectName: string;
+  from: { id: string; name: string } | null;
+  to: { id: string; name: string };
+  grantsMoved: number;
+}
+
+export async function listDepartments(): Promise<AdminDepartment[]> {
+  return (await api.get<AdminDepartment[]>('/admin/departments')).data;
+}
+
+export async function listProjectDepartments(): Promise<AdminProjectDepartment[]> {
+  return (await api.get<AdminProjectDepartment[]>('/admin/project-departments')).data;
+}
+
+export async function transferProjectDepartment(
+  projectId: string,
+  toGroupId: string,
+): Promise<TransferDepartmentResult> {
+  return (
+    await api.post<TransferDepartmentResult>(
+      `/admin/projects/${projectId}/transfer-department`,
+      { toGroupId },
+    )
+  ).data;
+}

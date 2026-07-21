@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useAuth } from '@/features/auth/AuthContext';
 import * as adminApi from '@/features/admin/api';
 import AdminUsersPanel, { useInvalidateAdminUsers } from '@/features/admin/AdminUsersPanel';
+import DepartmentTransferPanel from '@/features/admin/DepartmentTransferPanel';
 import { formatShamsiTimestampDate } from '@/lib/shamsi';
 import { PasswordPolicyHints, PasswordStrengthIndicator } from '@/features/security/PasswordStrength';
 import { useT } from '@/lib/i18n';
@@ -194,6 +195,8 @@ export default function AdminPage(): JSX.Element {
       </section>
 
       <AdminUsersPanel />
+
+      <DepartmentTransferPanel />
 
       <section className="bg-surface rounded shadow p-4">
         <h2 className="font-medium mb-3">Teams</h2>

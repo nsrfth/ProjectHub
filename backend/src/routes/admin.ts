@@ -25,6 +25,10 @@ import {
   updateUserProfileBody,
   updateUserRoleBody,
   usersPage,
+  departmentsList,
+  projectDepartmentsList,
+  transferDepartmentBody,
+  transferDepartmentResult,
 } from '../schemas/admin.js';
 
 // Admin endpoints are gated by GlobalRole=ADMIN. There is no team-level RBAC
@@ -264,6 +268,42 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: ctrl.deleteUser,
+  });
+
+  // v2.19: project ↔ department administration. A project's "department" is its
+  // GROUP-subject ProjectAccessGrant whose group is a UNIT; transferring creates
+  // the target department's grant (imposed ACTIVE for an admin) and revokes the
+  // prior one, dual-writing the legacy row throughout. Tenancy is unchanged.
+  r.get('/departments', {
+    schema: {
+      tags: ['admin'],
+      summary: 'List all departments (UNIT user-groups) across divisions (ADMIN only)',
+      response: { 200: departmentsList },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.listDepartments,
+  });
+
+  r.get('/project-departments', {
+    schema: {
+      tags: ['admin'],
+      summary: 'List every project with its current department (ADMIN only)',
+      response: { 200: projectDepartmentsList },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.listProjectDepartments,
+  });
+
+  r.post('/projects/:projectId/transfer-department', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Transfer a project to a different department (ADMIN only)',
+      params: z.object({ projectId: z.string() }),
+      body: transferDepartmentBody,
+      response: { 200: transferDepartmentResult },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: ctrl.transferProjectDepartment,
   });
 
   // v1.22: trigger an in-app self-upgrade. Disabled (503) when UPDATER_URL is

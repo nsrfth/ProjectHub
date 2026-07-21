@@ -580,4 +580,154 @@ export class AdminService {
     // Global admin may force-delete teams that still have projects/tasks.
     await teams.delete(teamId, actorId, { force: true });
   }
+
+  // --- v2.19: project ↔ department administration -----------------------------
+
+  // Every UNIT department across all divisions (there is no global list route
+  // for these otherwise — the per-team groups endpoint is member-scoped).
+  async listDepartments(): Promise<
+    { id: string; name: string; teamId: string; teamName: string; memberCount: number }[]
+  > {
+    const rows = await prisma.userGroup.findMany({
+      where: { kind: 'UNIT' },
+      select: {
+        id: true,
+        name: true,
+        teamId: true,
+        team: { select: { name: true } },
+        _count: { select: { members: true } },
+      },
+      orderBy: [{ team: { name: 'asc' } }, { name: 'asc' }],
+    });
+    return rows.map((g) => ({
+      id: g.id,
+      name: g.name,
+      teamId: g.teamId,
+      teamName: g.team.name,
+      memberCount: g._count.members,
+    }));
+  }
+
+  // Every project with the department that currently holds it (its ACTIVE
+  // GROUP-subject grant whose group is a UNIT). Powers the admin transfer picker
+  // in one round-trip instead of a grants call per project.
+  async listProjectDepartments(): Promise<
+    {
+      projectId: string;
+      projectName: string;
+      teamId: string;
+      teamName: string;
+      department: { id: string; name: string } | null;
+    }[]
+  > {
+    const projects = await prisma.project.findMany({
+      select: {
+        id: true,
+        name: true,
+        teamId: true,
+        team: { select: { name: true } },
+        accessGrants: {
+          where: { subjectType: 'GROUP', status: 'ACTIVE' },
+          select: { subjectId: true },
+        },
+      },
+      orderBy: [{ team: { name: 'asc' } }, { name: 'asc' }],
+    });
+    const groupIds = [...new Set(projects.flatMap((p) => p.accessGrants.map((g) => g.subjectId)))];
+    const units = groupIds.length
+      ? await prisma.userGroup.findMany({
+          where: { id: { in: groupIds }, kind: 'UNIT' },
+          select: { id: true, name: true },
+        })
+      : [];
+    const unitById = new Map(units.map((u) => [u.id, u.name] as const));
+    return projects.map((p) => {
+      const deptGrant = p.accessGrants.find((g) => unitById.has(g.subjectId));
+      return {
+        projectId: p.id,
+        projectName: p.name,
+        teamId: p.teamId,
+        teamName: p.team.name,
+        department: deptGrant
+          ? { id: deptGrant.subjectId, name: unitById.get(deptGrant.subjectId)! }
+          : null,
+      };
+    });
+  }
+
+  // Move a project from its current department to `toGroupId`. Reuses the grant
+  // service so the new grant is imposed-ACTIVE (admin) with the legacy row
+  // dual-written, then revokes the prior department grant(s). Create-before-
+  // revoke: a mid-op failure leaves an extra grant, never a project with none.
+  // Tenancy (Project.teamId) is unchanged — only which department has access.
+  async transferProjectDepartment(
+    actorId: string,
+    projectId: string,
+    toGroupId: string,
+  ): Promise<{
+    projectId: string;
+    projectName: string;
+    from: { id: string; name: string } | null;
+    to: { id: string; name: string };
+    grantsMoved: number;
+  }> {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true, teamId: true },
+    });
+    if (!project) throw Errors.notFound('Project not found');
+    const target = await prisma.userGroup.findUnique({
+      where: { id: toGroupId },
+      select: { id: true, name: true, kind: true },
+    });
+    if (!target || target.kind !== 'UNIT') {
+      throw Errors.badRequest('Target must be a department (UNIT group)');
+    }
+
+    // ACTIVE only — matches how listProjectDepartments defines "current
+    // department", so `from`, `level`, and `grantsMoved` all reason over the
+    // same set the picker showed (a stale PENDING/DECLINED unit grant is ignored).
+    const groupGrants = await prisma.projectAccessGrant.findMany({
+      where: { projectId, subjectType: 'GROUP', status: 'ACTIVE' },
+      select: { id: true, subjectId: true, level: true },
+    });
+    const unitGroups = groupGrants.length
+      ? await prisma.userGroup.findMany({
+          where: { id: { in: groupGrants.map((g) => g.subjectId) }, kind: 'UNIT' },
+          select: { id: true, name: true },
+        })
+      : [];
+    const unitNameById = new Map(unitGroups.map((u) => [u.id, u.name] as const));
+    // Prior UNIT department grant(s) — exclude the target so re-running is a no-op.
+    const currentUnitGrants = groupGrants.filter(
+      (g) => unitNameById.has(g.subjectId) && g.subjectId !== toGroupId,
+    );
+    const level = currentUnitGrants[0]?.level ?? 'WRITE';
+
+    const { ProjectGrantsService } = await import('./projectGrantsService.js');
+    const grants = new ProjectGrantsService();
+    await grants.create(project.teamId, projectId, actorId, 'ADMIN', {
+      subjectType: 'GROUP',
+      subjectId: toGroupId,
+      level,
+    });
+    for (const g of currentUnitGrants) {
+      await grants.revoke(project.teamId, projectId, g.id, actorId, 'ADMIN');
+    }
+    await logActivity(prisma, {
+      actorId,
+      teamId: project.teamId,
+      action: 'project.department_transferred',
+      meta: { projectId, from: currentUnitGrants.map((g) => g.subjectId), to: toGroupId },
+    });
+
+    const from = currentUnitGrants[0];
+    return {
+      projectId: project.id,
+      projectName: project.name,
+      from: from ? { id: from.subjectId, name: unitNameById.get(from.subjectId)! } : null,
+      to: { id: target.id, name: target.name },
+      grantsMoved: currentUnitGrants.length,
+    };
+  }
 }

@@ -13,6 +13,21 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.19.0] — 2026-07-21 — Transfer a project between departments (admin)
+
+### Added
+- **Settings → Admin → "Transfer project between departments".** A global admin can move a
+  project from one department (UNIT user-group) to another. The tool lists every project with
+  its current department and a target-department picker; applying a transfer **creates the target
+  department's access grant (imposed ACTIVE) and revokes the prior one**, dual-writing the legacy
+  row throughout so it behaves identically under `ACCESS_UNIFIED_GRANTS=dual` and `on`. The
+  project's home division (tenancy, `Project.teamId`) is unchanged — only which department has
+  access moves (moving the division itself remains the unsupported re-parenting operation).
+- New ADMIN-gated endpoints: `GET /api/admin/departments`, `GET /api/admin/project-departments`,
+  `POST /api/admin/projects/:projectId/transfer-department`. `AdminService.transferProjectDepartment`
+  reuses `ProjectGrantsService` (create-before-revoke, so a mid-op failure leaves an extra grant,
+  never a project with none). EN+FA strings; happy-path + not-a-UNIT (400) + non-admin (403) tests.
+
 ## [2.18.0] — 2026-07-19 — Security hardening & correctness pass
 
 A pre-internet-exposure review sweep. **Security:** webhook delivery no longer follows

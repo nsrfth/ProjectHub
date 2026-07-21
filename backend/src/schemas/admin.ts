@@ -151,3 +151,36 @@ export const updateUserProfileBody = z.object({
 });
 
 export type UpdateUserProfileBody = z.infer<typeof updateUserProfileBody>;
+
+// v2.19: department administration (Settings → Admin). A project's "department"
+// is a ProjectAccessGrant with subjectType=GROUP whose group is a UNIT.
+export const departmentRow = z.object({
+  id: z.string(),
+  name: z.string(),
+  teamId: z.string(),
+  teamName: z.string(),
+  memberCount: z.number().int().nonnegative(),
+});
+export const departmentsList = z.array(departmentRow);
+
+export const projectDepartmentRow = z.object({
+  projectId: z.string(),
+  projectName: z.string(),
+  teamId: z.string(),
+  teamName: z.string(),
+  department: z.object({ id: z.string(), name: z.string() }).nullable(),
+});
+export const projectDepartmentsList = z.array(projectDepartmentRow);
+
+export const transferDepartmentBody = z.object({
+  toGroupId: z.string().min(1),
+});
+export type TransferDepartmentBody = z.infer<typeof transferDepartmentBody>;
+
+export const transferDepartmentResult = z.object({
+  projectId: z.string(),
+  projectName: z.string(),
+  from: z.object({ id: z.string(), name: z.string() }).nullable(),
+  to: z.object({ id: z.string(), name: z.string() }),
+  grantsMoved: z.number().int().nonnegative(),
+});
