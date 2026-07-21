@@ -141,11 +141,25 @@ link is an **access grant**. So "move to a department" = **grant the department 
    **and** a clean end-of-soak sweep.
 
 ### Phase 3 — Grant departments access to their projects (I-3)
-Resolve **D2** first.
+> **I-7 (CRITICAL — cross-team department grants are UNIFIED-ONLY; proven on LAN 2026-07-21).**
+> Departments live under the `Technology` division but the projects live under DataCenter / Network /
+> Security / CS-SBC teams — so every Phase-3 grant is **cross-team**. The legacy resolver
+> `groupAccessForProject` ([projectAccess.ts:107](../backend/src/lib/projectAccess.ts)) requires
+> `group.teamId == project.teamId`, so **legacy structurally ignores cross-team group grants** even
+> though `writeLegacyRow` dutifully wrote the `ProjectGroupGrant` row. Consequences:
+> 1. The claim "the `dual` resolver grants access" below is **FALSE for cross-team depts** — in
+>    `dual`, department members do **not** get their department access; it only activates at `on`.
+> 2. After Phase 3 the active sweep **WILL diverge** — every department member shows
+>    `unified_more_permissive` on their department's projects. **This is expected, not a failure.**
+> 3. So the Phase-4 gate is **NOT** "zero divergence." It is: **every divergence is an intended
+>    department-member escalation onto that department's own projects, AND there are zero lockouts
+>    (zero `<`/legacy-only lines).** Verify that, then flip. (On LAN: 25 escalations, all intended,
+>    0 lockouts → flipped cleanly.)
 - **D2 = OFF (default):** leave `ACCESS_GRANT_CONSENT=false`. Admin issues each department a grant on
   its projects → created **ACTIVE**, the legacy `ProjectGroupGrant` row is dual-written
-  (`projectGrantsService.ts:252` → `writeLegacyRow`), and the `dual` (legacy-authoritative) resolver
-  grants access. **No manager-acceptance step.**
+  (`projectGrantsService.ts:252` → `writeLegacyRow`). Access **only resolves once
+  `ACCESS_UNIFIED_GRANTS=on`** (see I-7 — the `dual` resolver can't read cross-team group grants).
+  **No manager-acceptance step.**
 - **D2 = ON:** set `ACCESS_GRANT_CONSENT=true` **before** issuing; ensure each department has a
   `MANAGER` with membership `status='ACCEPTED'` (else the grant is unapprovable and the service
   throws); issue grants as a **non-admin** (the admin path is always imposed/ACTIVE). Managers accept
@@ -159,7 +173,9 @@ Sequence (either branch):
 - **D3:** `ACCESS_UNIT_SCOPE` stays deferred.
 
 ### Phase 4 — Make unified authoritative
-- Precondition: clean dual soak **and** clean active sweep (Phase 2 exit met).
+- Precondition: the Phase-2 clean soak/sweep was met **before** Phase 3. Post-Phase-3 the sweep
+  diverges by design (I-7) — re-verify per I-7 (all divergences = intended dept escalations, zero
+  lockouts) immediately before flipping, NOT "zero divergence".
 - Set `ACCESS_UNIFIED_GRANTS=on`; restart; verify. Legacy tables still written → `off` is an instant
   rollback. Do **not** drop legacy tables.
 - Enabling `ACCESS_GRANT_CONSENT` now affects only **future** grants, not the Phase-3 grants.
