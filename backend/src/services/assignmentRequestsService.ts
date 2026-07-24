@@ -368,6 +368,8 @@ export class AssignmentRequestsService {
           requestId: r.id, taskId: r.taskId, decision: 'expired',
         });
         await this.audit('assignment.expired', r, null);
+        // Escalation (P4): tell the requester's department manager it lapsed.
+        await this.escalateExpiry(r);
         expired += 1;
       } catch {
         // best-effort per row
@@ -418,6 +420,33 @@ export class AssignmentRequestsService {
   }
 
   // --- internals ----------------------------------------------------------
+
+  /**
+   * v-next (P4): escalation. When a request expires, notify the requester's own
+   * department manager(s) so an unanswered ask doesn't just vanish. Best-effort.
+   */
+  private async escalateExpiry(r: {
+    id: string;
+    requesterId: string;
+    teamId: string;
+    taskId: string;
+  }): Promise<void> {
+    const unit = await prisma.userGroupMember.findFirst({
+      where: { userId: r.requesterId, isUnit: true, status: 'ACCEPTED' },
+      select: { groupId: true },
+    });
+    if (!unit) return;
+    const managers = await prisma.userGroupMember.findMany({
+      where: { groupId: unit.groupId, role: 'MANAGER', status: 'ACCEPTED' },
+      select: { userId: true },
+    });
+    for (const m of managers) {
+      if (m.userId === r.requesterId) continue;
+      await notify(m.userId, r.teamId, 'ASSIGNMENT_DECIDED', {
+        requestId: r.id, taskId: r.taskId, decision: 'expired_escalation',
+      });
+    }
+  }
 
   /** Best-effort audit trail (Activity log) for a workflow transition. */
   private async audit(

@@ -484,4 +484,28 @@ describe('SLA scheduler (P3) — expiry + one-shot reminder', () => {
     await svc.sweepExpired();
     expect((await svc.listForAdmin('expired')).some((r) => r.id === req.id)).toBe(true);
   });
+
+  it('escalates an expired request to the requester\'s department manager (P4)', async () => {
+    workflowLive();
+    const div = await makeTeam('Div');
+    const net = await makeUnit(div.id, 'Net');
+    const sec = await makeUnit(div.id, 'Sec');
+    const owner = await makeUser('owner');
+    const requester = await makeUser('requester');
+    const netMgr = await makeUser('netMgr'); // the requester's own manager
+    const secMgr = await makeUser('secMgr');
+    const secMember = await makeUser('secMember');
+    for (const u of [owner, requester, netMgr, secMgr, secMember]) await joinTeam(u.id, div.id);
+    await placeInUnit(net.id, requester.id);
+    await placeInUnit(net.id, netMgr.id, 'MANAGER');
+    await placeInUnit(sec.id, secMgr.id, 'MANAGER');
+    await placeInUnit(sec.id, secMember.id);
+    const project = await makeProject(div.id, owner.id);
+    const task = await makeTask(div.id, project.id, owner.id);
+    const req = await svc.create(div.id, project.id, task.id, requester.id, { proposedId: secMember.id });
+    await prisma.taskAssignmentRequest.update({ where: { id: req.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    await prisma.notification.deleteMany();
+    await svc.sweepExpired();
+    expect(await prisma.notification.findFirst({ where: { userId: netMgr.id, type: 'ASSIGNMENT_DECIDED' } })).not.toBeNull();
+  });
 });
