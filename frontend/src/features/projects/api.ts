@@ -76,6 +76,8 @@ export async function listProjects(teamId: string): Promise<Project[]> {
 export interface ProjectCrossTeam extends Project {
   teamName: string;
   teamSlug: string;
+  // v-next: the project's department (ACTIVE GROUP-grant to a UNIT), or null.
+  department: { id: string; name: string } | null;
 }
 
 export async function listAllProjects(): Promise<ProjectCrossTeam[]> {

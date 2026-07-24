@@ -4,6 +4,8 @@ export interface ProjectFilterState {
   search?: string;
   status?: ProjectStatus | '';
   teamId?: string;
+  /** v-next: filter by the project's department (its ACTIVE GROUP-grant to a UNIT). */
+  departmentId?: string;
   owner?: 'all' | 'mine';
   dateFrom?: string;
   dateTo?: string;
@@ -21,6 +23,9 @@ export function applyProjectFilters(
   }
   if (filters.teamId) {
     out = out.filter((p) => p.teamId === filters.teamId);
+  }
+  if (filters.departmentId) {
+    out = out.filter((p) => p.department?.id === filters.departmentId);
   }
   if (filters.owner === 'mine' && userId) {
     out = out.filter((p) => p.ownerId === userId);
@@ -48,6 +53,15 @@ export function applyProjectFilters(
 export function collectTeamOptions(projects: ProjectCrossTeam[]): { id: string; name: string }[] {
   const m = new Map<string, string>();
   for (const p of projects) m.set(p.teamId, p.teamName);
+  return [...m.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** v-next: distinct departments across the visible projects, for the Department filter. */
+export function collectDepartmentOptions(
+  projects: ProjectCrossTeam[],
+): { id: string; name: string }[] {
+  const m = new Map<string, string>();
+  for (const p of projects) if (p.department) m.set(p.department.id, p.department.name);
   return [...m.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 

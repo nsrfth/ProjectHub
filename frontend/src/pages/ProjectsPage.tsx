@@ -11,6 +11,7 @@ import BucketFormModal from '@/features/projectBuckets/BucketFormModal';
 import ProjectBucketAssignMenu from '@/features/projectBuckets/ProjectBucketAssignMenu';
 import {
   applyProjectFilters,
+  collectDepartmentOptions,
   collectTeamOptions,
   type ProjectFilterState,
 } from '@/features/projectBuckets/filters';
@@ -134,6 +135,7 @@ export default function ProjectsPage(): JSX.Element {
   );
 
   const teamOptions = useMemo(() => collectTeamOptions(projects), [projects]);
+  const departmentOptions = useMemo(() => collectDepartmentOptions(projects), [projects]);
 
   const assignedBucketIds = useMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -458,6 +460,7 @@ export default function ProjectsPage(): JSX.Element {
         filters={filters}
         onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
         teams={teamOptions}
+        departments={departmentOptions}
         showOwnerFilter={isAdmin}
       />
 
@@ -645,11 +648,13 @@ function ProjectFilterBar({
   filters,
   onChange,
   teams,
+  departments,
   showOwnerFilter,
 }: {
   filters: ProjectFilterState;
   onChange: (patch: Partial<ProjectFilterState>) => void;
   teams: { id: string; name: string }[];
+  departments: { id: string; name: string }[];
   showOwnerFilter: boolean;
 }): JSX.Element {
   const t = useT();
@@ -686,16 +691,33 @@ function ProjectFilterBar({
       </label>
       {teams.length > 1 && (
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500 text-xs">Team</span>
+          <span className="text-slate-500 text-xs">Division</span>
           <select
             value={filters.teamId ?? ''}
             onChange={(e) => onChange({ teamId: e.target.value || undefined })}
             className="rounded border px-2 py-1 dark:bg-slate-800"
           >
-            <option value="">All teams</option>
+            <option value="">All divisions</option>
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {departments.length > 0 && (
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-500 text-xs">Department</span>
+          <select
+            value={filters.departmentId ?? ''}
+            onChange={(e) => onChange({ departmentId: e.target.value || undefined })}
+            className="rounded border px-2 py-1 dark:bg-slate-800"
+          >
+            <option value="">All departments</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
               </option>
             ))}
           </select>

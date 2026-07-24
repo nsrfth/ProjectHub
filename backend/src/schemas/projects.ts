@@ -212,6 +212,9 @@ export const projectCrossTeamResponse = projectResponse.extend({
   // v2.5.59: mean percentComplete over live leaf tasks (0 when the project has
   // none) — drives the year-timeline's green progress fill.
   progressPct: z.number().int().min(0).max(100),
+  // v-next: the project's department (its ACTIVE GROUP-grant to a UNIT), or null
+  // when unassigned. Powers the Division/Department filter on the projects page.
+  department: z.object({ id: z.string(), name: z.string() }).nullable(),
 });
 
 export type CreateProjectBody = z.infer<typeof createProjectBody>;

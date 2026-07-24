@@ -548,6 +548,7 @@ export class ProjectsService {
         teamSlug: string;
         hasStarted: boolean;
         progressPct: number;
+        department: { id: string; name: string } | null;
       }
     >
   > {
@@ -596,6 +597,27 @@ export class ProjectsService {
     const progressById = new Map(
       progressGroups.map((g) => [g.projectId, Math.round(g._avg.percentComplete ?? 0)]),
     );
+    // v-next: each project's DEPARTMENT = its ACTIVE GROUP-subject grant to a
+    // UNIT group (the "department" the admin transfer tool assigns; normally one
+    // after the Phase-3 cutover). Two batched queries for the whole page.
+    const deptGrants = rows.length
+      ? await prisma.projectAccessGrant.findMany({
+          where: { projectId: { in: rows.map((p) => p.id) }, subjectType: 'GROUP', status: 'ACTIVE' },
+          select: { projectId: true, subjectId: true },
+        })
+      : [];
+    const unitGroups = deptGrants.length
+      ? await prisma.userGroup.findMany({
+          where: { id: { in: [...new Set(deptGrants.map((g) => g.subjectId))] }, kind: 'UNIT' },
+          select: { id: true, name: true },
+        })
+      : [];
+    const unitById = new Map(unitGroups.map((g) => [g.id, g.name]));
+    const deptByProject = new Map<string, { id: string; name: string }>();
+    for (const g of deptGrants) {
+      const name = unitById.get(g.subjectId);
+      if (name && !deptByProject.has(g.projectId)) deptByProject.set(g.projectId, { id: g.subjectId, name });
+    }
     return rows.map((p) => ({
       ...toView(p),
       teamName: p.team.name,
@@ -603,6 +625,7 @@ export class ProjectsService {
       hasStarted: startedIds.has(p.id),
       // Projects with no live leaf tasks have no evidence of progress → 0.
       progressPct: progressById.get(p.id) ?? 0,
+      department: deptByProject.get(p.id) ?? null,
     }));
   }
 
