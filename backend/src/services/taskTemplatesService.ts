@@ -9,6 +9,8 @@ import {
   utcMidnight,
 } from '../lib/recurrence.js';
 import { WorkingDayCalendar } from '../lib/workingDays.js';
+import { isUserEligibleTaskResponsible } from '../lib/projectAccess.js';
+import { loadEnv } from '../config/env.js';
 import {
   logDueDateRoll,
   readSchedulingSettings,
@@ -217,12 +219,27 @@ export class TaskTemplatesService {
                 ? cal.addWorkingDays(spawnDate, t.plannedOffsetDays)
                 : addDays(spawnDate, t.plannedOffsetDays)
               : null;
+          // v-next (Slice 7): drop a copied assignee who is no longer eligible
+          // for the project. A template spawning AFTER a cross-unit assignment
+          // was revoked would otherwise re-create an assignee that no removal
+          // event will ever clean (reconcile fires on removal, not on spawn).
+          // Inert until the workflow is live (C-A); spawned tasks then arrive
+          // unassigned, consistent with the field's low-ceremony intent.
+          let spawnAssigneeId = src.assigneeId;
+          if (
+            spawnAssigneeId &&
+            loadEnv().TASK_ASSIGNMENT_WORKFLOW &&
+            loadEnv().ACCESS_UNIFIED_GRANTS === 'on' &&
+            !(await isUserEligibleTaskResponsible(src.teamId, src.projectId, spawnAssigneeId))
+          ) {
+            spawnAssigneeId = null;
+          }
           const created = await tx.task.create({
             data: {
               projectId: src.projectId,
               teamId: src.teamId,
               creatorId: src.creatorId,
-              assigneeId: src.assigneeId,
+              assigneeId: spawnAssigneeId,
               title: src.title,
               description: src.description,
               status: 'TODO',

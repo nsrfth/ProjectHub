@@ -10,6 +10,7 @@ import {
   recordDivergence,
   resolveGrantSubjects,
 } from './projectGrants.js';
+import { classifyAssignmentBoundary } from './assignmentBoundary.js';
 
 export type ProjectAccessLevel = 'NONE' | 'READ' | 'WRITE';
 
@@ -525,11 +526,40 @@ export async function assertAssignmentAllowed(opts: {
   targetId: string | null | undefined;
   /** Only for the error message — the rules are identical for both roles. */
   role: 'assignee' | 'responsible';
+  /**
+   * v-next (Slice 4): opt into the cross-unit boundary workflow. Set by the two
+   * Task-assignee call sites ONLY; the responsible + subtask sites leave it
+   * unset and keep today's ordering. Inert unless TASK_ASSIGNMENT_WORKFLOW is on
+   * AND ACCESS_UNIFIED_GRANTS='on'.
+   */
+  enforceBoundaryWorkflow?: boolean;
 }): Promise<void> {
-  const { teamId, projectId, actorId, actorGlobalRole, targetId, role } = opts;
+  const { teamId, projectId, actorId, actorGlobalRole, targetId, role, enforceBoundaryWorkflow } =
+    opts;
   // Clearing (null) and omitting (undefined) are always allowed — un-assigning
   // someone is never an act the scope rule should block.
   if (targetId === null || targetId === undefined) return;
+
+  // v-next (Slice 4): the boundary-workflow reorder. Runs BEFORE eligibility on
+  // purpose — a cross-division target is not yet eligible (their grant is the
+  // RESULT of approval, not a precondition), so classifying after the
+  // eligibility check would throw the generic "not eligible" error before the
+  // classifier is ever consulted (the exact bug that would strand scenario C).
+  // Gated on the workflow flag AND unified-grants=on (constraint C-A). ADMIN and
+  // task.assign_any bypass — the D1 override lane.
+  if (
+    enforceBoundaryWorkflow &&
+    loadEnv().TASK_ASSIGNMENT_WORKFLOW &&
+    loadEnv().ACCESS_UNIFIED_GRANTS === 'on' &&
+    !(await actorHasAssignAny(teamId, actorId, actorGlobalRole))
+  ) {
+    const boundary = await classifyAssignmentBoundary({
+      projectTeamId: teamId,
+      requesterUserId: actorId,
+      targetUserId: targetId,
+    });
+    if (boundary.scenario !== 'A') throw Errors.assignmentRequestRequired();
+  }
 
   const eligible = await isUserEligibleTaskResponsible(teamId, projectId, targetId);
   if (!eligible) {
@@ -542,6 +572,28 @@ export async function assertAssignmentAllowed(opts: {
 
   const inScope = await isWithinAssignmentScope(teamId, actorId, targetId, actorGlobalRole);
   if (!inScope) throw Errors.assigneeOutOfScope();
+}
+
+/**
+ * v-next: does the actor hold the assign-anywhere escape hatch — global ADMIN or
+ * the `task.assign_any` capability? Both bypass the boundary workflow (the D1
+ * override lane), exactly as they already bypass isWithinAssignmentScope. Kept
+ * as its own helper so the classify-first guard and the scope check agree on
+ * precisely who is exempt. (Hoisted `export async function`, so assertAssignment-
+ * Allowed above may call it despite appearing first.)
+ */
+export async function actorHasAssignAny(
+  teamId: string,
+  actorId: string,
+  actorGlobalRole: GlobalRole,
+): Promise<boolean> {
+  if (actorGlobalRole === 'ADMIN') return true;
+  const membership = await prisma.teamMembership.findUnique({
+    where: { userId_teamId: { userId: actorId, teamId } },
+  });
+  if (!membership) return false;
+  const perms = await listMembershipPermissions(membership, actorGlobalRole);
+  return perms.has('*') || perms.has('task.assign_any');
 }
 
 /**
@@ -613,6 +665,30 @@ export async function isUserEligibleTaskResponsible(
     },
   });
   if (groupMember) return true;
+
+  // v-next (Slice 3, the B1 fix): a live unified USER grant makes the person
+  // eligible — but ONLY when the unified resolver is authoritative
+  // (ACCESS_UNIFIED_GRANTS='on'), so this is inert under off/dual and changes
+  // nothing until the runbook cutover (constraint C-A). Without it, the
+  // assignment workflow would auto-issue a grant on approval and then THIS gate
+  // would still reject the very assignee it just authorized. Reuses
+  // grantAccessForProject with only the USER subject populated, so it inherits
+  // the vetted ACTIVE + unexpired predicate and matches nothing but a USER grant.
+  if (loadEnv().ACCESS_UNIFIED_GRANTS === 'on') {
+    const realUser = await prisma.user.findFirst({
+      where: { id: userId, isSystemUser: false },
+      select: { id: true },
+    });
+    if (realUser) {
+      const level = await grantAccessForProject(projectId, {
+        userId,
+        groupIds: [],
+        teamIds: [],
+        orgUnitIds: [],
+      });
+      if (level !== 'NONE') return true;
+    }
+  }
 
   // v2.5.58: member of a FULL-shared guest team.
   const sharedMember = await prisma.teamMembership.findFirst({

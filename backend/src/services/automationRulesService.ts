@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { loadEnv } from '../config/env.js';
+import { classifyAssignmentBoundary } from '../lib/assignmentBoundary.js';
 import type {
   CreateAutomationRuleBody,
   UpdateAutomationRuleBody,
@@ -92,6 +94,44 @@ async function validateReferences(
   }
 }
 
+/**
+ * D7 (docs/ASSIGNMENT_WORKFLOW.md §8): close the automation bypass at AUTHORING.
+ *
+ * At run time `automationEngine` fires set_assignee as actorGlobalRole='ADMIN',
+ * sailing through the boundary guard — so an automation could place work across
+ * an org boundary with no approval. We reject that when the rule is SAVED,
+ * classifying each set_assignee target against the rule OWNER's placement (a
+ * fire-time failure would be a rule that silently stops working). Inert until
+ * the workflow is live (constraint C-A).
+ *
+ * NOTE — narrower than first assumed: validateReferences already requires a
+ * set_assignee target to be a team member of the rule's division, so scenario C
+ * (cross-division) is impossible via automation; only B (cross-department, same
+ * division) is reachable here. OPEN (confirm before enabling): a global-ADMIN
+ * rule owner is the D1 override lane and may warrant an exemption — this
+ * function does not have the owner's global role, so it does not exempt them
+ * yet.
+ */
+async function assertAutomationAssigneeBoundary(
+  teamId: string,
+  ownerId: string,
+  actions: CreateAutomationRuleBody['actions'],
+): Promise<void> {
+  if (!(loadEnv().TASK_ASSIGNMENT_WORKFLOW && loadEnv().ACCESS_UNIFIED_GRANTS === 'on')) return;
+  for (const a of actions) {
+    if (a.actionType !== 'set_assignee') continue;
+    const v = a.valueJson as Record<string, unknown> | null | undefined;
+    const targetId = v?.userId ? String(v.userId) : null;
+    if (!targetId) continue;
+    const boundary = await classifyAssignmentBoundary({
+      projectTeamId: teamId,
+      requesterUserId: ownerId,
+      targetUserId: targetId,
+    });
+    if (boundary.scenario !== 'A') throw Errors.assignmentRequestRequired();
+  }
+}
+
 function toView(
   row: RuleRow,
   lastRun: { status: string; createdAt: Date } | null,
@@ -164,6 +204,7 @@ export class AutomationRulesService {
     input: CreateAutomationRuleBody,
   ): Promise<AutomationRuleView> {
     await validateReferences(teamId, input.conditions, input.actions);
+    await assertAutomationAssigneeBoundary(teamId, actorId, input.actions);
     const maxPos = await prisma.automationRule.aggregate({
       where: { teamId },
       _max: { position: true },
@@ -241,6 +282,12 @@ export class AutomationRulesService {
         customFieldId: c.customFieldId,
       }));
       await validateReferences(teamId, conditions as CreateAutomationRuleBody['conditions'], input.actions);
+    }
+
+    // D7 (Slice 7): after references (incl. team-membership) validate, reject
+    // any set_assignee target that crosses an org boundary from the rule owner.
+    if (input.actions !== undefined) {
+      await assertAutomationAssigneeBoundary(teamId, actorId, input.actions);
     }
 
     const row = await prisma.$transaction(async (tx) => {

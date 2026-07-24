@@ -80,6 +80,10 @@ import { meTasksRoutes } from './routes/meTasks.js';
 import { meProjectBucketsRoutes } from './routes/meProjectBuckets.js';
 import { meReferralsRoutes } from './routes/meReferrals.js';
 import { meStandaloneTasksRoutes } from './routes/meStandaloneTasks.js';
+import {
+  taskAssignmentRequestsRoutes,
+  meAssignmentApprovalsRoutes,
+} from './routes/assignmentRequests.js';
 import { maintenanceGate } from './middleware/maintenance.js';
 import { decorateLifecycle } from './lib/lifecycle.js';
 import { prisma } from './data/prisma.js';
@@ -166,6 +170,9 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
       prefix: '/teams/:teamId/projects/:projectId/grants',
     });
     await api.register(grantApprovalsRoutes, { prefix: '/me/grant-approvals' });
+    // v-next: cross-unit assignment DECISIONS + inbox. No project-access hook —
+    // a cross-division approver has none; the service gates on approver identity.
+    await api.register(meAssignmentApprovalsRoutes, { prefix: '/me/assignment-approvals' });
     await api.register(projectTeamSharesRoutes, {
       prefix: '/teams/:teamId/projects/:projectId/team-shares',
     });
@@ -199,6 +206,11 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     // Subtasks are children of one task; the task response already lists them.
     await api.register(subtasksRoutes, {
       prefix: '/teams/:teamId/projects/:projectId/tasks/:taskId/subtasks',
+    });
+    // v-next: cross-unit assignment request CREATION nests under the task (the
+    // requester has project access by definition). Decisions live off /me above.
+    await api.register(taskAssignmentRequestsRoutes, {
+      prefix: '/teams/:teamId/projects/:projectId/tasks/:taskId/assignment-requests',
     });
     // Attachments are also task-scoped; the upload endpoint accepts multipart.
     await api.register(attachmentsRoutes, {

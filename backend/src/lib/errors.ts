@@ -46,6 +46,20 @@ export const Errors = {
         ? `${targetName} is outside your assignment scope — they belong to a different unit`
         : 'This person is outside your assignment scope — they belong to a different unit',
     ),
+  // v-next (cross-unit assignment workflow): a direct assign crosses an org
+  // boundary and must route through the request → approval flow instead. Own
+  // stable code (not FORBIDDEN) for the same reasons as ASSIGNEE_OUT_OF_SCOPE:
+  // the target is a valid person, the actor merely lacks the reach to assign
+  // directly, and the SPA renders the "request assignment" affordance off this
+  // code. 403, not 400.
+  assignmentRequestRequired: (targetName?: string) =>
+    new AppError(
+      403,
+      'ASSIGNMENT_REQUEST_REQUIRED',
+      targetName
+        ? `${targetName} is in another unit — request the assignment; their manager will assign.`
+        : 'This person is in another unit — request the assignment; their manager will assign.',
+    ),
   internal: (msg = 'Internal server error') => new AppError(500, 'INTERNAL', msg),
   serviceUnavailable: (msg = 'Service temporarily unavailable') =>
     new AppError(503, 'SERVICE_UNAVAILABLE', msg),

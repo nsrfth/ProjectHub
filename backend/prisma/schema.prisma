@@ -100,6 +100,12 @@ enum NotifyType {
   // unit manager / target team's manager), or a grant you issued was decided.
   GRANT_PENDING
   GRANT_DECIDED
+  // v-next (cross-unit assignment workflow). ⚠ Native pg enum: adding values is
+  // ALTER TYPE ... ADD VALUE, which cannot be used in the same transaction that
+  // references it. Keep the migration that adds these standalone (no INSERT/
+  // UPDATE using the value in the same file); nothing emits them until Slice 5.
+  ASSIGNMENT_REQUESTED // approver: a request awaits your decision
+  ASSIGNMENT_DECIDED // requester: approved / forwarded / assigned / declined
 }
 
 // v1.90: correspondence (دبیرخانه) module enums.
@@ -694,6 +700,8 @@ model Team {
   correspondence          Correspondence[]
   correspondenceReferrals CorrespondenceReferral[]
   orgUnitLinks            TeamOrgUnit[]
+  // v-next: cross-unit assignment requests scoped to this division.
+  taskAssignmentRequests  TaskAssignmentRequest[]
   // v2.0 (PMIS R4 — cost control + time tracking).
   rateCards          RateCard[]
   timesheetPeriods   TimesheetPeriod[]
@@ -865,6 +873,8 @@ model Project {
   labels        ProjectLabel[]
   correspondence        Correspondence[]
   correspondenceCounters CorrespondenceCounter[]
+  // v-next: cross-unit assignment requests against this project's tasks.
+  taskAssignmentRequests TaskAssignmentRequest[]
   baselines             ProjectBaseline[]
   // v2.0 (PMIS R4 — cost control + time tracking).
   timeEntries        TimeEntry[]
@@ -1356,6 +1366,27 @@ enum ProjectGrantStatus {
   DECLINED
 }
 
+// v-next (cross-unit assignment workflow): the target of an assignment request.
+// A dedicated closed enum rather than reusing ProjectGrantSubject — it shares
+// the GROUP/TEAM value NAMES for vocabulary alignment but deliberately excludes
+// USER/ORG_UNIT, which are storable-but-meaningless as an assignment target.
+enum AssignmentTargetType {
+  GROUP // department = UserGroup kind UNIT
+  TEAM // division
+}
+
+// v-next: TaskAssignmentRequest lifecycle. Terminal states: ASSIGNED, DECLINED,
+// EXPIRED. FORWARDED is scenario C only (deputy → dept manager) and is itself
+// non-terminal — it still resolves to ASSIGNED.
+enum AssignmentRequestStatus {
+  REQUESTED
+  APPROVED
+  FORWARDED
+  ASSIGNED
+  DECLINED
+  EXPIRED
+}
+
 model ProjectAccessGrant {
   id          String              @id @default(cuid())
   projectId   String
@@ -1394,6 +1425,61 @@ model ProjectAccessGrant {
   @@index([projectId, status])
   @@index([subjectType, subjectId, status])
   @@index([sourcePolicyId])
+}
+
+// v-next (cross-unit assignment workflow). A managed request to assign a task
+// to someone outside the actor's org boundary: it routes to the responsible
+// manager (dept manager for cross-department, deputy for cross-division), who
+// selects the final assignee. See docs/ASSIGNMENT_WORKFLOW.md.
+//
+// Deliberately NOT a row on a shared Approval table — the codebase keeps each
+// workflow's lifecycle its own (task completion approval, timesheet periods,
+// grant consent all do). Unrelated to Task.approverId (the v1.87 completion
+// gate) despite the vocabulary overlap.
+model TaskAssignmentRequest {
+  id            String   @id @default(cuid())
+  // Tenancy invariant — every team-scoped row carries teamId (the project's
+  // home division). The service re-asserts task↔project↔team on every read.
+  teamId        String
+  taskId        String
+  projectId     String
+  requesterId   String
+  targetType    AssignmentTargetType
+  // UserGroup.id (kind UNIT) when targetType=GROUP; Team.id when TEAM.
+  targetId      String
+  // Advisory candidate the requester proposes; the approver confirms or
+  // overrides (D2 default — advisory only).
+  proposedId    String?
+  status        AssignmentRequestStatus @default(REQUESTED)
+  // Who decided (dept manager for B, deputy for C). Null until first decision.
+  approverId    String?
+  // Scenario C: the dept manager a deputy forwarded (ابلاغ) the request to.
+  forwardedToId String?
+  // Final selection, set together with Task.assigneeId at the ASSIGNED step.
+  assigneeId    String?
+  declineReason String?
+  // SLA horizon (working-day calendar, not naive +Nd). The P3 expiry scheduler
+  // transitions REQUESTED/APPROVED/FORWARDED → EXPIRED past this.
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  decidedAt     DateTime?
+
+  // Ownership relations only (task/project/team): Cascade so a purged task,
+  // project, or division cannot strand a pending request. The five USER refs
+  // (requester/approver/forwardedTo/assignee/proposed) stay bare FK strings —
+  // re-asserted in the service — to avoid five back-relations on User for what
+  // is audit provenance, matching the ProjectAccessGrant subject posture.
+  task    Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, status])
+  @@index([taskId])
+  // Approver inbox: "requests targeting my unit awaiting a decision".
+  @@index([targetType, targetId, status])
+  // Requester outbox.
+  @@index([requesterId, status])
 }
 
 model ProjectGroupGrant {
@@ -1633,6 +1719,8 @@ model Task {
   qualityNcrs         QualityNcr[] @relation("NcrCorrectiveTask")
   // v2.5.26 (W2.2): correspondence letters this task is linked to.
   correspondenceLinks CorrespondenceTask[]
+  // v-next: cross-unit assignment requests targeting this task.
+  taskAssignmentRequests TaskAssignmentRequest[]
 
   // v1.30: tsvector for full-text search. Managed by raw SQL — the column
   // is GENERATED ALWAYS AS STORED with a GIN index. Prisma never reads it

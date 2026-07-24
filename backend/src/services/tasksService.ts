@@ -12,6 +12,7 @@ import {
   resolveProjectAccess,
   type TaskResponsibleCandidate,
 } from '../lib/projectAccess.js';
+import { reconcileAssignmentGrantForUsers } from '../lib/projectGrants.js';
 import { getDelegateCapabilities, type DelegateCapability } from '../lib/delegateCaps.js';
 import { assertProjectDatesNotFrozen } from '../lib/projectFreeze.js';
 import { assertEndOnOrAfterStart, normalizeOptionalCalendarDate } from '../lib/calendarDate.js';
@@ -424,6 +425,8 @@ export class TasksService {
       actorGlobalRole: creatorGlobalRole,
       targetId: input.assigneeId,
       role: 'assignee',
+      // v-next (Slice 4): Task-assignee path opts into the boundary workflow.
+      enforceBoundaryWorkflow: true,
     });
 
     // v2.5.58: while the project plan is frozen, new tasks may be created but
@@ -807,6 +810,8 @@ export class TasksService {
       actorGlobalRole,
       targetId: input.assigneeId,
       role: 'assignee',
+      // v-next (Slice 4): Task-assignee path opts into the boundary workflow.
+      enforceBoundaryWorkflow: true,
     });
 
     // v1.87: approval-config change (toggle requiresApproval / set the approver).
@@ -1341,6 +1346,15 @@ export class TasksService {
           });
         }
       }
+      // v-next (Slice 6): if this update displaced a cross-unit assignee or
+      // responsible, reference-count their assignment-sourced project grant and
+      // revoke it when this was their last link here. Covers the automation
+      // set_assignee path too — it routes through this method. Best-effort,
+      // post-commit; never fails the update (concurrency caveat: §7 of the spec).
+      await reconcileAssignmentGrantForUsers(projectId, [
+        input.assigneeId !== undefined ? existing.assigneeId : null,
+        input.responsibleId !== undefined ? existing.responsibleId : null,
+      ]);
       return hydrated;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
@@ -1908,5 +1922,10 @@ export class TasksService {
     await _webhooks.emit(teamId, 'task.deleted', {
       taskId: existing.id, title: existing.title, projectId, teamId,
     });
+    // v-next (Slice 6): the removed task's assignee/responsible may have just
+    // lost their last link in this project — reference-count and revoke any
+    // assignment-sourced grant. The count excludes soft-deleted tasks, so the
+    // row we just tombstoned above no longer keeps the grant alive.
+    await reconcileAssignmentGrantForUsers(projectId, [existing.assigneeId, existing.responsibleId]);
   }
 }

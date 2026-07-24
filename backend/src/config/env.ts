@@ -257,6 +257,23 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((v) => v === 'true'),
+
+  // --- v-next (cross-unit task assignment workflow) ----------------------
+  // Master enable for the TaskAssignmentRequest workflow: the boundary
+  // classifier's "request it" rejection on cross-boundary direct assigns, plus
+  // the auto-grant issued on final assignment. Default off/inert, like the
+  // ACCESS_* flags above.
+  //
+  // MUST NOT be flipped on before ACCESS_UNIFIED_GRANTS='on' (constraint C-A in
+  // docs/ASSIGNMENT_WORKFLOW.md): the auto-grant only yields EFFECTIVE access
+  // under the unified resolver, and the eligibility extension that makes a
+  // granted assignee assignable also reads the grant table, which is not
+  // authoritative until `on`. The active guard paths gate on
+  // `TASK_ASSIGNMENT_WORKFLOW && ACCESS_UNIFIED_GRANTS === 'on'`.
+  TASK_ASSIGNMENT_WORKFLOW: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
 })
   // v1.30.2 (S-1): when the in-app self-upgrade plumbing is wired
   // (UPDATER_URL set), UPDATER_TOKEN MUST be a >=24-char string. Without

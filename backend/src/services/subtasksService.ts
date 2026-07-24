@@ -3,6 +3,7 @@ import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { userHasPermission } from '../middleware/requirePermission.js';
 import { assertAssignmentAllowed, resolveProjectAccess } from '../lib/projectAccess.js';
+import { reconcileAssignmentGrantForUsers } from '../lib/projectGrants.js';
 import { getDelegateCapabilities, type DelegateCapability } from '../lib/delegateCaps.js';
 import { assertProjectDatesNotFrozen } from '../lib/projectFreeze.js';
 import { logActivity } from './activityLogger.js';
@@ -319,6 +320,13 @@ export class SubtasksService {
         },
         include: SUBTASK_INCLUDE,
       });
+      // v-next (Slice 6): reference-count a displaced subtask assignee/
+      // responsible and revoke their assignment-sourced grant if it was their
+      // last link in the project. Best-effort, post-write.
+      await reconcileAssignmentGrantForUsers(projectId, [
+        input.assigneeId !== undefined ? existing.assigneeId : null,
+        input.responsibleId !== undefined ? existing.responsibleId : null,
+      ]);
       return toView(updated);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
@@ -387,6 +395,9 @@ export class SubtasksService {
     const existing = await prisma.subtask.findUnique({ where: { id: subtaskId } });
     if (!existing || existing.taskId !== taskId) throw Errors.notFound('Subtask not found');
     await prisma.subtask.delete({ where: { id: subtaskId } });
+    // v-next (Slice 6): the removed subtask's assignee/responsible may have lost
+    // their last link — reference-count and revoke any assignment-sourced grant.
+    await reconcileAssignmentGrantForUsers(projectId, [existing.assigneeId, existing.responsibleId]);
   }
 
   // v1.35: full-permutation reorder. Mirrors bucketsService.reorder —

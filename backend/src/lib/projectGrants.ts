@@ -217,6 +217,79 @@ export async function grantedProjectIdsInTeam(
 }
 
 // ---------------------------------------------------------------------------
+// v-next (Slice 6): reference-counted reversal of assignment-sourced grants
+// ---------------------------------------------------------------------------
+
+/**
+ * Reverse an assignment auto-grant correctly.
+ *
+ * A per-request `source` tag CANNOT invert the lifecycle — the grant engine
+ * dedups to one row per (project, person), so many approved requests ride a
+ * single grant. Revoking by tag would strip still-valid, separately-approved
+ * assignments; scoping revocation to one task would leak the grant the moment a
+ * second request's tag was never written. So we COUNT instead: revoke the
+ * assignment:* USER grant only when the person has zero remaining assignee OR
+ * responsible links — task AND subtask — in the project. `source` stays
+ * provenance ("who opened the door first"), never the revocation key.
+ *
+ * Safe to call for anyone: a person with no assignment:* grant simply matches
+ * nothing in the deleteMany. Idempotent.
+ */
+export async function reconcileAssignmentGrant(
+  projectId: string,
+  userId: string,
+  tx: Prisma.TransactionClient,
+): Promise<void> {
+  const [taskLinks, subtaskLinks] = await Promise.all([
+    // deletedAt: null is load-bearing — tasks soft-delete (remove() sets
+    // deletedAt), so a just-removed task must NOT count as a live link or the
+    // grant would never revoke on the delete path.
+    tx.task.count({
+      where: { projectId, deletedAt: null, OR: [{ assigneeId: userId }, { responsibleId: userId }] },
+    }),
+    tx.subtask.count({
+      where: { task: { projectId, deletedAt: null }, OR: [{ assigneeId: userId }, { responsibleId: userId }] },
+    }),
+  ]);
+  if (taskLinks + subtaskLinks > 0) return; // still working here — keep the grant
+  await tx.projectAccessGrant.deleteMany({
+    where: {
+      projectId,
+      subjectType: 'USER',
+      subjectId: userId,
+      source: { startsWith: 'assignment:' },
+    },
+  });
+}
+
+/**
+ * Convenience wrapper for the removal call sites: reconcile a set of
+ * possibly-displaced users in one short transaction. Best-effort — a reversal
+ * must never fail the mutation that triggered it (the notification posture).
+ * Nulls and duplicates are ignored.
+ *
+ * NOTE (concurrency): this runs post-commit in its own transaction rather than
+ * inside the caller's, so two racing removals could both observe a link the
+ * other is about to drop. Acceptable for P1 (the failure mode is a grant that
+ * lingers one extra beat, never one revoked out from under a live assignment).
+ * See docs/ASSIGNMENT_WORKFLOW.md §7 to tighten to a shared tx + row lock.
+ */
+export async function reconcileAssignmentGrantForUsers(
+  projectId: string,
+  userIds: (string | null | undefined)[],
+): Promise<void> {
+  const ids = [...new Set(userIds.filter((x): x is string => !!x))];
+  if (!ids.length) return;
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const id of ids) await reconcileAssignmentGrant(projectId, id, tx);
+    });
+  } catch {
+    // Best-effort — see above.
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Divergence logging
 // ---------------------------------------------------------------------------
 
