@@ -19,6 +19,7 @@ import { AttachmentsSection } from '@/features/attachments/AttachmentsSection';
 import RecurrenceSection from '@/features/recurrence/RecurrenceSection';
 import DependenciesSection from '@/features/dependencies/DependenciesSection';
 import RaciSection from '@/features/tasks/RaciSection';
+import RequestAssignmentDialog from '@/features/assignmentRequests/RequestAssignmentDialog';
 import { TaskCustomFieldsSection } from '@/features/customFields/TaskCustomFieldsSection';
 import { TaskResourceAssignments } from '@/features/resources/TaskResourceAssignments';
 import {
@@ -215,6 +216,10 @@ export default function TaskDetailPage(): JSX.Element {
     setCompletedAtInput(task?.completedAt ?? null);
   }, [task?.startDate, task?.dueDate, task?.plannedDate, task?.completedAt]);
 
+  // v-next (P2): a cross-department assignee pick is rejected with
+  // ASSIGNMENT_REQUEST_REQUIRED; open the request dialog for the attempted person.
+  const [requestProposed, setRequestProposed] = useState<{ id: string; name: string } | null>(null);
+
   const updateTaskMut = useMutation({
     mutationFn: (patch: Partial<tasksApi.Task>) =>
       tasksApi.updateTask(teamId!, projectId!, taskId!, patch as Parameters<typeof tasksApi.updateTask>[3]),
@@ -224,6 +229,14 @@ export default function TaskDetailPage(): JSX.Element {
         qc.invalidateQueries({ queryKey: ['tasks', teamId, projectId] }),
         qc.invalidateQueries({ queryKey: ['activity', taskId] }),
       ]);
+    },
+    onError: (err, variables) => {
+      const code = axios.isAxiosError(err) ? err.response?.data?.error?.code : undefined;
+      const attempted = variables.assigneeId;
+      if (code === 'ASSIGNMENT_REQUEST_REQUIRED' && typeof attempted === 'string') {
+        const name = teamMembers.find((m) => m.userId === attempted)?.name ?? attempted;
+        setRequestProposed({ id: attempted, name });
+      }
     },
   });
 
@@ -390,6 +403,41 @@ export default function TaskDetailPage(): JSX.Element {
               <p className="text-sm text-slate-700 whitespace-pre-wrap">{task.description}</p>
             ) : (
               <p className="text-sm text-slate-400 italic">No description.</p>
+            )}
+
+            {/* v-next (P2): Task assignee — the field the cross-unit workflow
+                guards. Picking a cross-department person returns
+                ASSIGNMENT_REQUEST_REQUIRED, which opens the request dialog
+                (see updateTaskMut.onError above). */}
+            {canEditTask && (
+              <div className="mt-5 pt-4 border-t">
+                <h3 className="text-xs font-medium text-slate-600 mb-2">{t('tasks.col.assignee')}</h3>
+                <select
+                  value={task.assigneeId ?? ''}
+                  onChange={(e) =>
+                    updateTaskMut.mutate({ assigneeId: e.target.value || null } as Partial<tasksApi.Task>)
+                  }
+                  disabled={updateTaskMut.isPending}
+                  className="text-sm rounded border border-border px-2 py-1 max-w-sm"
+                >
+                  <option value="">{t('assignments.picker.unassigned')}</option>
+                  {teamMembers.map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {m.name} ({m.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {requestProposed && (
+              <RequestAssignmentDialog
+                teamId={teamId!}
+                projectId={projectId!}
+                taskId={taskId!}
+                proposedId={requestProposed.id}
+                proposedName={requestProposed.name}
+                onClose={() => setRequestProposed(null)}
+              />
             )}
 
             {/* v1.19: Responsible reassignment — managers/admins only. The

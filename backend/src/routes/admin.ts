@@ -8,6 +8,8 @@ import { loadEnv } from '../config/env.js';
 import { requireAuth, requireGlobalRole } from '../middleware/auth.js';
 import { requireScope } from '../middleware/requireScope.js';
 import { updateCheckService } from '../services/updateCheckService.js';
+import { AssignmentRequestsService } from '../services/assignmentRequestsService.js';
+import { assignmentApprovalView } from '../schemas/assignmentRequests.js';
 import { escapeField } from '../lib/csv.js';
 import {
   adminResetPasswordBody,
@@ -56,6 +58,22 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // project-access grant as CSV, one row per grant, with resolved names so a
   // reviewer doesn't need database access to read it. Streams as a download.
   // The quarterly review procedure (Phase 6 doc) is built around this export.
+  // v-next (P3): cross-unit assignment-request oversight for admins.
+  r.get('/assignment-requests', {
+    schema: {
+      tags: ['admin'],
+      summary: 'Cross-unit assignment requests (pending/expired/all) for oversight',
+      querystring: z.object({ scope: z.enum(['pending', 'expired', 'all']).default('pending') }),
+      response: { 200: z.object({ items: z.array(assignmentApprovalView) }) },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (req, reply) => {
+      const svc = new AssignmentRequestsService();
+      const { scope } = req.query as { scope: 'pending' | 'expired' | 'all' };
+      return reply.send({ items: await svc.listForAdmin(scope) });
+    },
+  });
+
   r.get('/access-report', {
     schema: {
       tags: ['admin'],

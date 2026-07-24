@@ -3,6 +3,7 @@ import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { loadEnv } from '../config/env.js';
 import { classifyAssignmentBoundary } from '../lib/assignmentBoundary.js';
+import { logActivity } from './activityLogger.js';
 import { WorkingDayCalendar } from '../lib/workingDays.js';
 import { notificationsHub } from './notificationsHub.js';
 
@@ -123,6 +124,11 @@ export class AssignmentRequestsService {
         proposedId: input.proposedId,
       });
     }
+    await this.audit('assignment.requested', req, requesterId, {
+      targetType,
+      targetId,
+      proposedId: input.proposedId,
+    });
     return req;
   }
 
@@ -138,6 +144,7 @@ export class AssignmentRequestsService {
     await notify(req.requesterId, req.teamId, 'ASSIGNMENT_DECIDED', {
       requestId: req.id, taskId: req.taskId, decision: 'approved',
     });
+    await this.audit('assignment.approved', req, actorId);
     return updated;
   }
 
@@ -173,6 +180,7 @@ export class AssignmentRequestsService {
     await notify(toDeptManagerId, req.teamId, 'ASSIGNMENT_REQUESTED', {
       requestId: req.id, taskId: req.taskId, projectId: req.projectId, forwarded: true,
     });
+    await this.audit('assignment.forwarded', req, actorId, { forwardedToId: toDeptManagerId });
     return updated;
   }
 
@@ -223,6 +231,7 @@ export class AssignmentRequestsService {
     await notify(assigneeId, req.teamId, 'ASSIGNMENT_DECIDED', {
       requestId: req.id, taskId: req.taskId, decision: 'assigned_to_you',
     });
+    await this.audit('assignment.assigned', req, actorId, { assigneeId });
     return updated;
   }
 
@@ -239,6 +248,7 @@ export class AssignmentRequestsService {
     await notify(req.requesterId, req.teamId, 'ASSIGNMENT_DECIDED', {
       requestId: req.id, taskId: req.taskId, decision: 'declined', reason,
     });
+    await this.audit('assignment.declined', req, actorId, { reason });
     return updated;
   }
 
@@ -266,8 +276,47 @@ export class AssignmentRequestsService {
       include: { task: { select: { title: true } }, project: { select: { name: true } } },
       orderBy: { createdAt: 'desc' },
     });
+    return this.enrichToViews(rows);
+  }
 
-    // Batch the requester/proposed display names (bare-FK subjects, no relation).
+  /**
+   * v-next (P3): admin oversight report — every request (or just the pending /
+   * expired slice), enriched. ADMIN-gated at the route. Capped for safety.
+   */
+  async listForAdmin(scope: 'pending' | 'expired' | 'all'): Promise<AssignmentApprovalView[]> {
+    const where: Prisma.TaskAssignmentRequestWhereInput =
+      scope === 'pending'
+        ? { status: { in: ['REQUESTED', 'APPROVED', 'FORWARDED'] } }
+        : scope === 'expired'
+          ? { status: 'EXPIRED' }
+          : {};
+    const rows = await prisma.taskAssignmentRequest.findMany({
+      where,
+      include: { task: { select: { title: true } }, project: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    return this.enrichToViews(rows);
+  }
+
+  /** Resolve the display names an inbox/report row needs (bare-FK subjects). */
+  private async enrichToViews(
+    rows: Array<{
+      id: string;
+      status: TaskAssignmentRequest['status'];
+      taskId: string;
+      projectId: string;
+      teamId: string;
+      requesterId: string;
+      proposedId: string | null;
+      targetType: TaskAssignmentRequest['targetType'];
+      targetId: string;
+      expiresAt: Date;
+      createdAt: Date;
+      task: { title: string } | null;
+      project: { name: string } | null;
+    }>,
+  ): Promise<AssignmentApprovalView[]> {
     const userIds = [
       ...new Set(rows.flatMap((r) => [r.requesterId, r.proposedId].filter((x): x is string => !!x))),
     ];
@@ -318,6 +367,7 @@ export class AssignmentRequestsService {
         await notify(r.requesterId, r.teamId, 'ASSIGNMENT_DECIDED', {
           requestId: r.id, taskId: r.taskId, decision: 'expired',
         });
+        await this.audit('assignment.expired', r, null);
         expired += 1;
       } catch {
         // best-effort per row
@@ -368,6 +418,22 @@ export class AssignmentRequestsService {
   }
 
   // --- internals ----------------------------------------------------------
+
+  /** Best-effort audit trail (Activity log) for a workflow transition. */
+  private async audit(
+    action: string,
+    req: { taskId: string; teamId: string },
+    actorId: string | null,
+    meta?: Record<string, unknown>,
+  ): Promise<void> {
+    await logActivity(prisma, {
+      taskId: req.taskId,
+      teamId: req.teamId,
+      actorId,
+      action,
+      meta: (meta ?? {}) as never,
+    });
+  }
 
   private async load(requestId: string): Promise<TaskAssignmentRequest> {
     const req = await prisma.taskAssignmentRequest.findUnique({ where: { id: requestId } });

@@ -475,4 +475,13 @@ describe('SLA scheduler (P3) — expiry + one-shot reminder', () => {
     expect(await svc.remindSoon(lead)).toBe(0); // remindedAt now set → no re-nudge
     expect(await prisma.notification.count({ where: { userId: secMgr.id, type: 'ASSIGNMENT_REQUESTED' } })).toBe(1);
   });
+
+  it('admin report lists a request as pending, then as expired after a sweep', async () => {
+    const { req } = await pendingRequest();
+    expect((await svc.listForAdmin('pending')).some((r) => r.id === req.id)).toBe(true);
+    expect(await svc.listForAdmin('expired')).toHaveLength(0);
+    await prisma.taskAssignmentRequest.update({ where: { id: req.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    await svc.sweepExpired();
+    expect((await svc.listForAdmin('expired')).some((r) => r.id === req.id)).toBe(true);
+  });
 });
