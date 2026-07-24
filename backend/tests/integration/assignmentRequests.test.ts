@@ -335,6 +335,22 @@ describe('request lifecycle — scenario B (cross-department)', () => {
     expect(declined.status).toBe('DECLINED');
     expect(declined.declineReason).toBe('not available');
   });
+
+  it('the inbox returns enriched rows to the approver, nothing to a stranger', async () => {
+    workflowLive();
+    const { div, project, task, requester, secMgr, secMember } = await fixture();
+    const req = await svc.create(div.id, project.id, task.id, requester.id, { proposedId: secMember.id });
+    const inbox = await svc.listMyApprovals(secMgr.id);
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]!.id).toBe(req.id);
+    expect(inbox[0]!.taskTitle).toBe(task.title);
+    expect(inbox[0]!.projectName).toBe(project.name);
+    expect(inbox[0]!.requesterName).toBe(requester.name);
+    expect(inbox[0]!.proposedName).toBe(secMember.name);
+    const stranger = await makeUser('stranger2');
+    await joinTeam(stranger.id, div.id);
+    expect(await svc.listMyApprovals(stranger.id)).toHaveLength(0);
+  });
 });
 
 describe('request lifecycle — scenario C (cross-division, deputy → forward → assign)', () => {

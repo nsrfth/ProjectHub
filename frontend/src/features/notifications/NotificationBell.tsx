@@ -7,6 +7,7 @@ import { formatRelativeTime, formatShamsiTimestamp } from '@/lib/shamsi';
 import { IconBell } from '@/features/nav/icons';
 import GroupInvitesPanel from '@/features/groups/GroupInvitesPanel';
 import PendingGrantApprovalsPanel from '@/features/projects/PendingGrantApprovalsPanel';
+import PendingAssignmentApprovalsPanel from '@/features/assignmentRequests/PendingAssignmentApprovalsPanel';
 import { useT } from '@/lib/i18n';
 
 // v1.24: bell now lives INSIDE the TopNav flex container (no longer
@@ -226,6 +227,7 @@ export default function NotificationBell(): JSX.Element {
 
           <GroupInvitesPanel />
           <PendingGrantApprovalsPanel />
+          <PendingAssignmentApprovalsPanel />
 
           {items.length === 0 && (
             <p className="text-sm text-text-muted italic p-3">{t('notifications.empty')}</p>

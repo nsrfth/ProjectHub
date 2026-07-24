@@ -44,6 +44,25 @@ export const assignmentRequestResponse = z.object({
   decidedAt: z.string().nullable(),
 });
 
+// Enriched inbox row — carries the display names the approver UI needs.
+export const assignmentApprovalView = z.object({
+  id: z.string(),
+  status: z.enum(['REQUESTED', 'APPROVED', 'FORWARDED', 'ASSIGNED', 'DECLINED', 'EXPIRED']),
+  taskId: z.string(),
+  taskTitle: z.string(),
+  projectId: z.string(),
+  projectName: z.string(),
+  teamId: z.string(),
+  requesterId: z.string(),
+  requesterName: z.string(),
+  proposedId: z.string().nullable(),
+  proposedName: z.string().nullable(),
+  targetType: z.enum(['GROUP', 'TEAM']),
+  targetId: z.string(),
+  expiresAt: z.string(),
+  createdAt: z.string(),
+});
+
 export const assignmentApprovalsResponse = z.object({
-  items: z.array(assignmentRequestResponse),
+  items: z.array(assignmentApprovalView),
 });

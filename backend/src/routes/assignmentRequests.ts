@@ -85,7 +85,7 @@ export async function meAssignmentApprovalsRoutes(app: FastifyInstance): Promise
     handler: async (req, reply) => {
       if (!req.user) throw Errors.unauthorized();
       const items = await svc.listMyApprovals(req.user.sub);
-      return reply.send({ items: items.map(view) });
+      return reply.send({ items });
     },
   });
 

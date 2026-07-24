@@ -33,6 +33,27 @@ async function notify(
   }
 }
 
+// v-next (P2): the approver inbox is a cross-project surface, so it carries the
+// display names the UI needs (bare ids would force N follow-up lookups client
+// side). Mirrors PendingApproval on the grants inbox.
+export interface AssignmentApprovalView {
+  id: string;
+  status: TaskAssignmentRequest['status'];
+  taskId: string;
+  taskTitle: string;
+  projectId: string;
+  projectName: string;
+  teamId: string;
+  requesterId: string;
+  requesterName: string;
+  proposedId: string | null;
+  proposedName: string | null;
+  targetType: TaskAssignmentRequest['targetType'];
+  targetId: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
 export class AssignmentRequestsService {
   /**
    * The requester hit ASSIGNMENT_REQUEST_REQUIRED on a direct assign and now
@@ -222,17 +243,17 @@ export class AssignmentRequestsService {
   }
 
   /** The caller's approval inbox — every request they may decide, any team. */
-  async listMyApprovals(actorId: string): Promise<TaskAssignmentRequest[]> {
+  async listMyApprovals(actorId: string): Promise<AssignmentApprovalView[]> {
     // Department groups where the actor is a MANAGER (scenario B targets).
     const managedUnits = await prisma.userGroupMember.findMany({
       where: { userId: actorId, isUnit: true, role: 'MANAGER', status: 'ACCEPTED' },
-      select: { groupId: true, teamId: true },
+      select: { groupId: true },
     });
     const managedGroupIds = managedUnits.map((u) => u.groupId);
     // Divisions where the actor is a deputy (manager) — scenario C targets.
     const deputyTeamIds = await this.teamsWhereManager(actorId);
 
-    return prisma.taskAssignmentRequest.findMany({
+    const rows = await prisma.taskAssignmentRequest.findMany({
       where: {
         status: { in: ['REQUESTED', 'APPROVED', 'FORWARDED'] },
         OR: [
@@ -242,8 +263,37 @@ export class AssignmentRequestsService {
           { forwardedToId: actorId, status: 'FORWARDED' },
         ].filter(Boolean) as Prisma.TaskAssignmentRequestWhereInput[],
       },
+      include: { task: { select: { title: true } }, project: { select: { name: true } } },
       orderBy: { createdAt: 'desc' },
     });
+
+    // Batch the requester/proposed display names (bare-FK subjects, no relation).
+    const userIds = [
+      ...new Set(rows.flatMap((r) => [r.requesterId, r.proposedId].filter((x): x is string => !!x))),
+    ];
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(users.map((u) => [u.id, u.name]));
+
+    return rows.map((r) => ({
+      id: r.id,
+      status: r.status,
+      taskId: r.taskId,
+      taskTitle: r.task?.title ?? '(task)',
+      projectId: r.projectId,
+      projectName: r.project?.name ?? '(project)',
+      teamId: r.teamId,
+      requesterId: r.requesterId,
+      requesterName: nameById.get(r.requesterId) ?? '(user)',
+      proposedId: r.proposedId,
+      proposedName: r.proposedId ? nameById.get(r.proposedId) ?? '(user)' : null,
+      targetType: r.targetType,
+      targetId: r.targetId,
+      expiresAt: r.expiresAt.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+    }));
   }
 
   // --- internals ----------------------------------------------------------
