@@ -13,6 +13,23 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.20.0] — 2026-07-24 — Cross-unit task assignment workflow (behind a flag)
+
+Cross-unit task assignment workflow (P1–P3), shipped **inert** behind
+`TASK_ASSIGNMENT_WORKFLOW` (default off; effective only with
+`ACCESS_UNIFIED_GRANTS=on`). A cross-boundary task assign is rejected with
+`ASSIGNMENT_REQUEST_REQUIRED` and routed to the target unit's manager (scenario
+B) or the division deputy (scenario C, who may forward/ابلاغ to a department
+manager); the approver selects the final assignee. On assignment an auto-issued
+project WRITE grant (`source=assignment:<id>`) is reference-counted and revoked
+when the person's last task/subtask link in the project ends. Ships with: the
+boundary classifier + guard reorder (opt-in on the two Task-assignee sites),
+eligibility honoring unified USER grants, the approver inbox + requester dialog
+(task detail assignee picker), the SLA expiry + T-1 reminder scheduler
+(`ASSIGNMENT_SLA_ENABLED`), Activity-log audit events, and an ADMIN oversight
+endpoint (`GET /admin/assignment-requests`). EN+FA. **Not yet enabled in
+production** — needs the access-migration cutover. See docs/ASSIGNMENT_WORKFLOW.md.
+
 ## [2.19.0] — 2026-07-21 — Transfer a project between departments (admin)
 
 ### Added
