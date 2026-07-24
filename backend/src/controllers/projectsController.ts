@@ -99,6 +99,7 @@ export class ProjectsController {
         teamSlug: p.teamSlug,
         hasStarted: p.hasStarted,
         progressPct: p.progressPct,
+        department: p.department,
       })),
     );
   };
