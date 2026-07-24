@@ -13,6 +13,16 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.20.1] — 2026-07-24 — Projects filter: Division + Department
+
+Projects-page filter bar: renamed the **Team** filter to **Division** (org
+vocabulary) and added a **Department** filter. `GET /projects` now carries each
+project's department — its ACTIVE GROUP-subject grant to a UNIT group — resolved
+with two batched queries (no N+1). The Department dropdown lists the distinct
+departments across the visible projects and hides itself when none exist (e.g.
+before the access cutover, when projects have no department grants). No schema
+change; the workflow flags stay off.
+
 ## [2.20.0] — 2026-07-24 — Cross-unit task assignment workflow (behind a flag)
 
 Cross-unit task assignment workflow (P1–P3), shipped **inert** behind
