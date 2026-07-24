@@ -74,6 +74,17 @@ const envSchema = z.object({
     .transform((v) => v === 'true'),
   RECURRENCE_CHECK_INTERVAL_MIN: z.coerce.number().int().positive().default(60),
 
+  // v-next (P3): cross-unit assignment SLA scheduler. Opt-in, single-replica
+  // (in-process setInterval). Expires lapsed pending requests and fires the
+  // one-shot T-1 approver reminder. Independent of TASK_ASSIGNMENT_WORKFLOW —
+  // harmless to run when there are no requests (it just no-ops).
+  ASSIGNMENT_SLA_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  ASSIGNMENT_SLA_CHECK_INTERVAL_MIN: z.coerce.number().int().positive().default(60),
+  ASSIGNMENT_SLA_REMINDER_LEAD_HOURS: z.coerce.number().int().positive().default(24),
+
   // v1.14: outbound SMTP for verification + password reset + TASK_DUE emails.
   // Mailer is enabled iff SMTP_HOST is set; with no host, every sendMail()
   // call is a no-op (and the controllers still surface devReset/Verify tokens

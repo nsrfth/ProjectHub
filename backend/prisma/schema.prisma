@@ -1464,6 +1464,9 @@ model TaskAssignmentRequest {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   decidedAt     DateTime?
+  // v-next (P3): one-shot marker for the T-1 SLA reminder (mirrors
+  // Task.dueNotifiedAt). Null = not yet reminded; the sweep stamps it once.
+  remindedAt    DateTime?
 
   // Ownership relations only (task/project/team): Cascade so a purged task,
   // project, or division cannot strand a pending request. The five USER refs

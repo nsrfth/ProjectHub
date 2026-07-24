@@ -296,6 +296,77 @@ export class AssignmentRequestsService {
     }));
   }
 
+  /**
+   * v-next (P3): transition pending requests past their SLA to EXPIRED and
+   * notify the requester. Only non-terminal rows with a lapsed expiresAt are
+   * touched; best-effort per row so one failure can't stall the sweep. Returns
+   * the number expired. `at` is injectable for deterministic tests.
+   */
+  async sweepExpired(at?: Date): Promise<number> {
+    const now = at ?? new Date();
+    const due = await prisma.taskAssignmentRequest.findMany({
+      where: { status: { in: ['REQUESTED', 'APPROVED', 'FORWARDED'] }, expiresAt: { lte: now } },
+      select: { id: true, requesterId: true, teamId: true, taskId: true },
+    });
+    let expired = 0;
+    for (const r of due) {
+      try {
+        await prisma.taskAssignmentRequest.update({
+          where: { id: r.id },
+          data: { status: 'EXPIRED', decidedAt: now },
+        });
+        await notify(r.requesterId, r.teamId, 'ASSIGNMENT_DECIDED', {
+          requestId: r.id, taskId: r.taskId, decision: 'expired',
+        });
+        expired += 1;
+      } catch {
+        // best-effort per row
+      }
+    }
+    return expired;
+  }
+
+  /**
+   * v-next (P3): one-shot T-1 reminder. Nudges the approver(s) of pending
+   * requests whose SLA lapses within `leadMs`, once each (the remindedAt
+   * marker). The forwarded manager is the approver for a FORWARDED request.
+   * Returns the number reminded.
+   */
+  async remindSoon(leadMs: number, at?: Date): Promise<number> {
+    const now = at ?? new Date();
+    const horizon = new Date(now.getTime() + leadMs);
+    const soon = await prisma.taskAssignmentRequest.findMany({
+      where: {
+        status: { in: ['REQUESTED', 'APPROVED', 'FORWARDED'] },
+        remindedAt: null,
+        expiresAt: { gt: now, lte: horizon },
+      },
+      select: {
+        id: true, teamId: true, taskId: true, targetType: true, targetId: true,
+        status: true, forwardedToId: true,
+      },
+    });
+    let reminded = 0;
+    for (const r of soon) {
+      try {
+        const approvers =
+          r.status === 'FORWARDED' && r.forwardedToId
+            ? [r.forwardedToId]
+            : await this.resolveApprovers(r.targetType, r.targetId);
+        for (const uid of approvers) {
+          await notify(uid, r.teamId, 'ASSIGNMENT_REQUESTED', {
+            requestId: r.id, taskId: r.taskId, reminder: true,
+          });
+        }
+        await prisma.taskAssignmentRequest.update({ where: { id: r.id }, data: { remindedAt: now } });
+        reminded += 1;
+      } catch {
+        // best-effort per row
+      }
+    }
+    return reminded;
+  }
+
   // --- internals ----------------------------------------------------------
 
   private async load(requestId: string): Promise<TaskAssignmentRequest> {

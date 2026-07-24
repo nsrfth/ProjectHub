@@ -3,6 +3,7 @@ import { loadEnv } from './config/env.js';
 import { createDueDateScheduler } from './scheduler/dueDateScheduler.js';
 import { createWebhookDispatcher } from './scheduler/webhookDispatcher.js';
 import { createRecurrenceScheduler } from './scheduler/recurrenceScheduler.js';
+import { createAssignmentSlaScheduler } from './scheduler/assignmentSlaScheduler.js';
 import { createBackupScheduler } from './scheduler/backupScheduler.js';
 import { createDirectorySyncScheduler } from './scheduler/directorySyncScheduler.js';
 import { BackupsService } from './services/backupsService.js';
@@ -45,6 +46,17 @@ async function main(): Promise<void> {
       })
     : null;
   recurrenceScheduler?.start();
+
+  // v-next (P3): assignment-request SLA sweep + reminder. Opt-in; default off
+  // so tests and multi-instance deploys don't double-fire.
+  const assignmentSlaScheduler = env.ASSIGNMENT_SLA_ENABLED
+    ? createAssignmentSlaScheduler({
+        intervalMin: env.ASSIGNMENT_SLA_CHECK_INTERVAL_MIN,
+        reminderLeadHours: env.ASSIGNMENT_SLA_REMINDER_LEAD_HOURS,
+        logger: app.log,
+      })
+    : null;
+  assignmentSlaScheduler?.start();
 
   // Automatic Postgres backups (v1.27). Same opt-in shape; the admin can
   // also disable backups in Settings → Backups without an env change.
@@ -95,6 +107,7 @@ async function main(): Promise<void> {
     recurrenceScheduler?.stop();
     backupScheduler?.stop();
     directorySyncScheduler?.stop();
+    assignmentSlaScheduler?.stop();
   };
   app.lifecycle.processExit = (code) => process.exit(code);
 
@@ -106,6 +119,7 @@ async function main(): Promise<void> {
       recurrenceScheduler?.stop();
       backupScheduler?.stop();
       directorySyncScheduler?.stop();
+    assignmentSlaScheduler?.stop();
       await app.close();
       process.exit(0);
     } catch (err) {

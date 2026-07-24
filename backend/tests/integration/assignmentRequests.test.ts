@@ -429,3 +429,50 @@ describe('reconcile — reference-counted grant reversal (Slice 6)', () => {
     expect(await prisma.projectAccessGrant.count({ where: { projectId: project.id, subjectId: person.id } })).toBe(1);
   });
 });
+
+describe('SLA scheduler (P3) — expiry + one-shot reminder', () => {
+  async function pendingRequest() {
+    workflowLive();
+    const div = await makeTeam('Div');
+    const net = await makeUnit(div.id, 'Net');
+    const sec = await makeUnit(div.id, 'Sec');
+    const owner = await makeUser('owner');
+    const requester = await makeUser('requester');
+    const secMgr = await makeUser('secMgr');
+    const secMember = await makeUser('secMember');
+    for (const u of [owner, requester, secMgr, secMember]) await joinTeam(u.id, div.id);
+    await placeInUnit(net.id, requester.id);
+    await placeInUnit(sec.id, secMgr.id, 'MANAGER');
+    await placeInUnit(sec.id, secMember.id);
+    const project = await makeProject(div.id, owner.id);
+    const task = await makeTask(div.id, project.id, owner.id);
+    const req = await svc.create(div.id, project.id, task.id, requester.id, { proposedId: secMember.id });
+    return { req, requester, secMgr };
+  }
+
+  it('sweepExpired transitions a lapsed request to EXPIRED and notifies the requester', async () => {
+    const { req, requester } = await pendingRequest();
+    await prisma.taskAssignmentRequest.update({ where: { id: req.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    expect(await svc.sweepExpired()).toBe(1);
+    const after = await prisma.taskAssignmentRequest.findUnique({ where: { id: req.id } });
+    expect(after?.status).toBe('EXPIRED');
+    expect(after?.decidedAt).not.toBeNull();
+    expect(await prisma.notification.findFirst({ where: { userId: requester.id, type: 'ASSIGNMENT_DECIDED' } })).not.toBeNull();
+  });
+
+  it('does not expire a request still within its SLA', async () => {
+    const { req } = await pendingRequest();
+    expect(await svc.sweepExpired()).toBe(0);
+    expect((await prisma.taskAssignmentRequest.findUnique({ where: { id: req.id } }))?.status).toBe('REQUESTED');
+  });
+
+  it('remindSoon nudges the approver exactly once (one-shot via remindedAt)', async () => {
+    const { secMgr } = await pendingRequest();
+    await prisma.notification.deleteMany(); // clear the create-time ASSIGNMENT_REQUESTED
+    const lead = 30 * 24 * 3_600_000; // wide enough to cover a 3-working-day SLA
+    expect(await svc.remindSoon(lead)).toBe(1);
+    expect(await prisma.notification.count({ where: { userId: secMgr.id, type: 'ASSIGNMENT_REQUESTED' } })).toBe(1);
+    expect(await svc.remindSoon(lead)).toBe(0); // remindedAt now set → no re-nudge
+    expect(await prisma.notification.count({ where: { userId: secMgr.id, type: 'ASSIGNMENT_REQUESTED' } })).toBe(1);
+  });
+});
