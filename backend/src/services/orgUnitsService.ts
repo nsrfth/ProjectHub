@@ -1,4 +1,4 @@
-import { Prisma, type OrgUnitType } from '@prisma/client';
+import { Prisma, type GlobalRole, type OrgUnitType } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { buildCurrencyRollups, computeProjectBudgetMetrics } from '../lib/budgetReportMath.js';
 import { escapeField } from '../lib/csv.js';
@@ -37,6 +37,21 @@ export interface OrgUnitView {
 export interface OrgUnitTreeNode extends OrgUnitView {
   children: OrgUnitTreeNode[];
 }
+
+// v2.20.2: the portfolio roll-up is division-scoped for non-admin callers.
+// A global ADMIN keeps the whole-org oversight view (every node, every
+// division's projects). Everyone else — including a division Deputy (the
+// system Manager role, which holds `portfolio.view` by default) — is scoped
+// to the org-unit branches and projects of the teams they belong to, so one
+// division's deputy can no longer read another division's roll-up. This
+// mirrors how the cross-team projects list (projectListAllWhereForCaller)
+// already scopes by membership; the previous behaviour filtered ONLY by
+// org-unit subtree and leaked every division's projects to any manager.
+export interface PortfolioCaller {
+  userId: string;
+  globalRole: GlobalRole;
+}
+type PortfolioScope = { all: true } | { all: false; teamIds: string[] };
 
 const ORG_INCLUDE = {
   manager: { select: { name: true } },
@@ -101,20 +116,117 @@ export class OrgUnitsService {
     return rows.map((r) => r.id);
   }
 
-  async listFlat(): Promise<OrgUnitView[]> {
+  private async resolveScope(caller: PortfolioCaller): Promise<PortfolioScope> {
+    if (caller.globalRole === 'ADMIN') return { all: true };
+    const memberships = await prisma.teamMembership.findMany({
+      where: { userId: caller.userId },
+      select: { teamId: true },
+    });
+    return { all: false, teamIds: memberships.map((m) => m.teamId) };
+  }
+
+  // The org-unit ids a scoped caller may see: every node their divisions are
+  // linked to (TeamOrgUnit) or that holds one of their projects, plus those
+  // nodes' ancestors (so the tree stays connected up to the root) and their
+  // descendants (their own sub-portfolios / programs). Empty when the caller's
+  // divisions touch no org unit at all.
+  private async visibleOrgUnitIds(teamIds: string[]): Promise<Set<string>> {
+    if (teamIds.length === 0) return new Set();
+    const [links, projectNodes, allRows] = await Promise.all([
+      prisma.teamOrgUnit.findMany({
+        where: { teamId: { in: teamIds } },
+        select: { orgUnitId: true },
+      }),
+      prisma.project.findMany({
+        where: { teamId: { in: teamIds }, orgUnitId: { not: null } },
+        select: { orgUnitId: true },
+        distinct: ['orgUnitId'],
+      }),
+      prisma.orgUnit.findMany({ select: { id: true, path: true } }),
+    ]);
+    const anchorIds = new Set<string>();
+    for (const l of links) anchorIds.add(l.orgUnitId);
+    for (const p of projectNodes) if (p.orgUnitId) anchorIds.add(p.orgUnitId);
+    if (anchorIds.size === 0) return new Set();
+
+    const pathById = new Map(allRows.map((r) => [r.id, r.path]));
+    const visible = new Set<string>();
+    for (const anchorId of anchorIds) {
+      const path = pathById.get(anchorId);
+      if (!path) continue;
+      // Ancestors + self: the materialized path is a '/'-joined chain of ids.
+      for (const seg of path.split('/')) if (seg) visible.add(seg);
+      // Descendants: any node whose path sits under this one.
+      const prefix = subtreePathPrefix(path);
+      for (const r of allRows) if (r.path.startsWith(prefix)) visible.add(r.id);
+    }
+    return visible;
+  }
+
+  // Views for list/tree, filtered + count-corrected to the caller's scope.
+  private async scopedViews(scope: PortfolioScope): Promise<OrgUnitView[]> {
     const rows = await prisma.orgUnit.findMany({
       include: ORG_INCLUDE,
       orderBy: [{ path: 'asc' }],
     });
-    return rows.map(toView);
+    if (scope.all) return rows.map(toView);
+
+    const visible = await this.visibleOrgUnitIds(scope.teamIds);
+    const visibleRows = rows.filter((r) => visible.has(r.id));
+
+    // Recompute projectCount to the caller's own teams so a scoped caller never
+    // even learns how many projects another division parked on a shared node.
+    const counts = new Map<string, number>();
+    if (visibleRows.length > 0) {
+      const grouped = await prisma.project.groupBy({
+        by: ['orgUnitId'],
+        where: {
+          teamId: { in: scope.teamIds },
+          orgUnitId: { in: visibleRows.map((r) => r.id) },
+        },
+        _count: { _all: true },
+      });
+      for (const g of grouped) if (g.orgUnitId) counts.set(g.orgUnitId, g._count._all);
+    }
+
+    // Recompute childCount to visible children only, so it matches the tree the
+    // caller actually receives.
+    const visibleChildren = new Map<string, number>();
+    for (const r of visibleRows) {
+      if (r.parentId && visible.has(r.parentId)) {
+        visibleChildren.set(r.parentId, (visibleChildren.get(r.parentId) ?? 0) + 1);
+      }
+    }
+
+    return visibleRows.map((r) => ({
+      ...toView(r),
+      childCount: visibleChildren.get(r.id) ?? 0,
+      projectCount: counts.get(r.id) ?? 0,
+    }));
   }
 
-  async listTree(): Promise<OrgUnitTreeNode[]> {
-    return buildTree(await this.listFlat());
+  private async assertVisible(id: string, scope: PortfolioScope): Promise<void> {
+    if (scope.all) return;
+    const visible = await this.visibleOrgUnitIds(scope.teamIds);
+    // Existence-hiding: a node outside the caller's divisions 404s exactly like
+    // a non-existent one.
+    if (!visible.has(id)) throw Errors.notFound('Org unit not found');
   }
 
-  async get(id: string): Promise<OrgUnitView> {
-    return toView(await this.getRow(id));
+  async listFlat(caller: PortfolioCaller): Promise<OrgUnitView[]> {
+    return this.scopedViews(await this.resolveScope(caller));
+  }
+
+  async listTree(caller: PortfolioCaller): Promise<OrgUnitTreeNode[]> {
+    return buildTree(await this.scopedViews(await this.resolveScope(caller)));
+  }
+
+  async get(id: string, caller: PortfolioCaller): Promise<OrgUnitView> {
+    const scope = await this.resolveScope(caller);
+    if (scope.all) return toView(await this.getRow(id));
+    const view = (await this.scopedViews(scope)).find((v) => v.id === id);
+    if (!view) throw Errors.notFound('Org unit not found');
+    return view;
   }
 
   async create(actorId: string, input: CreateOrgUnitBody): Promise<OrgUnitView> {
@@ -340,10 +452,14 @@ export class OrgUnitsService {
     };
   }
 
-  private async projectsInSubtree(root: OrgRow) {
+  private async projectsInSubtree(root: OrgRow, scope: PortfolioScope) {
     const ids = await this.descendantIds(root);
+    const where: Prisma.ProjectWhereInput = { orgUnitId: { in: ids } };
+    // A scoped caller's roll-up counts ONLY their own divisions' projects, even
+    // on a shared ancestor node that also holds other divisions' projects.
+    if (!scope.all) where.teamId = { in: scope.teamIds };
     return prisma.project.findMany({
-      where: { orgUnitId: { in: ids } },
+      where,
       select: {
         id: true,
         name: true,
@@ -361,9 +477,11 @@ export class OrgUnitsService {
     });
   }
 
-  async reportSummary(orgUnitId: string) {
+  async reportSummary(orgUnitId: string, caller: PortfolioCaller) {
+    const scope = await this.resolveScope(caller);
     const root = await this.getRow(orgUnitId);
-    const projects = await this.projectsInSubtree(root);
+    await this.assertVisible(root.id, scope);
+    const projects = await this.projectsInSubtree(root, scope);
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
 
@@ -389,9 +507,11 @@ export class OrgUnitsService {
     };
   }
 
-  async reportProgress(orgUnitId: string) {
+  async reportProgress(orgUnitId: string, caller: PortfolioCaller) {
+    const scope = await this.resolveScope(caller);
     const root = await this.getRow(orgUnitId);
-    const projects = await this.projectsInSubtree(root);
+    await this.assertVisible(root.id, scope);
+    const projects = await this.projectsInSubtree(root, scope);
     const projectRows = projects.map((p) => {
       const byStatus = { TODO: 0, IN_PROGRESS: 0, REVIEW: 0, DONE: 0 };
       for (const t of p.tasks) {
@@ -422,9 +542,11 @@ export class OrgUnitsService {
     };
   }
 
-  async reportRag(orgUnitId: string) {
+  async reportRag(orgUnitId: string, caller: PortfolioCaller) {
+    const scope = await this.resolveScope(caller);
     const root = await this.getRow(orgUnitId);
-    const projects = await this.projectsInSubtree(root);
+    await this.assertVisible(root.id, scope);
+    const projects = await this.projectsInSubtree(root, scope);
     const byStatus = { GREEN: 0, AMBER: 0, RED: 0 };
     for (const p of projects) byStatus[p.ragStatus]++;
     return {
@@ -435,9 +557,11 @@ export class OrgUnitsService {
     };
   }
 
-  async reportCost(orgUnitId: string) {
+  async reportCost(orgUnitId: string, caller: PortfolioCaller) {
+    const scope = await this.resolveScope(caller);
     const root = await this.getRow(orgUnitId);
-    const projects = await this.projectsInSubtree(root);
+    await this.assertVisible(root.id, scope);
+    const projects = await this.projectsInSubtree(root, scope);
     const metrics = projects.map((p) => {
       const m = computeProjectBudgetMetrics(p.plannedBudget);
       return { currency: p.budgetCurrency, hasBudget: m.hasBudget, plannedBudget: m.plannedBudget };
@@ -450,17 +574,20 @@ export class OrgUnitsService {
     };
   }
 
-  reportEvm(orgUnitId: string) {
-    return this.getRow(orgUnitId).then((root) => ({
+  async reportEvm(orgUnitId: string, caller: PortfolioCaller) {
+    const scope = await this.resolveScope(caller);
+    const root = await this.getRow(orgUnitId);
+    await this.assertVisible(root.id, scope);
+    return {
       orgUnitId: root.id,
       orgUnitName: root.name,
       available: false as const,
       message: 'EVM roll-ups ship with the cost-control module (R7)',
-    }));
+    };
   }
 
-  async portfolioCsv(orgUnitId: string): Promise<string> {
-    const progress = await this.reportProgress(orgUnitId);
+  async portfolioCsv(orgUnitId: string, caller: PortfolioCaller): Promise<string> {
+    const progress = await this.reportProgress(orgUnitId, caller);
     // escapeField quotes commas/quotes/newlines AND neutralizes leading formula
     // characters — a project/team name set by a member must not execute as a
     // spreadsheet formula on export.

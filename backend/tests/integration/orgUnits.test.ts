@@ -66,6 +66,29 @@ async function createProject(token: string, teamId: string, name: string): Promi
   return r.json().id as string;
 }
 
+interface TreeNode {
+  id: string;
+  children: TreeNode[];
+}
+function flattenIds(nodes: TreeNode[]): string[] {
+  return nodes.flatMap((n) => [n.id, ...flattenIds(n.children ?? [])]);
+}
+
+async function attachProject(
+  token: string,
+  teamId: string,
+  projectId: string,
+  orgUnitId: string,
+): Promise<void> {
+  const r = await app.inject({
+    method: 'PUT',
+    url: `/api/teams/${teamId}/projects/${projectId}/org-unit`,
+    headers: { authorization: `Bearer ${token}` },
+    payload: { orgUnitId },
+  });
+  if (r.statusCode !== 200) throw new Error(`attachProject failed: ${r.statusCode} ${r.body}`);
+}
+
 describe('Org units (PMIS R3)', () => {
   it('seeds the HOLDING root and lists the tree', async () => {
     const a = await register('a@example.com');
@@ -254,6 +277,84 @@ describe('Org units (PMIS R3)', () => {
     });
     expect(summary.statusCode).toBe(200);
     expect(summary.json().projectCount).toBe(1);
+  });
+
+  // v2.20.2: a division Deputy (system Manager, holds portfolio.view by
+  // default) must NOT see another division's projects in the portfolio
+  // roll-up. Reproduces the reported leak: Behzad, deputy of "Data &
+  // Analytics", was seeing the Tech division's projects.
+  it("scopes the portfolio roll-up to the caller's own division", async () => {
+    const admin = await register('admin@example.com', 'Admin'); // first user → ADMIN
+    const H = { authorization: `Bearer ${admin.token}` };
+    const mk = (payload: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: '/api/org-units', headers: H, payload });
+
+    // Two sibling portfolios under the shared HOLDING root.
+    const techPf = (
+      await mk({ parentId: HOLDING_ROOT_ID, type: 'PORTFOLIO', name: 'Tech', code: 'TECH' })
+    ).json().id as string;
+    const dataPf = (
+      await mk({ parentId: HOLDING_ROOT_ID, type: 'PORTFOLIO', name: 'Data', code: 'DATA' })
+    ).json().id as string;
+
+    // Tech division + its project, attached under the Tech portfolio.
+    const teamTech = await createTeam(admin.token, 'tech');
+    const projTech = await createProject(admin.token, teamTech, 'Tech Secret');
+    await attachProject(admin.token, teamTech, projTech, techPf);
+
+    // Data & Analytics division + its project, attached under the Data portfolio.
+    const teamData = await createTeam(admin.token, 'data');
+    const projData = await createProject(admin.token, teamData, 'Data Project');
+    await attachProject(admin.token, teamData, projData, dataPf);
+
+    // Behzad is the Deputy (MANAGER) of Data & Analytics ONLY.
+    const behzad = await register('behzad@example.com', 'Behzad');
+    const add = await app.inject({
+      method: 'POST',
+      url: `/api/teams/${teamData}/members`,
+      headers: H,
+      payload: { email: 'behzad@example.com', role: 'MANAGER' },
+    });
+    expect(add.statusCode).toBeLessThan(300);
+    const B = { authorization: `Bearer ${behzad.token}` };
+
+    // His tree shows his own portfolio + the shared HOLDING ancestor, never the
+    // sibling Tech portfolio.
+    const tree = await app.inject({ method: 'GET', url: '/api/org-units/tree', headers: B });
+    expect(tree.statusCode).toBe(200);
+    const ids = flattenIds(tree.json().items as TreeNode[]);
+    expect(ids).toContain(dataPf);
+    expect(ids).toContain(HOLDING_ROOT_ID);
+    expect(ids).not.toContain(techPf);
+
+    // Roll-up on the SHARED ancestor counts only his division's project.
+    const holdingProg = await app.inject({
+      method: 'GET',
+      url: `/api/org-units/${HOLDING_ROOT_ID}/reports/progress`,
+      headers: B,
+    });
+    expect(holdingProg.statusCode).toBe(200);
+    const behzadProjectIds = (
+      holdingProg.json().projects as Array<{ projectId: string }>
+    ).map((p) => p.projectId);
+    expect(behzadProjectIds).toContain(projData);
+    expect(behzadProjectIds).not.toContain(projTech);
+
+    // He cannot open the sibling Tech portfolio's report at all (existence-hiding 404).
+    const techReport = await app.inject({
+      method: 'GET',
+      url: `/api/org-units/${techPf}/reports/progress`,
+      headers: B,
+    });
+    expect(techReport.statusCode).toBe(404);
+
+    // The ADMIN oversight view is unchanged — full cross-division roll-up.
+    const adminProg = await app.inject({
+      method: 'GET',
+      url: `/api/org-units/${HOLDING_ROOT_ID}/reports/progress`,
+      headers: H,
+    });
+    expect(adminProg.json().projectCount).toBe(2);
   });
 
   it('hides a cross-team project attach as existence-hiding 404', async () => {

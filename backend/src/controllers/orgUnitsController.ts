@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { OrgUnitsService } from '../services/orgUnitsService.js';
+import type { OrgUnitsService, PortfolioCaller } from '../services/orgUnitsService.js';
 import type {
   CreateOrgUnitBody,
   MoveOrgUnitBody,
@@ -14,18 +14,26 @@ type ProjectParams = { teamId: string; projectId: string };
 export class OrgUnitsController {
   constructor(private readonly svc: OrgUnitsService) {}
 
-  list = async (_req: FastifyRequest, reply: FastifyReply) => {
-    const items = await this.svc.listFlat();
+  // v2.20.2: portfolio reads are scoped to the caller's divisions (ADMIN sees
+  // all). requireAuth guarantees req.user on every route here; each handler
+  // still guards it so the type narrows and an unauthenticated call 401s.
+  private caller(req: FastifyRequest): PortfolioCaller {
+    if (!req.user) throw Errors.unauthorized();
+    return { userId: req.user.sub, globalRole: req.user.globalRole };
+  }
+
+  list = async (req: FastifyRequest, reply: FastifyReply) => {
+    const items = await this.svc.listFlat(this.caller(req));
     return reply.send({ items });
   };
 
-  tree = async (_req: FastifyRequest, reply: FastifyReply) => {
-    const items = await this.svc.listTree();
+  tree = async (req: FastifyRequest, reply: FastifyReply) => {
+    const items = await this.svc.listTree(this.caller(req));
     return reply.send({ items });
   };
 
   get = async (req: FastifyRequest<{ Params: OrgUnitParams }>, reply: FastifyReply) => {
-    return reply.send(await this.svc.get(req.params.orgUnitId));
+    return reply.send(await this.svc.get(req.params.orgUnitId, this.caller(req)));
   };
 
   create = async (
@@ -84,27 +92,27 @@ export class OrgUnitsController {
   };
 
   reportSummary = async (req: FastifyRequest<{ Params: OrgUnitParams }>, reply: FastifyReply) => {
-    return reply.send(await this.svc.reportSummary(req.params.orgUnitId));
+    return reply.send(await this.svc.reportSummary(req.params.orgUnitId, this.caller(req)));
   };
 
   reportProgress = async (req: FastifyRequest<{ Params: OrgUnitParams }>, reply: FastifyReply) => {
-    return reply.send(await this.svc.reportProgress(req.params.orgUnitId));
+    return reply.send(await this.svc.reportProgress(req.params.orgUnitId, this.caller(req)));
   };
 
   reportRag = async (req: FastifyRequest<{ Params: OrgUnitParams }>, reply: FastifyReply) => {
-    return reply.send(await this.svc.reportRag(req.params.orgUnitId));
+    return reply.send(await this.svc.reportRag(req.params.orgUnitId, this.caller(req)));
   };
 
   reportCost = async (req: FastifyRequest<{ Params: OrgUnitParams }>, reply: FastifyReply) => {
-    return reply.send(await this.svc.reportCost(req.params.orgUnitId));
+    return reply.send(await this.svc.reportCost(req.params.orgUnitId, this.caller(req)));
   };
 
   reportEvm = async (req: FastifyRequest<{ Params: OrgUnitParams }>, reply: FastifyReply) => {
-    return reply.send(await this.svc.reportEvm(req.params.orgUnitId));
+    return reply.send(await this.svc.reportEvm(req.params.orgUnitId, this.caller(req)));
   };
 
   portfolioCsv = async (req: FastifyRequest<{ Params: OrgUnitParams }>, reply: FastifyReply) => {
-    const csv = await this.svc.portfolioCsv(req.params.orgUnitId);
+    const csv = await this.svc.portfolioCsv(req.params.orgUnitId, this.caller(req));
     return reply.header('Content-Type', 'text/csv; charset=utf-8').send(csv);
   };
 }

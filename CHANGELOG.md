@@ -13,6 +13,24 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.20.2] — 2026-07-26 — Fix: portfolio roll-up leaked other divisions' projects
+
+**Security / multi-tenancy fix.** The Portfolio (PMIS org-unit) tree and its
+subtree roll-up reports (`GET /org-units`, `/tree`, `/:id`, `/reports/*`,
+`portfolio.csv`) were scoped **only** by org-unit subtree, never by the caller's
+divisions. Because the system Manager role holds `portfolio.view` by default,
+any division Deputy could open the Portfolio page and read every other
+division's projects rolled up under a shared Holding/Company node. Reported as:
+a new "Data & Analytics" deputy seeing the Tech division's projects.
+
+Now a global **ADMIN** keeps the full cross-division oversight view, and every
+other caller is scoped to the org-unit branches and projects of the teams they
+belong to — consistent with how the cross-team projects list already scopes by
+membership. A scoped caller sees the shared ancestor nodes (with counts and
+roll-ups reduced to their own divisions' projects) but not sibling divisions'
+nodes; requesting a report for a node outside their divisions returns an
+existence-hiding 404. Backend-only change; rebuild the backend container.
+
 ## [2.20.1] — 2026-07-24 — Projects filter: Division + Department
 
 Projects-page filter bar: renamed the **Team** filter to **Division** (org
