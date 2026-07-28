@@ -1,6 +1,14 @@
 # ProjectHub — User Manual
 
-Version **v2.5.34** (2026-07-04)
+Version **v2.21.0** (2026-07-28)
+
+
+> **Terminology (v2.10).** The product now uses your organizational vocabulary:
+> what was a **Team** is a **Division** (معاونت); an AD-synced unit inside it is a
+> **Department** (اداره کل) run by a **Director** (مدیرکل); the division's system
+> Manager role displays as **Deputy** (معاون). Collaboration groups keep their
+> name. Only labels changed — URLs, APIs, and permissions are untouched, so
+> existing links and integrations keep working.
 
 This manual covers everything a member, manager, or admin needs to do day-to-day. For operator / deployment topics (env vars, backups, scaling), see `README.md`, `BACKUP.md`, and `ARCHITECTURE.md`.
 
@@ -49,9 +57,11 @@ ProjectHub organises work in three layers:
 Two roles matter:
 
 - **Global** role — `ADMIN` or `MEMBER`. Set on the user account. `ADMIN` has instance-wide privileges (manage Directories, see all audit, etc.).
-- **Team** role — `MANAGER` or `MEMBER`. Set per-team. `MANAGER` can invite + remove members, configure webhooks, and see the team's audit log.
+- **Team** role — `MANAGER`, `MEMBER`, or `PMO`. Set per-team. `MANAGER` can invite + remove members, configure webhooks, and see the team's audit log.
 
 You can be a global `MEMBER` and a team `MANAGER` at the same time — these are independent.
+
+**PMO (Project Management Office)** — a third built-in team role (v2.5.54) for **read-only oversight**. A PMO sees **every project in the team** (all tasks, boards, reports, and portfolio roll-ups) **read-only** — they cannot create or edit tasks, or change project content, on projects they don't own. On top of that visibility, a PMO governs **standards**: project profiles and defaults, schedule baselines, and the change/timesheet approval gates. Assign it like any role — open the team, and in the member's **role** dropdown pick **PMO**. It's scoped to the team you assign it in (a PMO of one team has no visibility into another). To give someone read-only access to only *specific* projects instead of the whole team, use a **User group** with **Read only** access (see [User groups](#user-groups)) rather than the PMO role. Admins can broaden or narrow what PMO can do per team from **Settings ▸ Roles & permissions**.
 
 ---
 
@@ -63,6 +73,8 @@ You can be a global `MEMBER` and a team `MANAGER` at the same time — these are
 4. After signing in, the **Dashboard** aggregates KPIs, charts, workload, upcoming deadlines, and recent activity across **every team you belong to** — not just one team.
 
 If your account is owned by an LDAP directory, you log in with your LDAP password — the form is identical.
+
+**The look (v2.21):** the sign-in screen sits on an animated constellation of drifting particles that link up and react to your pointer. It's decorative only — nothing on it is clickable, and it never steals focus from the form. The sign-in screen is always dark regardless of your theme choice; your theme still applies everywhere else. If your system is set to *reduce motion*, the backdrop renders as a still image instead.
 
 ---
 
@@ -116,7 +128,58 @@ The buttons appear on every signed-in route so you can always reach help / conte
 
 ---
 
+## Divisions & Departments (v2.10–v2.17)
+
+Your organization lives on the **Divisions** page (معاونت‌ها in Farsi).
+
+**The division header** shows, top to bottom:
+- **Company** — which company (from the portfolio tree) this division belongs to.
+  Members see it; editors can change it.
+- **Deputies** — the division's معاون(s). A deputy has full division powers: assign
+  work to anyone, share projects, manage departments. Add one from the dropdown;
+  remove with the × on a chip.
+
+**Two tabs**: *Departments* and *Collaboration groups*.
+
+### Departments (ادارات کل)
+
+A department is a section of the division with a single **manager (مدیر)** and members.
+
+- **Create** one with the name box at the top of the Departments tab.
+- **Add members** with the search box — anyone you pick who isn't yet in the division
+  is joined to it automatically (as a regular member; roles stay a deliberate choice).
+- **Choose the manager** from the مدیر dropdown — picking someone promotes them and
+  demotes any previous manager. Manager rows show only the badge.
+- **Set each member's tier**: *Supervisor* (سرپرست — creates and assigns work) or
+  *Expert / Specialist* (کارشناس — works their own assignments).
+- **Units (ادارات)** — optionally subdivide a department: create unit chips, then tag
+  members with a unit from the per-row dropdown. Tags are organizational only.
+- **Removing people**: × removes from the department only; *Remove from division*
+  runs the full check — if they own projects you must reassign ownership or
+  explicitly force. Division members not in any department are listed at the bottom
+  of the tab so nobody is invisible.
+- **One department per person.** Adding someone who already has a department is
+  refused with a clear message.
+
+### Sharing projects
+
+Project **⋯ → Edit → Sharing** is one list for everything: share to a division, a
+group, or a department, at Read or Write level. When consent is enabled, shares that
+need another manager's approval stay **Pending** — approvals arrive in the bell menu
+under *Awaiting your approval*, where the responsible manager accepts or declines.
+
+### Creating projects
+
+The create form asks for **Division** and (optionally) **Department**. Choosing them
+pre-fills the owner with the division's deputy and the accountable with the
+department's manager — both remain editable.
+
 ## Teams and projects
+
+> **Note:** this section predates the v2.10 renaming (Team → Division) and the v2.12
+> move of member management into Departments. For anything about people, roles, or
+> org structure, the chapter above is authoritative.
+
 
 - **Teams** page — click the team-name dropdown on the dashboard or go to `/teams`. Lists every team you belong to and lets you switch the "current team" (drives what the kanban / reports / settings show).
 - **Create a team** — click **New team**, give it a name + slug (URL-safe, dash-delimited, e.g. `growth-eng`).
@@ -515,7 +578,7 @@ Each task appears as a coloured pill — the pill colour is the **team accent** 
 
 The **Date field** dropdown (Due vs Planned) applies to grid modes only — the Timeline view uses each task's start/due (or subtask start/end) range directly. Completed tasks are omitted from grid calendar fetches; the Timeline shows all non-deleted tasks (including done) so historical bars remain visible.
 
-Off-days are determined by **weekend weekdays** ([Workweek](#workweek-off-days)) plus **instance holidays** ([Holidays](#holidays-admin)). Both render with a red label and red-50 background tint; holidays also show their **name** on hover.
+Off-days are determined by **weekend weekdays** ([Workweek](#workweek-off-days)) plus **instance holidays** ([Holidays](#holidays-admin)). Since **v2.5.50** they render with a soft **warm-brown** background tint (rather than the old red, which read as an error) — consistently in the month calendar, the weekly planner, and the **Project Gantt** day columns; holidays also show their **name** on hover in all three. The tint adapts to the active theme (a muted brown in dark themes).
 
 ---
 
@@ -571,13 +634,34 @@ When PMIS modules are enabled on the project, a **Task schedule (WBS)** section 
 
 | Mode | Visible window | Navigation step |
 |------|----------------|-----------------|
-| **Year** | 12 month columns for the anchor year | ±1 year |
+| **Year** | 12 month columns for the anchor year, **in your calendar** (v2.5.59) | ±1 year |
 | **Month** | Full calendar month (day columns, week dividers) | ±1 month |
 | **Week** | 7 days from the configured week start | ±1 week |
 | **Working week** | Same week range but **off-days omitted** (only working-day columns) | ±1 week |
 | **Day** | **Fit** — spans the whole filtered project at day resolution (legacy default); prev/next switches to month windows | ±1 month when not fit |
 
 Use **‹ Today ›** to jump the anchor to the current period. The period label follows your Shamsi/Gregorian preference.
+
+### All-projects year timeline (v2.5.58, calendar-aware + progress v2.5.59)
+
+**Projects → Timeline** (`/projects/timeline`) puts every project you can see — across every team — on a single one-year chart, one row per project. Filter by team and by status (Active / On hold / Archived); projects without start and end dates are listed underneath as **Unscheduled**.
+
+The 12-month axis **follows your calendar setting** (v2.5.59):
+
+- **Shamsi** — the year runs **Farvardin 1 → Esfand 29/30** (leap years included), with Persian month names (فرو، ارد، خرد …). The year label above the chart is the Jalali year the grid actually covers.
+- **Gregorian** — the year runs **January → December**, labelled Jan…Dec.
+
+Switch calendars under **Preferences → Calendar**; the timeline follows on the next load.
+
+Each row can show three things:
+
+| Colour | Meaning |
+|--------|---------|
+| **Blue bar** | The project's planned window (start date → end date). |
+| **Green fill** | **Progress** (v2.5.59) — how far along the project is, filling the planned bar from the left. |
+| **Red segment** | **Late to start** — the planned start has passed but no task has moved off To do. Drawn over everything else, because "not started" outranks "in progress". |
+
+**Progress** is the average percent-complete of the project's live, lowest-level tasks. Summary (parent) tasks are skipped so their rolled-up percentage is not counted twice, and deleted tasks are ignored. A project with no tasks yet shows 0%. Hover any bar for the exact figure alongside the project's dates.
 
 ### Exporting to CSV (v1.14)
 

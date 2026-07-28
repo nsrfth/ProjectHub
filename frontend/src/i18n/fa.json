@@ -286,6 +286,8 @@
   "login.twoFactorVerifying": "در حال تأیید…",
   "login.twoFactorBack": "بازگشت به ورود",
   "login.twoFactorInvalid": "کد دو مرحله‌ای نامعتبر است",
+  "login.badge": "ورود امن و یکپارچه",
+  "login.tagline": "برنامه‌ریزی، پیگیری و انجام کارهای تیم، همه در یک‌جا.",
   "dashboard.title": "داشبوردها",
   "dashboard.signedInAs": "وارد شده با عنوان",
   "dashboard.role": "نقش",

@@ -13,6 +13,34 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.21.0] — 2026-07-28 — Sign-in page: animated particle backdrop
+
+The login route now renders on **Aether Flow**, an interactive particle-constellation
+canvas, with the sign-in card floating on top as a frosted-glass panel.
+
+- **New component** `frontend/src/components/ui/aether-flow-hero.tsx` — the first
+  entry in a shadcn-style `components/ui/` folder. Two exports: `ParticleField`
+  (just the canvas, absolutely fills its parent) and the default `AetherFlowHero`
+  (full-bleed section = field + centred content, `children` replacing the built-in
+  copy). Particles drift, link to nearby neighbours, brighten under the pointer,
+  and are pushed away by it.
+- **`LoginPage` is unchanged behaviourally** — the two-step credentials → TOTP flow,
+  the 503 directory-outage message passthrough, and the `VITE_TESTBED` credential
+  helper all work exactly as before. Only the presentation changed: email/password
+  now carry `Mail` / `Lock` affordances and the card is styled for a dark surface.
+- **This is the one route that ignores the active theme.** The canvas paints its
+  own opaque backdrop, so the `bg-surface` / `text-text` / `border-border` tokens
+  would render an unreadable light-on-light card under the LIGHT family; every
+  control on the page is styled dark explicitly. A regression test enforces it.
+- **RTL + a11y:** email and 2FA-code inputs are pinned `dir="ltr"` so addresses and
+  codes read correctly under Persian; the canvas is `aria-hidden` +
+  `pointer-events-none` so it never takes focus from the form;
+  `prefers-reduced-motion` paints a single static frame and starts no animation
+  loop or pointer listeners. The loop also suspends while the tab is hidden.
+- **New deps:** `framer-motion` (entrance stagger) and `lucide-react` (icons). New
+  helper `frontend/src/lib/utils.ts` exports the shadcn-convention `cn`.
+- **New strings:** `login.badge`, `login.tagline` — EN + FA.
+
 ## [2.20.3] — 2026-07-28 — Fix: Dashboard "Overdue" card counted tasks that its drill-down didn't list
 
 Clicking the Dashboard **Overdue** KPI opened a modal that said *No tasks to

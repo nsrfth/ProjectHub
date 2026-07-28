@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.20.3** (2026-07-28)
+Version **v2.21.0** (2026-07-28)
 
 
 > **Terminology (v2.10).** The product now uses your organizational vocabulary:
@@ -73,6 +73,8 @@ You can be a global `MEMBER` and a team `MANAGER` at the same time — these are
 4. After signing in, the **Dashboard** aggregates KPIs, charts, workload, upcoming deadlines, and recent activity across **every team you belong to** — not just one team.
 
 If your account is owned by an LDAP directory, you log in with your LDAP password — the form is identical.
+
+**The look (v2.21):** the sign-in screen sits on an animated constellation of drifting particles that link up and react to your pointer. It's decorative only — nothing on it is clickable, and it never steals focus from the form. The sign-in screen is always dark regardless of your theme choice; your theme still applies everywhere else. If your system is set to *reduce motion*, the backdrop renders as a still image instead.
 
 ---
 
