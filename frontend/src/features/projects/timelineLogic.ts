@@ -107,6 +107,12 @@ export const PROJECTS_TIMELINE_I18N_KEYS = [
   'projects.timeline.statusFilter',
   // New (v2.5.59)
   'projects.timeline.progress',
+  // New (v2.22) — interactive Gantt rebuild
+  'projects.timeline.range.daily',
+  'projects.timeline.range.monthly',
+  'projects.timeline.range.quarterly',
+  'projects.timeline.rangeFilter',
+  'projects.timeline.saveError',
   // Reused existing keys
   'reports.allTeams',
   'projects.status.active',

@@ -1,37 +1,56 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { listAllProjects, type ProjectCrossTeam } from '@/features/projects/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  barGeometry,
-  buildGanttAxis,
-  shiftAnchor,
-  todayLineX,
-  todayUtcMs,
-  utcDayMs,
-  type GanttAxis,
-} from '@/features/reports/ganttScale';
-import { formatGanttPeriodLabel } from '@/features/reports/ganttPeriodLabel';
+  listAllProjects,
+  updateProject,
+  type ProjectCrossTeam,
+} from '@/features/projects/api';
 import {
   lateStartGapDays,
   projectsTimelineRows,
 } from '@/features/projects/timelineLogic';
+import {
+  GanttFeatureItem,
+  GanttFeatureList,
+  GanttFeatureListGroup,
+  GanttHeader,
+  GanttProvider,
+  GanttSidebar,
+  GanttSidebarGroup,
+  GanttSidebarHeader,
+  GanttSidebarItem,
+  GanttTimeline,
+  GanttToday,
+  todayUtcMs,
+  utcDayMs,
+  type GanttFeature,
+  type Range,
+} from '@/components/ui/gantt';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
-import { getCalendar, getWeekStartDay } from '@/lib/calendar';
+import { getCalendar } from '@/lib/calendar';
+import { jalaliYearOfUtcMs } from '@/lib/shamsi';
 import { useT } from '@/lib/i18n';
 
-// v2.5.58: "All projects — one-year timeline". One SVG row per dated project
-// across every team the caller can see, on the shared 'year' Gantt axis
-// (12 month columns). The signature feature is the red "late to start"
-// segment: hasStarted === false with a planned start in the past paints
-// var(--color-danger) from the planned start up to today.
+// v2.5.58 → v2.22: "All projects — one-year timeline", rebuilt on the
+// interactive Gantt (components/ui/gantt.tsx). What the SVG version did, this
+// still does — the red "late to start" segment, the green progress fill, the
+// calendar-aware axis, Shamsi tooltips, the unscheduled list. What it adds:
+// drag a bar to reschedule (persisted through updateProject), resize either
+// end, switch between daily / monthly / quarterly, and scroll the timeline
+// into any year.
 //
-// SVG note (same as ProjectGanttPage): `var()` only resolves inside a CSS
-// `style`, not an SVG presentation attribute — all token colors go through
-// style={{ fill/stroke }}.
+// Bar layers, painted in this order so the meaning survives overlap:
+//   1. the Card itself      — the planned window
+//   2. green progress fill  — clamped to the bar, hidden at 0%
+//   3. red late-start gap   — drawn LAST so "not started" stays visible on
+//                             top of "in progress"
+//
+// The fills are percentage-width, not pixel maths: the bar element is already
+// sized by the Gantt's column geometry, so a % is exact in every range and
+// calendar and cannot drift from the bar it sits in.
 
-const ROW_HEIGHT = 28;
-const HEADER_HEIGHT = 24;
+const MS_DAY = 86_400_000;
 
 const STATUS_OPTIONS = [
   { value: 'ACTIVE', labelKey: 'projects.status.active' },
@@ -39,33 +58,91 @@ const STATUS_OPTIONS = [
   { value: 'ARCHIVED', labelKey: 'projects.status.archived' },
 ] as const;
 
+const RANGE_OPTIONS: Array<{ value: Range; labelKey: string }> = [
+  { value: 'daily', labelKey: 'projects.timeline.range.daily' },
+  { value: 'monthly', labelKey: 'projects.timeline.range.monthly' },
+  { value: 'quarterly', labelKey: 'projects.timeline.range.quarterly' },
+];
+
+const STATUS_COLOR: Record<string, string> = {
+  ACTIVE: 'var(--color-success)',
+  ON_HOLD: 'var(--color-warning)',
+  ARCHIVED: 'var(--color-text-muted)',
+};
+
+/** UTC-midnight ms for a calendar-date ISO string, or null. */
+function dayMs(iso: string | null): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return utcDayMs(d);
+}
+
+/**
+ * A project row needs both ends to draw. Projects carrying only one of the
+ * two dates collapse to a single-day bar on the date they do have — the same
+ * rows the SVG version drew as a stub.
+ */
+function featureBounds(p: ProjectCrossTeam): { startMs: number; endMs: number } | null {
+  const start = dayMs(p.startDate);
+  const end = dayMs(p.endDate);
+  if (start === null && end === null) return null;
+  const s = start ?? (end as number);
+  const e = end ?? (start as number);
+  return { startMs: Math.min(s, e), endMs: Math.max(s, e) };
+}
+
+function formatDate(ms: number): string {
+  const iso = new Date(ms).toISOString();
+  return formatShamsiCalendarDate(iso) ?? iso.slice(0, 10);
+}
+
 export default function ProjectsTimelinePage(): JSX.Element {
   const t = useT();
-  const [anchorMs, setAnchorMs] = useState(() => todayUtcMs());
+  const qc = useQueryClient();
+  const calendar = getCalendar();
+  const todayMs = todayUtcMs();
+
   const [teamFilter, setTeamFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ACTIVE');
+  const [range, setRange] = useState<Range>('monthly');
+  const [anchorYear, setAnchorYear] = useState(() =>
+    calendar === 'SHAMSI'
+      ? jalaliYearOfUtcMs(todayUtcMs())
+      : new Date(todayUtcMs()).getUTCFullYear(),
+  );
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const { data: projects = [], isLoading, isError } = useQuery({
     queryKey: ['projects', 'all'],
     queryFn: () => listAllProjects(),
   });
 
-  const weekStartDay = getWeekStartDay();
-  const todayMs = todayUtcMs();
-  // v2.5.59: the 12-month axis follows the calendar preference (Jalali months
-  // under SHAMSI). Changing it happens on the Preferences page, which reloads,
-  // so a plain read at render is enough — no subscription needed.
-  const calendar = getCalendar();
-
-  const axis = useMemo(
-    () => buildGanttAxis('year', anchorMs, weekStartDay, todayMs, null, calendar),
-    [anchorMs, weekStartDay, todayMs, calendar],
-  );
-
-  const yearLabel = useMemo(
-    () => formatGanttPeriodLabel('year', anchorMs, weekStartDay, null, calendar),
-    [anchorMs, weekStartDay, calendar],
-  );
+  const rescheduleMut = useMutation({
+    mutationFn: ({
+      project,
+      startMs,
+      endMs,
+    }: {
+      project: ProjectCrossTeam;
+      startMs: number;
+      endMs: number;
+    }) =>
+      updateProject(project.teamId, project.id, {
+        startDate: new Date(startMs).toISOString(),
+        endDate: new Date(endMs).toISOString(),
+      }),
+    onSuccess: () => {
+      setSaveError(null);
+      void qc.invalidateQueries({ queryKey: ['projects', 'all'] });
+    },
+    onError: () => {
+      setSaveError(t('projects.timeline.saveError'));
+      // Re-fetch so the dragged bar snaps back to the server's truth rather
+      // than sitting at a position that was never persisted.
+      void qc.invalidateQueries({ queryKey: ['projects', 'all'] });
+    },
+  });
 
   const teamOptions = useMemo(() => {
     const m = new Map<string, string>();
@@ -80,6 +157,21 @@ export default function ProjectsTimelinePage(): JSX.Element {
     [projects, teamFilter, statusFilter],
   );
 
+  // Group the chart rows by team, matching the sidebar's grouping.
+  const groups = useMemo(() => {
+    const byTeam = new Map<string, ProjectCrossTeam[]>();
+    for (const p of scheduled) {
+      const list = byTeam.get(p.teamName);
+      if (list) list.push(p);
+      else byTeam.set(p.teamName, [p]);
+    }
+    return Array.from(byTeam, ([name, rows]) => ({ name, rows })).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [scheduled]);
+
+  const yearText = calendar === 'SHAMSI' ? String(anchorYear) : String(anchorYear);
+
   return (
     <div className="p-4 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -87,23 +179,35 @@ export default function ProjectsTimelinePage(): JSX.Element {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setAnchorMs((prev) => shiftAnchor('year', prev, -1))}
+            onClick={() => setAnchorYear((y) => y - 1)}
             className="btn btn-secondary btn-sm"
             aria-label={t('gantt.prev')}
           >
             ◀
           </button>
           <span className="text-sm font-medium min-w-[3.5rem] text-center" dir="auto">
-            {yearLabel}
+            {yearText}
           </span>
           <button
             type="button"
-            onClick={() => setAnchorMs((prev) => shiftAnchor('year', prev, 1))}
+            onClick={() => setAnchorYear((y) => y + 1)}
             className="btn btn-secondary btn-sm"
             aria-label={t('gantt.next')}
           >
             ▶
           </button>
+          <select
+            value={range}
+            onChange={(e) => setRange(e.target.value as Range)}
+            className="input w-auto"
+            aria-label={t('projects.timeline.rangeFilter')}
+          >
+            {RANGE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {t(o.labelKey)}
+              </option>
+            ))}
+          </select>
           <select
             value={teamFilter}
             onChange={(e) => setTeamFilter(e.target.value)}
@@ -133,52 +237,128 @@ export default function ProjectsTimelinePage(): JSX.Element {
         </div>
       </div>
 
-      {isLoading && <p className="text-sm text-slate-500">{t('common.loading')}</p>}
+      {isLoading && <p className="text-sm text-text-muted">{t('common.loading')}</p>}
       {isError && (
         <p className="text-sm text-danger" role="alert">
           {t('projects.timeline.error')}
         </p>
       )}
+      {saveError && (
+        <p className="mb-2 text-sm text-danger" role="alert">
+          {saveError}
+        </p>
+      )}
 
       {!isLoading && !isError && (
         <>
-          <section className="bg-surface rounded shadow p-4">
+          <section className="bg-surface rounded shadow overflow-hidden">
             {scheduled.length === 0 ? (
-              <p className="text-sm text-slate-500">{t('projects.timeline.empty')}</p>
+              <p className="p-4 text-sm text-text-muted">{t('projects.timeline.empty')}</p>
             ) : (
-              <div className="flex">
-                {/* Fixed start column (HTML, outside the svg) — truncates and
-                    mirrors correctly in RTL; the chart itself stays LTR. */}
-                <div className="w-64 shrink-0 min-w-0">
-                  <div style={{ height: HEADER_HEIGHT }} className="border-b border-border" />
-                  {scheduled.map((p) => (
-                    <div
-                      key={p.id}
-                      style={{ height: ROW_HEIGHT }}
-                      className="flex items-center gap-2 min-w-0 border-b border-border pe-2"
-                    >
-                      <Link
-                        to={`/projects/${p.id}/tasks`}
-                        className="truncate text-sm text-text hover:underline"
-                        title={p.name}
-                      >
-                        {p.name}
-                      </Link>
-                      <span className="truncate text-xs text-text-muted">{p.teamName}</span>
-                    </div>
+              <GanttProvider
+                range={range}
+                zoom={100}
+                anchorYear={anchorYear}
+                className="h-[32rem]"
+              >
+                <GanttSidebar
+                  header={
+                    <GanttSidebarHeader
+                      nameLabel={t('projects.timeline.title')}
+                      durationLabel={t('projects.timeline.teamFilter')}
+                    />
+                  }
+                >
+                  {groups.map((group) => (
+                    <GanttSidebarGroup key={group.name} name={group.name}>
+                      {group.rows.map((p) => {
+                        const feature = toFeature(p);
+                        if (!feature) return null;
+                        return (
+                          <GanttSidebarItem
+                            key={p.id}
+                            feature={feature}
+                            durationLabel={p.teamName}
+                          />
+                        );
+                      })}
+                    </GanttSidebarGroup>
                   ))}
-                </div>
-                <div dir="ltr" className="flex-1 min-w-0 overflow-x-auto">
-                  <TimelineChart
-                    axis={axis}
-                    rows={scheduled}
-                    todayMs={todayMs}
-                    todayLabel={t('gantt.today')}
-                    ariaLabel={t('projects.timeline.title')}
-                    t={t}
-                  />
-                </div>
-              </div>
+                </GanttSidebar>
+
+                <GanttTimeline>
+                  <GanttHeader />
+                  <GanttFeatureList>
+                    {groups.map((group) => (
+                      <GanttFeatureListGroup key={group.name}>
+                        {group.rows.map((p) => {
+                          const feature = toFeature(p);
+                          if (!feature) return null;
+                          const gapDays = lateStartGapDays(p.startDate, p.hasStarted, todayMs);
+                          const totalDays =
+                            Math.round(
+                              (utcDayMs(feature.endAt) - utcDayMs(feature.startAt)) / MS_DAY,
+                            ) + 1;
+                          const progressPct = p.progressPct ?? 0;
+                          const gapPct = Math.min((gapDays / totalDays) * 100, 100);
+
+                          return (
+                            <GanttFeatureItem
+                              key={p.id}
+                              {...feature}
+                              onMove={(_id, startAt, endAt) =>
+                                rescheduleMut.mutate({
+                                  project: p,
+                                  startMs: utcDayMs(startAt),
+                                  endMs: utcDayMs(endAt),
+                                })
+                              }
+                              formatHandleLabel={(d) => formatDate(utcDayMs(d))}
+                            >
+                              <div
+                                className="relative flex h-full w-full items-center"
+                                title={barTooltip(p, gapDays, t)}
+                              >
+                                {/* 2 — progress, clamped to the planned bar */}
+                                {progressPct > 0 && (
+                                  <div
+                                    className="absolute inset-y-0 left-0 rounded-s-md"
+                                    style={{
+                                      width: `${Math.min(progressPct, 100)}%`,
+                                      background: 'var(--color-success)',
+                                      opacity: 0.35,
+                                    }}
+                                  />
+                                )}
+                                {/* 3 — late-to-start gap, over the progress */}
+                                {gapDays > 0 && (
+                                  <div
+                                    className="absolute inset-y-0 left-0 rounded-s-md"
+                                    style={{
+                                      width: `${gapPct}%`,
+                                      background: 'var(--color-danger)',
+                                      opacity: 0.55,
+                                    }}
+                                  />
+                                )}
+                                <Link
+                                  to={`/projects/${p.id}/tasks`}
+                                  className="relative z-[1] flex-1 truncate text-xs text-text hover:underline"
+                                  dir="auto"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {p.name}
+                                </Link>
+                              </div>
+                            </GanttFeatureItem>
+                          );
+                        })}
+                      </GanttFeatureListGroup>
+                    ))}
+                  </GanttFeatureList>
+                  <GanttToday label={t('gantt.today')} dateLabel={formatDate(todayMs)} />
+                </GanttTimeline>
+              </GanttProvider>
             )}
           </section>
 
@@ -205,6 +385,22 @@ export default function ProjectsTimelinePage(): JSX.Element {
   );
 }
 
+function toFeature(p: ProjectCrossTeam): GanttFeature | null {
+  const bounds = featureBounds(p);
+  if (!bounds) return null;
+  return {
+    id: p.id,
+    name: p.name,
+    startAt: new Date(bounds.startMs),
+    endAt: new Date(bounds.endMs),
+    status: {
+      id: p.status,
+      name: p.status,
+      color: STATUS_COLOR[p.status] ?? 'var(--color-text-muted)',
+    },
+  };
+}
+
 function barTooltip(
   p: ProjectCrossTeam,
   gapDays: number,
@@ -226,176 +422,4 @@ function barTooltip(
     );
   }
   return lines.join('\n');
-}
-
-function TimelineChart({
-  axis,
-  rows,
-  todayMs,
-  todayLabel,
-  ariaLabel,
-  t,
-}: {
-  axis: GanttAxis;
-  rows: ProjectCrossTeam[];
-  todayMs: number;
-  todayLabel: string;
-  ariaLabel: string;
-  t: (key: string) => string;
-}): JSX.Element {
-  const chartHeight = HEADER_HEIGHT + rows.length * ROW_HEIGHT;
-  const todayX = todayLineX(axis, todayMs);
-
-  return (
-    <svg
-      width={axis.chartWidth}
-      height={chartHeight}
-      style={{ display: 'block', minWidth: '100%' }}
-      role="img"
-      aria-label={ariaLabel}
-    >
-      {/* Month columns (12 × MONTH_PX on the 'year' axis). */}
-      {axis.columns.map((col, i) =>
-        col.kind === 'month' ? (
-          <g key={i}>
-            <line
-              x1={col.x}
-              y1={0}
-              x2={col.x}
-              y2={chartHeight}
-              style={{ stroke: 'var(--color-border)' }}
-              strokeWidth={col.isCurrentMonth ? 2 : 1}
-            />
-            <text
-              x={col.x + 4}
-              y={14}
-              fontSize="10"
-              style={{ fill: 'var(--color-text-muted)' }}
-            >
-              {col.label}
-            </text>
-          </g>
-        ) : null,
-      )}
-      <line
-        x1={0}
-        y1={HEADER_HEIGHT}
-        x2={axis.chartWidth}
-        y2={HEADER_HEIGHT}
-        style={{ stroke: 'var(--color-border)' }}
-        strokeWidth={1}
-      />
-
-      {rows.map((p, index) => {
-        const rowY = HEADER_HEIGHT + index * ROW_HEIGHT;
-        const startMs = p.startDate ? utcDayMs(p.startDate) : null;
-        const endMs = p.endDate ? utcDayMs(p.endDate) : null;
-        const gapDays = lateStartGapDays(p.startDate, p.hasStarted, todayMs);
-        const tooltip = barTooltip(p, gapDays, t);
-
-        const plannedGeom =
-          startMs !== null && endMs !== null ? barGeometry(startMs, endMs, axis) : null;
-        const startMarker =
-          startMs !== null && endMs === null ? barGeometry(startMs, startMs, axis) : null;
-        const endMarker =
-          startMs === null && endMs !== null ? barGeometry(endMs, endMs, axis) : null;
-        // Red late-start segment: planned start → min(today, year end),
-        // drawn ON TOP of the planned bar at full opacity.
-        const gapGeom =
-          gapDays > 0 && startMs !== null
-            ? barGeometry(startMs, Math.min(todayMs, axis.endMs), axis)
-            : null;
-
-        // v2.5.59: green progress fill, inset in the planned bar. Clamped to
-        // the planned width so a rounding artefact can never overhang it.
-        const progressPct = p.progressPct ?? 0;
-        const progressWidth = plannedGeom
-          ? Math.min(plannedGeom.width, Math.max(2, (plannedGeom.width * progressPct) / 100))
-          : 0;
-
-        const markerGeom = startMarker ?? endMarker;
-        const markerCx = markerGeom ? markerGeom.x + markerGeom.width / 2 : null;
-        const centerY = rowY + ROW_HEIGHT / 2;
-
-        return (
-          <g key={p.id}>
-            <line
-              x1={0}
-              y1={rowY + ROW_HEIGHT}
-              x2={axis.chartWidth}
-              y2={rowY + ROW_HEIGHT}
-              style={{ stroke: 'var(--color-border)' }}
-              strokeWidth={1}
-            />
-            {plannedGeom && (
-              <rect
-                x={plannedGeom.x + 2}
-                y={rowY + 6}
-                width={plannedGeom.width}
-                height={ROW_HEIGHT - 12}
-                rx={3}
-                style={{ fill: 'var(--color-primary)' }}
-                opacity={0.8}
-              >
-                <title>{tooltip}</title>
-              </rect>
-            )}
-            {plannedGeom && progressPct > 0 && (
-              <rect
-                x={plannedGeom.x + 2}
-                y={rowY + 6}
-                width={progressWidth}
-                height={ROW_HEIGHT - 12}
-                rx={3}
-                style={{ fill: 'var(--color-success)' }}
-              >
-                <title>{tooltip}</title>
-              </rect>
-            )}
-            {markerCx !== null && (
-              <polygon
-                points={`${markerCx},${centerY - 7} ${markerCx + 6},${centerY} ${markerCx},${centerY + 7} ${markerCx - 6},${centerY}`}
-                style={{ fill: 'var(--color-primary)' }}
-              >
-                <title>{tooltip}</title>
-              </polygon>
-            )}
-            {gapGeom && (
-              <rect
-                x={gapGeom.x + 2}
-                y={rowY + 6}
-                width={gapGeom.width}
-                height={ROW_HEIGHT - 12}
-                rx={3}
-                style={{ fill: 'var(--color-danger)' }}
-              >
-                <title>{tooltip}</title>
-              </rect>
-            )}
-          </g>
-        );
-      })}
-
-      {todayX !== null && (
-        <g>
-          <line
-            x1={todayX}
-            y1={0}
-            x2={todayX}
-            y2={chartHeight}
-            style={{ stroke: 'var(--color-danger)' }}
-            strokeWidth={1}
-          />
-          <text
-            x={todayX + 2}
-            y={HEADER_HEIGHT - 4}
-            fontSize="10"
-            style={{ fill: 'var(--color-danger)' }}
-          >
-            {todayLabel}
-          </text>
-        </g>
-      )}
-    </svg>
-  );
 }

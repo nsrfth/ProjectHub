@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.21.0** (2026-07-28)
+Version **v2.22.0** (2026-07-28)
 
 
 > **Terminology (v2.10).** The product now uses your organizational vocabulary:
@@ -642,9 +642,16 @@ When PMIS modules are enabled on the project, a **Task schedule (WBS)** section 
 
 Use **‹ Today ›** to jump the anchor to the current period. The period label follows your Shamsi/Gregorian preference.
 
-### All-projects year timeline (v2.5.58, calendar-aware + progress v2.5.59)
+### All-projects timeline (v2.5.58, calendar-aware + progress v2.5.59, interactive v2.22)
 
-**Projects → Timeline** (`/projects/timeline`) puts every project you can see — across every team — on a single one-year chart, one row per project. Filter by team and by status (Active / On hold / Archived); projects without start and end dates are listed underneath as **Unscheduled**.
+**Projects → Timeline** (`/projects/timeline`) puts every project you can see — across every team — on a single chart, one row per project, grouped by team. Filter by team and by status (Active / On hold / Archived); projects without start and end dates are listed underneath as **Unscheduled**.
+
+**Interactive since v2.22:**
+
+- **Drag a bar** left or right to move the whole project, or **drag either end** to change just the start or just the finish. Release to save — the new dates are written straight to the project. If the save is refused (you don't have permission, or the server errors) a message appears and the bar returns to where it was.
+- **Time scale** — switch between **Daily**, **Monthly** and **Quarterly**. Daily tints weekends and public holidays using your configured off-days.
+- **Scroll sideways** past either edge and the timeline grows another year, so you can drag a project into next year without changing the view first. The **◀ / ▶** buttons jump a whole year at a time.
+- Hovering a bar still shows the dates, progress, and late-start detail; clicking the project name opens its tasks.
 
 The 12-month axis **follows your calendar setting** (v2.5.59):
 

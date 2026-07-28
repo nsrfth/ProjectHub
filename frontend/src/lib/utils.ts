@@ -1,11 +1,15 @@
-// shadcn-style `cn` helper. The upstream shadcn version is
-// `twMerge(clsx(...))`, but this repo doesn't carry clsx or tailwind-merge and
-// nothing here relies on conflicting-class resolution — so this is the plain
-// join. If a future component genuinely needs class-conflict merging, add
-// clsx + tailwind-merge and swap the body; the signature stays the same.
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
-export type ClassValue = string | number | null | undefined | false;
+// shadcn-convention `cn`. v2.22 swapped the earlier plain join for the real
+// twMerge(clsx(...)) once clsx + tailwind-merge arrived with the Gantt. The
+// Gantt leans on `cn` for caller className overrides — a marker passing
+// `bg-primary` over the default `bg-surface`, say — and a plain join emits
+// both classes and lets stylesheet order decide, silently dropping the
+// override. twMerge resolves the conflict in the caller's favour.
 
-export function cn(...classes: ClassValue[]): string {
-  return classes.filter(Boolean).join(' ');
+export type { ClassValue };
+
+export function cn(...inputs: ClassValue[]): string {
+  return twMerge(clsx(inputs));
 }

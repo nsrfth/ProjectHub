@@ -13,6 +13,56 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.22.0] — 2026-07-28 — All-projects timeline is now an interactive Gantt
+
+`/projects/timeline` was a read-only SVG chart. It is now built on a new
+`components/ui/gantt.tsx`: **drag a bar to reschedule a project**, drag either
+end to resize, switch between daily / monthly / quarterly, and scroll the
+timeline into any year (it extends a year at a time as you reach the edge).
+
+- **Everything the SVG version did, it still does.** The red *late to start*
+  segment, the green progress fill clamped to the planned bar, the
+  calendar-aware axis, Shamsi tooltips, the Unscheduled list, and the links
+  through to each project's tasks. `timelineRenderRegression.test.ts` was
+  rewritten onto the new implementation rather than deleted — it guards the
+  same behaviours, including the paint order that keeps "not started" visible
+  over "in progress".
+- **Rescheduling persists** through `updateProject`. A rejected save (no
+  permission, server error) surfaces a message and re-fetches, so a bar can
+  never sit at a position that was never saved.
+- **Calendar-aware geometry.** The upstream component derives offsets from
+  date-fns month arithmetic, which hard-codes the Gregorian calendar. The
+  timeline is instead a flat array of explicit column bounds built from
+  `lib/shamsi`'s `jalaliYearMonths` under SHAMSI — so under Shamsi a column
+  edge falls on Farvardin 1, not 1 January, and irregular Jalali month lengths
+  (6×31, 5×30, 29/30) are exact. New `components/ui/gantt-geometry.ts` holds
+  that maths as a pure module with **22 unit tests** covering both calendars,
+  round-tripping, leap years, and the year boundary.
+- **Repo conventions applied.** Off-days come from `lib/calendar`'s `isOffDay`,
+  so the configurable weekend (Thu+Fri vs Sat+Sun) and holidays tint correctly
+  instead of a hardcoded Sat/Sun. All positioning runs on UTC-midnight calendar
+  days; date-fns is local-time based and is used only for the
+  timezone-insensitive duration string. Every shadcn token the component wanted
+  (`bg-card`, `text-muted-foreground`, …) is undefined in this Tailwind config
+  and was mapped to the semantic equivalents.
+- **Fixes carried over the upstream component:** a same-day bar rendered zero
+  width (patched upstream with a `delta ? delta : 1` fallback; end dates are
+  inclusive here); `--gantt-sidebar-width` stuck at 0 because the sidebar was
+  detected during the first render, when the ref is still null; and a
+  floating-point `floor` in the pointer hit-test that reported the previous day
+  whenever an offset round-tripped to `d - 1e-16`.
+- **RTL:** the scrolling timeline is pinned `dir="ltr"` — it is a left-to-right
+  number line and mirroring it inverts every offset — while text inside uses
+  `dir="auto"` so Persian project names read correctly.
+- **New deps** (9): `date-fns`, `jotai`, `lodash.throttle`, `@uidotdev/usehooks`,
+  `@dnd-kit/modifiers`, `@radix-ui/react-context-menu`, `clsx`,
+  `tailwind-merge`, `class-variance-authority`. Bundle +156 kB raw / +52 kB
+  gzip. `lib/utils.ts`'s `cn` was upgraded from a plain join to the real
+  `twMerge(clsx(…))` — the Gantt relies on it for className overrides. New
+  `components/ui/card.tsx` and `components/ui/context-menu.tsx`.
+- **New strings:** `projects.timeline.range.{daily,monthly,quarterly}`,
+  `projects.timeline.rangeFilter`, `projects.timeline.saveError` — EN + FA.
+
 ## [2.21.0] — 2026-07-28 — Sign-in page: animated particle backdrop
 
 The login route now renders on **Aether Flow**, an interactive particle-constellation
