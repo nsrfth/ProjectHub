@@ -153,7 +153,9 @@ export class ReportsService {
   async listDoneTasks(teamId: string, days: number): Promise<DoneTaskRow[]> {
     const since = new Date(Date.now() - days * MS_PER_DAY);
     const rows = await prisma.task.findMany({
-      where: { teamId, completedAt: { gte: since } },
+      // v2.20.3: trashed tasks must not count — the task lists the dashboard
+      // drills into filter deletedAt, so counting them here desynced the KPIs.
+      where: { teamId, deletedAt: null, completedAt: { gte: since } },
       include: {
         project: { select: { id: true, name: true } },
         assignee: { select: { id: true, name: true } },
@@ -258,11 +260,16 @@ export class ReportsService {
 
   async listOverdue(teamId: string): Promise<OverdueTaskRow[]> {
     const now = new Date();
+    // dueDate is a UTC-midnight calendar date, so "overdue" is strictly before
+    // today's midnight — comparing against `now` would flag everything due
+    // *today* as late (and diverge from the workload/dashboard buckets).
+    const { todayStart } = getDueWindowBounds(now);
     const rows = await prisma.task.findMany({
       where: {
         teamId,
+        deletedAt: null,
         status: { in: OPEN_STATUSES },
-        dueDate: { lt: now, not: null },
+        dueDate: { lt: todayStart, not: null },
       },
       include: {
         project: { select: { id: true, name: true } },
@@ -290,19 +297,22 @@ export class ReportsService {
   async summary(teamId: string): Promise<SummaryReport> {
     const now = new Date();
     const since7d = new Date(now.getTime() - 7 * MS_PER_DAY);
+    // Same calendar-date rule as listOverdue: due *today* is not yet overdue.
+    const { todayStart } = getDueWindowBounds(now);
 
     const [doneLast7Days, overdueCount, statusCounts] = await Promise.all([
-      prisma.task.count({ where: { teamId, completedAt: { gte: since7d } } }),
+      prisma.task.count({ where: { teamId, deletedAt: null, completedAt: { gte: since7d } } }),
       prisma.task.count({
         where: {
           teamId,
+          deletedAt: null,
           status: { in: OPEN_STATUSES },
-          dueDate: { lt: now, not: null },
+          dueDate: { lt: todayStart, not: null },
         },
       }),
       prisma.task.groupBy({
         by: ['status'],
-        where: { teamId },
+        where: { teamId, deletedAt: null },
         _count: { _all: true },
       }),
     ]);
@@ -346,6 +356,7 @@ export class ReportsService {
       prisma.task.findMany({
         where: {
           teamId,
+          deletedAt: null,
           completedAt: { gte: since },
           plannedDate: { not: null },
         },
@@ -356,6 +367,7 @@ export class ReportsService {
       prisma.task.count({
         where: {
           teamId,
+          deletedAt: null,
           status: { in: OPEN_STATUSES },
           plannedDate: { lt: now, not: null },
         },

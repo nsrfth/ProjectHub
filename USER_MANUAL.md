@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.20.2** (2026-07-26)
+Version **v2.20.3** (2026-07-28)
 
 
 > **Terminology (v2.10).** The product now uses your organizational vocabulary:

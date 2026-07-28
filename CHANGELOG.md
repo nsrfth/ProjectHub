@@ -13,6 +13,28 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.20.3] — 2026-07-28 — Fix: Dashboard "Overdue" card counted tasks that its drill-down didn't list
+
+Clicking the Dashboard **Overdue** KPI opened a modal that said *No tasks to
+show* while the card itself showed a non-zero count. Two independent causes,
+both in the reports service:
+
+- **Due today ≠ overdue.** `Task.dueDate` is a UTC-midnight *calendar date*, but
+  `GET /reports/summary` and `GET /reports/overdue` compared it against `now`
+  (`dueDate < now`), so every task due **today** was counted as late. The
+  drill-down modal — and the workload buckets, project-status counters and
+  dashboard widgets — use the calendar rule (`dueDate < today 00:00 UTC`), so the
+  card was always one day ahead of every list it links to. Both report queries now
+  use the same rule, as does the `overdue` filter on `GET /me/tasks` (which
+  previously returned a task in both the *Overdue* and *Due today* filters).
+- **Trashed tasks were counted.** `summary` (overdue, open, done-last-7-days and
+  the per-status breakdown), `listOverdue` and the timeliness report queried tasks
+  without `deletedAt: null`, while every task list filters soft-deleted rows. A
+  task moved to the trash therefore stayed in the KPI numbers forever.
+
+Backend-only change; rebuild the backend container. Note the Overdue count may
+drop after upgrading — that is the fix, not data loss.
+
 ## [2.20.2] — 2026-07-26 — Fix: portfolio roll-up leaked other divisions' projects
 
 **Security / multi-tenancy fix.** The Portfolio (PMIS org-unit) tree and its

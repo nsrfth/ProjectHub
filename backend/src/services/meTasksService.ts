@@ -179,7 +179,9 @@ export class MeTasksService {
       where.status = { in: OPEN_STATUSES };
     } else if (query.filter === 'overdue') {
       where.status = { in: OPEN_STATUSES };
-      where.dueDate = { lt: now, not: null };
+      // Calendar-date semantics: due today is not overdue (and must not show up
+      // in both the overdue and due_today filters).
+      where.dueDate = { lt: todayStart, not: null };
     } else if (query.filter === 'due_today') {
       where.status = { in: OPEN_STATUSES };
       where.dueDate = { gte: todayStart, lt: todayEnd };
