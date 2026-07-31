@@ -706,13 +706,38 @@ export class AdminService {
 
     const { ProjectGrantsService } = await import('./projectGrantsService.js');
     const grants = new ProjectGrantsService();
-    await grants.create(project.teamId, projectId, actorId, 'ADMIN', {
+
+    // Did the target department already hold a grant? If so `create` below is
+    // an idempotent refresh of a row we did not add, and must NOT be undone by
+    // the compensation path.
+    const targetAlreadyGranted = groupGrants.some((g) => g.subjectId === toGroupId);
+
+    // The create + revokes cannot share a single $transaction without threading
+    // a Prisma.TransactionClient through ProjectGrantsService.create/revoke and
+    // their legacy dual-write helpers — each opens its own client, so a naive
+    // $transaction wrapper here would not roll them back. Until that lands,
+    // guard the dangerous window explicitly: if a revoke fails after the new
+    // grant is in place, undo the new grant so the project is never left
+    // sitting in two departments at once, then surface the original failure.
+    const createdGrant = await grants.create(project.teamId, projectId, actorId, 'ADMIN', {
       subjectType: 'GROUP',
       subjectId: toGroupId,
       level,
     });
-    for (const g of currentUnitGrants) {
-      await grants.revoke(project.teamId, projectId, g.id, actorId, 'ADMIN');
+    try {
+      for (const g of currentUnitGrants) {
+        await grants.revoke(project.teamId, projectId, g.id, actorId, 'ADMIN');
+      }
+    } catch (err) {
+      if (!targetAlreadyGranted) {
+        try {
+          await grants.revoke(project.teamId, projectId, createdGrant.id, actorId, 'ADMIN');
+        } catch {
+          // Compensation itself failed — nothing further is safe to attempt.
+          // The original error is still the one worth surfacing.
+        }
+      }
+      throw err;
     }
     await logActivity(prisma, {
       actorId,
