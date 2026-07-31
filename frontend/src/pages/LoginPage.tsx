@@ -30,8 +30,18 @@ type Step =
 // is never set in real deployments, so this stays invisible in production.
 const TESTBED =
   import.meta.env.VITE_TESTBED === '1' || import.meta.env.VITE_TESTBED === 'true';
-const SAMPLE_EMAIL = import.meta.env.VITE_TESTBED_EMAIL ?? 'admin@taskhub.local';
-const SAMPLE_PASSWORD = import.meta.env.VITE_TESTBED_PASSWORD ?? 'admin';
+// The sample credentials are the seed defaults and nothing else — deliberately
+// literals rather than the former VITE_TESTBED_EMAIL / VITE_TESTBED_PASSWORD
+// reads, so no operator-supplied password can end up on the login screen.
+//
+// NOTE: this removes the *use*, not the exposure. Vite materialises the whole
+// `import.meta.env` object into the bundle, so ANY VITE_-prefixed variable set
+// at build time is served to every browser whether or not code reads it. That
+// is a deployment rule, not something this file can enforce: never put a
+// secret in a VITE_ variable. Nothing reads these two names any more, so there
+// is no longer any reason to set them.
+const SAMPLE_EMAIL = 'admin@taskhub.local';
+const SAMPLE_PASSWORD = 'admin';
 
 const FIELD_CLASS =
   'mt-1 w-full rounded-lg border border-white/10 bg-white/5 py-2.5 ps-10 pe-3 text-white ' +
