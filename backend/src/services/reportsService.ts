@@ -1,6 +1,7 @@
-import type { TaskPriority, TaskStatus, Currency } from '@prisma/client';
+import type { GlobalRole, Prisma, TaskPriority, TaskStatus, Currency } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { isSystemUser, maskActorName } from '../lib/systemUser.js';
+import { projectListWhereForCaller } from '../lib/projectAccess.js';
 import {
   buildCurrencyRollups,
   computeProjectBudgetMetrics,
@@ -146,16 +147,42 @@ export type { BudgetCurrencyRollup };
 const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'ON_HOLD', 'REVIEW', 'PENDING_APPROVAL'];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+// Identity of whoever asked for the report. Team membership is already proven
+// by requireTeamRole at the route layer; this is what narrows the aggregate to
+// the projects that membership actually entitles them to see.
+export interface ReportCaller {
+  userId: string;
+  globalRole: GlobalRole;
+}
+
+// Every team report is a cross-project aggregate, so team membership alone is
+// not a sufficient filter: project visibility is owner/grant-based, and a plain
+// member is 404'd out of a team project they neither own nor were granted.
+// Without this clamp those same projects' titles, assignees, budgets and
+// workload leak through the reports surface.
+//
+// Reuses the exact filter GET /teams/:teamId/projects uses, so a report can
+// never surface a project the project list would hide, and oversight roles
+// (ADMIN, project.edit, project.write_all, project.read_all) keep their
+// existing team-wide view because that helper already short-circuits for them.
+async function callerProjectWhere(
+  teamId: string,
+  caller: ReportCaller,
+): Promise<Prisma.ProjectWhereInput> {
+  return projectListWhereForCaller(teamId, caller.userId, caller.globalRole);
+}
+
 export class ReportsService {
   // Returns every task in this team whose completedAt is within the trailing
   // N days. Sorted newest-first so the typical "what happened this week" view
   // reads naturally. Caller (route layer) already enforces team membership.
-  async listDoneTasks(teamId: string, days: number): Promise<DoneTaskRow[]> {
+  async listDoneTasks(teamId: string, caller: ReportCaller, days: number): Promise<DoneTaskRow[]> {
     const since = new Date(Date.now() - days * MS_PER_DAY);
+    const project = await callerProjectWhere(teamId, caller);
     const rows = await prisma.task.findMany({
       // v2.20.3: trashed tasks must not count — the task lists the dashboard
       // drills into filter deletedAt, so counting them here desynced the KPIs.
-      where: { teamId, deletedAt: null, completedAt: { gte: since } },
+      where: { teamId, project, deletedAt: null, completedAt: { gte: since } },
       include: {
         project: { select: { id: true, name: true } },
         assignee: { select: { id: true, name: true } },
@@ -178,8 +205,8 @@ export class ReportsService {
   // Workload: open tasks grouped by assignee with per-status breakdown.
   // Single query + in-memory group — team size is small; indexes on
   // [teamId, assigneeId] cover the hot path.
-  async listWorkload(teamId: string): Promise<WorkloadRow[]> {
-    const tasks = await this.fetchOpenWorkloadTasks(teamId);
+  async listWorkload(teamId: string, caller: ReportCaller): Promise<WorkloadRow[]> {
+    const tasks = await this.fetchOpenWorkloadTasks(teamId, caller);
     return aggregateWorkloadList(tasks);
   }
 
@@ -188,9 +215,10 @@ export class ReportsService {
   // are optional query params on /reports/workload/detail.
   async workloadDetail(
     teamId: string,
+    caller: ReportCaller,
     opts: WorkloadDetailOptions = {},
   ): Promise<WorkloadDetailRow[]> {
-    const tasks = await this.fetchOpenWorkloadTasks(teamId, {
+    const tasks = await this.fetchOpenWorkloadTasks(teamId, caller, {
       projectId: opts.projectId,
       window: opts.window,
     });
@@ -202,20 +230,24 @@ export class ReportsService {
   // excluded via task.deletedAt = null.
   async workloadSubtaskDetail(
     teamId: string,
+    caller: ReportCaller,
     opts: { projectId?: string } = {},
   ): Promise<WorkloadSubtaskRow[]> {
-    const subtasks = await this.fetchOpenWorkloadSubtasks(teamId, opts);
+    const subtasks = await this.fetchOpenWorkloadSubtasks(teamId, caller, opts);
     return aggregateSubtaskWorkload(subtasks);
   }
 
   private async fetchOpenWorkloadSubtasks(
     teamId: string,
+    caller: ReportCaller,
     opts: { projectId?: string } = {},
   ) {
+    const project = await callerProjectWhere(teamId, caller);
     const rows = await prisma.subtask.findMany({
       where: {
         task: {
           teamId,
+          project,
           deletedAt: null,
           ...(opts.projectId ? { projectId: opts.projectId } : {}),
         },
@@ -238,10 +270,12 @@ export class ReportsService {
 
   private async fetchOpenWorkloadTasks(
     teamId: string,
+    caller: ReportCaller,
     opts: { projectId?: string; window?: WorkloadWindow } = {},
   ) {
+    const project = await callerProjectWhere(teamId, caller);
     const rows = await prisma.task.findMany({
-      where: buildWorkloadTaskWhere(teamId, opts),
+      where: { ...buildWorkloadTaskWhere(teamId, opts), project },
       select: {
         status: true,
         priority: true,
@@ -258,15 +292,17 @@ export class ReportsService {
     }));
   }
 
-  async listOverdue(teamId: string): Promise<OverdueTaskRow[]> {
+  async listOverdue(teamId: string, caller: ReportCaller): Promise<OverdueTaskRow[]> {
     const now = new Date();
     // dueDate is a UTC-midnight calendar date, so "overdue" is strictly before
     // today's midnight — comparing against `now` would flag everything due
     // *today* as late (and diverge from the workload/dashboard buckets).
     const { todayStart } = getDueWindowBounds(now);
+    const project = await callerProjectWhere(teamId, caller);
     const rows = await prisma.task.findMany({
       where: {
         teamId,
+        project,
         deletedAt: null,
         status: { in: OPEN_STATUSES },
         dueDate: { lt: todayStart, not: null },
@@ -294,17 +330,21 @@ export class ReportsService {
 
   // Summary — cheap aggregates used by the Dashboard widget. Single endpoint
   // so the widget doesn't have to hit four others on every navigation.
-  async summary(teamId: string): Promise<SummaryReport> {
+  async summary(teamId: string, caller: ReportCaller): Promise<SummaryReport> {
     const now = new Date();
     const since7d = new Date(now.getTime() - 7 * MS_PER_DAY);
     // Same calendar-date rule as listOverdue: due *today* is not yet overdue.
     const { todayStart } = getDueWindowBounds(now);
+    const project = await callerProjectWhere(teamId, caller);
 
     const [doneLast7Days, overdueCount, statusCounts] = await Promise.all([
-      prisma.task.count({ where: { teamId, deletedAt: null, completedAt: { gte: since7d } } }),
+      prisma.task.count({
+        where: { teamId, project, deletedAt: null, completedAt: { gte: since7d } },
+      }),
       prisma.task.count({
         where: {
           teamId,
+          project,
           deletedAt: null,
           status: { in: OPEN_STATUSES },
           dueDate: { lt: todayStart, not: null },
@@ -312,7 +352,7 @@ export class ReportsService {
       }),
       prisma.task.groupBy({
         by: ['status'],
-        where: { teamId, deletedAt: null },
+        where: { teamId, project, deletedAt: null },
         _count: { _all: true },
       }),
     ]);
@@ -346,9 +386,14 @@ export class ReportsService {
   // Timeliness: planned vs. actual. Only counts tasks with BOTH a plannedDate
   // and a completedAt (or open + plannedDate for behind-plan). Tasks with no
   // planned target can't be measured against it.
-  async timeliness(teamId: string, days: number): Promise<TimelinessReport> {
+  async timeliness(
+    teamId: string,
+    caller: ReportCaller,
+    days: number,
+  ): Promise<TimelinessReport> {
     const now = new Date();
     const since = new Date(now.getTime() - days * MS_PER_DAY);
+    const project = await callerProjectWhere(teamId, caller);
 
     const [completedWithPlan, behindPlanCount] = await Promise.all([
       // Completed in window AND had a planned target. These are the rows we
@@ -356,6 +401,7 @@ export class ReportsService {
       prisma.task.findMany({
         where: {
           teamId,
+          project,
           deletedAt: null,
           completedAt: { gte: since },
           plannedDate: { not: null },
@@ -367,6 +413,7 @@ export class ReportsService {
       prisma.task.count({
         where: {
           teamId,
+          project,
           deletedAt: null,
           status: { in: OPEN_STATUSES },
           plannedDate: { lt: now, not: null },
@@ -436,9 +483,17 @@ export class ReportsService {
   // activityLogger already denormalises teamId on write — v1.x). Joins on
   // actor + task + project so the response is self-contained for the
   // dashboard list without a second round-trip.
-  async listTeamActivity(teamId: string, limit: number): Promise<TeamActivityRow[]> {
+  async listTeamActivity(
+    teamId: string,
+    caller: ReportCaller,
+    limit: number,
+  ): Promise<TeamActivityRow[]> {
+    const project = await callerProjectWhere(teamId, caller);
     const rows = await prisma.activity.findMany({
-      where: { teamId },
+      // Task-linked entries carry the task title and project name below, so
+      // they follow the same project visibility as the task itself. Entries
+      // with no task are team-level events and stay visible to the team.
+      where: { teamId, OR: [{ taskId: null }, { task: { project } }] },
       orderBy: { createdAt: 'desc' },
       take: limit,
       include: {
@@ -470,9 +525,11 @@ export class ReportsService {
   // tasks behind a count so managers can act on over-allocation directly.
   async workloadTaskDrill(
     teamId: string,
+    caller: ReportCaller,
     opts: WorkloadDrillOptions = {},
   ): Promise<WorkloadDrillRow[]> {
     const where = buildWorkloadTaskWhere(teamId, { projectId: opts.projectId });
+    where.project = await callerProjectWhere(teamId, caller);
 
     // Workload groups by responsibleId (the "Responsible" RACI field shown in the UI).
     // assigneeId is almost never set; filtering by it would return nothing.
@@ -528,9 +585,9 @@ export class ReportsService {
   // v1.73: budget/cost report — per-project planned budget in project currency.
   // Project-level actualSpent was removed; task budgets are unchanged but not rolled up here.
   // Projects without plannedBudget are included with hasBudget=false ("no budget").
-  async budgetReport(teamId: string): Promise<BudgetReport> {
+  async budgetReport(teamId: string, caller: ReportCaller): Promise<BudgetReport> {
     const rows = await prisma.project.findMany({
-      where: { teamId },
+      where: { AND: [{ teamId }, await callerProjectWhere(teamId, caller)] },
       select: {
         id: true,
         name: true,

@@ -7,7 +7,8 @@ import {
   OPEN_STATUSES,
   parseGroupBy,
 } from './widgetFilters.js';
-import { ReportsService } from '../services/reportsService.js';
+import { ReportsService, type ReportCaller } from '../services/reportsService.js';
+import { projectListWhereForCaller } from './projectAccess.js';
 import type { WidgetConfig, WidgetFilters } from '../schemas/dashboards.js';
 
 export interface WidgetDataRow {
@@ -50,17 +51,28 @@ function sumDecimals(values: (Decimal | null | undefined)[]): string {
 }
 
 export class WidgetDataResolver {
-  async resolve(teamId: string, widget: DashboardWidget): Promise<WidgetDataResult> {
+  async resolve(
+    teamId: string,
+    widget: DashboardWidget,
+    caller: ReportCaller,
+  ): Promise<WidgetDataResult> {
     const filters = widget.filtersJson as WidgetFilters | null;
     const config = widget.configJson as WidgetConfig | null;
     const where = buildTaskWhereFromFilters(teamId, filters);
+    // A widget is a cross-project aggregate over the team, but dashboards are
+    // readable by any team member while project visibility is owner/grant
+    // based. Clamp every task query to the caller's visible project set — this
+    // `where` is threaded into every branch below, so one assignment covers
+    // them all. The paths that bypass `where` (the unfiltered ReportsService
+    // short-circuits) take `caller` instead.
+    where.project = await projectListWhereForCaller(teamId, caller.userId, caller.globalRole);
 
     if (widget.type === 'LINE') {
       return this.resolveLine(widget, where, config);
     }
 
     if (!widget.groupBy && widget.type === 'METRIC') {
-      return this.resolveMetric(teamId, widget, where, filters, config);
+      return this.resolveMetric(teamId, widget, where, filters, config, caller);
     }
 
     if (!widget.groupBy) {
@@ -83,6 +95,7 @@ export class WidgetDataResolver {
       where,
       filters,
       parsed.dimension,
+      caller,
     );
 
     const kind = widget.type === 'TABLE' ? 'table' : 'grouped';
@@ -95,11 +108,12 @@ export class WidgetDataResolver {
     where: Prisma.TaskWhereInput,
     filters: WidgetFilters | null | undefined,
     config: WidgetConfig | null | undefined,
+    caller: ReportCaller,
   ): Promise<WidgetDataResult> {
     switch (widget.dataSource) {
       case 'task_count': {
         if (!hasActiveFilters(filters)) {
-          const summary = await reports.summary(teamId);
+          const summary = await reports.summary(teamId, caller);
           return { kind: 'metric', total: summary.openCount + summary.byStatus.DONE };
         }
         const total = await prisma.task.count({ where });
@@ -137,6 +151,7 @@ export class WidgetDataResolver {
     where: Prisma.TaskWhereInput,
     filters: WidgetFilters | null | undefined,
     dimension: string,
+    caller: ReportCaller,
   ): Promise<WidgetDataRow[]> {
     const isSum =
       widget.dataSource === 'planned_budget_sum' ||
@@ -145,11 +160,11 @@ export class WidgetDataResolver {
 
     switch (dimension) {
       case 'status':
-        return this.groupByStatus(teamId, widget, where, filters, isSum);
+        return this.groupByStatus(teamId, widget, where, filters, isSum, caller);
       case 'priority':
         return this.groupBySimpleField(widget, where, 'priority', isSum);
       case 'assignee':
-        return this.groupByAssignee(teamId, widget, where, filters, isSum);
+        return this.groupByAssignee(teamId, widget, where, filters, isSum, caller);
       case 'project':
         return this.groupByProject(teamId, widget, where, isSum);
       case 'label':
@@ -167,13 +182,14 @@ export class WidgetDataResolver {
     where: Prisma.TaskWhereInput,
     filters: WidgetFilters | null | undefined,
     isSum: boolean,
+    caller: ReportCaller,
   ): Promise<WidgetDataRow[]> {
     if (
       !isSum &&
       widget.dataSource === 'task_count' &&
       !hasActiveFilters(filters)
     ) {
-      const summary = await reports.summary(teamId);
+      const summary = await reports.summary(teamId, caller);
       return (['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'] as const).map((s) => ({
         key: s,
         label: s,
@@ -203,13 +219,14 @@ export class WidgetDataResolver {
     where: Prisma.TaskWhereInput,
     filters: WidgetFilters | null | undefined,
     isSum: boolean,
+    caller: ReportCaller,
   ): Promise<WidgetDataRow[]> {
     if (
       !isSum &&
       widget.dataSource === 'task_count' &&
       !hasActiveFilters(filters)
     ) {
-      const workload = await reports.listWorkload(teamId);
+      const workload = await reports.listWorkload(teamId, caller);
       return workload.map((w) => ({
         key: w.assigneeId ?? '__unassigned__',
         label: w.assigneeName ?? 'Unassigned',

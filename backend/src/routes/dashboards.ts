@@ -206,7 +206,7 @@ export async function dashboardsRoutes(app: FastifyInstance): Promise<void> {
         req.params.teamId,
         req.params.dashboardId,
         req.params.widgetId,
-        req.user.sub,
+        { userId: req.user.sub, globalRole: req.user.globalRole },
       );
       return reply.send(data);
     },

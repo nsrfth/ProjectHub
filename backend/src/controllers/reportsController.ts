@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { ReportsService } from '../services/reportsService.js';
+import type { ReportCaller, ReportsService } from '../services/reportsService.js';
 import type {
   DoneTasksQuery,
   TeamActivityQuery,
@@ -12,6 +12,14 @@ import { Errors } from '../lib/errors.js';
 import { toCsv } from '../lib/csv.js';
 
 type TeamParams = { teamId: string };
+
+// Reports are cross-project aggregates, so the service needs the caller's
+// identity to clamp them to the projects that caller can actually open —
+// requireTeamRole upstream only proves membership of the team.
+function reportCaller(req: FastifyRequest): ReportCaller {
+  if (!req.user) throw Errors.unauthorized();
+  return { userId: req.user.sub, globalRole: req.user.globalRole };
+}
 
 // Common headers for every CSV download. Content-Disposition: attachment
 // makes the browser save instead of rendering; the filename hint includes
@@ -33,7 +41,7 @@ export class ReportsController {
     req: FastifyRequest<{ Params: TeamParams; Querystring: DoneTasksQuery }>,
     reply: FastifyReply,
   ) => {
-    const rows = await this.svc.listDoneTasks(req.params.teamId, req.query.days);
+    const rows = await this.svc.listDoneTasks(req.params.teamId, reportCaller(req), req.query.days);
     return reply.send({
       windowDays: req.query.days,
       items: rows.map((r) => ({ ...r, completedAt: r.completedAt.toISOString() })),
@@ -41,7 +49,7 @@ export class ReportsController {
   };
 
   workload = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
-    const items = await this.svc.listWorkload(req.params.teamId);
+    const items = await this.svc.listWorkload(req.params.teamId, reportCaller(req));
     return reply.send({ items });
   };
 
@@ -52,11 +60,11 @@ export class ReportsController {
     const { projectId, window, weighted, loadBy } = req.query;
 
     if (loadBy === 'subtasks') {
-      const items = await this.svc.workloadSubtaskDetail(req.params.teamId, { projectId });
+      const items = await this.svc.workloadSubtaskDetail(req.params.teamId, reportCaller(req), { projectId });
       return reply.send({ loadBy: 'subtasks', projectId: projectId ?? null, items });
     }
 
-    const items = await this.svc.workloadDetail(req.params.teamId, {
+    const items = await this.svc.workloadDetail(req.params.teamId, reportCaller(req), {
       projectId,
       window,
       weighted,
@@ -71,14 +79,14 @@ export class ReportsController {
   };
 
   overdue = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
-    const rows = await this.svc.listOverdue(req.params.teamId);
+    const rows = await this.svc.listOverdue(req.params.teamId, reportCaller(req));
     return reply.send({
       items: rows.map((r) => ({ ...r, dueDate: r.dueDate.toISOString() })),
     });
   };
 
   summary = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
-    const s = await this.svc.summary(req.params.teamId);
+    const s = await this.svc.summary(req.params.teamId, reportCaller(req));
     return reply.send(s);
   };
 
@@ -86,7 +94,7 @@ export class ReportsController {
     req: FastifyRequest<{ Params: TeamParams; Querystring: TimelinessQuery }>,
     reply: FastifyReply,
   ) => {
-    const r = await this.svc.timeliness(req.params.teamId, req.query.days);
+    const r = await this.svc.timeliness(req.params.teamId, reportCaller(req), req.query.days);
     return reply.send(r);
   };
 
@@ -112,7 +120,7 @@ export class ReportsController {
     req: FastifyRequest<{ Params: TeamParams; Querystring: TeamActivityQuery }>,
     reply: FastifyReply,
   ) => {
-    const rows = await this.svc.listTeamActivity(req.params.teamId, req.query.limit);
+    const rows = await this.svc.listTeamActivity(req.params.teamId, reportCaller(req), req.query.limit);
     return reply.send({
       items: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
     });
@@ -123,7 +131,7 @@ export class ReportsController {
     reply: FastifyReply,
   ) => {
     const { assigneeId, status, dueBucket, projectId } = req.query;
-    const rows = await this.svc.workloadTaskDrill(req.params.teamId, {
+    const rows = await this.svc.workloadTaskDrill(req.params.teamId, reportCaller(req), {
       assigneeId,
       status,
       dueBucket,
@@ -146,7 +154,7 @@ export class ReportsController {
     req: FastifyRequest<{ Params: TeamParams; Querystring: DoneTasksQuery }>,
     reply: FastifyReply,
   ) => {
-    const rows = await this.svc.listDoneTasks(req.params.teamId, req.query.days);
+    const rows = await this.svc.listDoneTasks(req.params.teamId, reportCaller(req), req.query.days);
     const csv = toCsv(rows, [
       { header: 'task_id', value: (r) => r.taskId },
       { header: 'task_title', value: (r) => r.taskTitle },
@@ -160,7 +168,7 @@ export class ReportsController {
   };
 
   workloadCsv = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
-    const rows = await this.svc.listWorkload(req.params.teamId);
+    const rows = await this.svc.listWorkload(req.params.teamId, reportCaller(req));
     const csv = toCsv(rows, [
       { header: 'assignee_id', value: (r) => r.assigneeId },
       { header: 'assignee_name', value: (r) => r.assigneeName ?? '(unassigned)' },
@@ -173,7 +181,7 @@ export class ReportsController {
   };
 
   overdueCsv = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
-    const rows = await this.svc.listOverdue(req.params.teamId);
+    const rows = await this.svc.listOverdue(req.params.teamId, reportCaller(req));
     const csv = toCsv(rows, [
       { header: 'task_id', value: (r) => r.taskId },
       { header: 'task_title', value: (r) => r.taskTitle },
@@ -194,7 +202,7 @@ export class ReportsController {
   ) => {
     // Timeliness is a single record — emit one-row CSV with the same metrics
     // the JSON endpoint returns, rounded for human readability.
-    const r = await this.svc.timeliness(req.params.teamId, req.query.days);
+    const r = await this.svc.timeliness(req.params.teamId, reportCaller(req), req.query.days);
     const csv = toCsv([r], [
       { header: 'window_days', value: (x) => x.windowDays },
       { header: 'evaluated_count', value: (x) => x.evaluatedCount },
@@ -206,12 +214,12 @@ export class ReportsController {
   };
 
   budgetReport = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
-    const report = await this.svc.budgetReport(req.params.teamId);
+    const report = await this.svc.budgetReport(req.params.teamId, reportCaller(req));
     return reply.send(report);
   };
 
   budgetReportCsv = async (req: FastifyRequest<{ Params: TeamParams }>, reply: FastifyReply) => {
-    const { projects } = await this.svc.budgetReport(req.params.teamId);
+    const { projects } = await this.svc.budgetReport(req.params.teamId, reportCaller(req));
     const csv = toCsv(projects, [
       { header: 'project_id', value: (r) => r.projectId },
       { header: 'project_name', value: (r) => r.projectName },

@@ -2,6 +2,7 @@ import type { Dashboard, DashboardWidget, TeamRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { WidgetDataResolver, type WidgetDataResult } from '../lib/widgetDataResolver.js';
+import type { ReportCaller } from './reportsService.js';
 import type {
   CreateDashboardBody,
   DashboardWidgetInput,
@@ -236,15 +237,17 @@ export class DashboardsService {
     teamId: string,
     dashboardId: string,
     widgetId: string,
-    userId: string,
+    caller: ReportCaller,
   ): Promise<WidgetDataResult> {
     const d = await this.loadDashboard(teamId, dashboardId);
-    if (!canReadDashboard(d, userId)) throw Errors.forbidden();
+    if (!canReadDashboard(d, caller.userId)) throw Errors.forbidden();
 
     const widget = d.widgets.find((w) => w.id === widgetId);
     if (!widget) throw Errors.notFound('Widget not found');
 
-    return this.resolver.resolve(teamId, widget);
+    // Reading the dashboard is not the same as being allowed to see every
+    // project it aggregates — the resolver clamps the data to `caller`.
+    return this.resolver.resolve(teamId, widget, caller);
   }
 
   private async loadDashboard(teamId: string, dashboardId: string) {
