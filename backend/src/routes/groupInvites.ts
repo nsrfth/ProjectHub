@@ -34,7 +34,10 @@ export async function groupInvitesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/:memberId/accept', {
-    preHandler: requireScope('projects:read'),
+    // Accepting activates a project grant, so this is a write even though the
+    // row being changed is the caller's own. A read-only token must not be
+    // able to widen the access its owner holds.
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['groups'],
       summary: 'Accept a group invitation',
@@ -50,7 +53,8 @@ export async function groupInvitesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/:memberId/decline', {
-    preHandler: requireScope('projects:read'),
+    // State-changing (PENDING -> DECLINED); same reasoning as accept above.
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['groups'],
       summary: 'Decline a group invitation',
