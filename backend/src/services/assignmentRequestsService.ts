@@ -137,9 +137,9 @@ export class AssignmentRequestsService {
     const req = await this.load(requestId);
     this.assertPending(req, ['REQUESTED']);
     await this.assertApprover(req, actorId);
-    const updated = await prisma.taskAssignmentRequest.update({
-      where: { id: req.id },
-      data: { status: 'APPROVED', approverId: actorId },
+    const updated = await this.transition(prisma, req, ['REQUESTED'], {
+      status: 'APPROVED',
+      approverId: actorId,
     });
     await notify(req.requesterId, req.teamId, 'ASSIGNMENT_DECIDED', {
       requestId: req.id, taskId: req.taskId, decision: 'approved',
@@ -173,9 +173,10 @@ export class AssignmentRequestsService {
       select: { id: true },
     });
     if (!isDeptManager) throw Errors.badRequest('Forward target is not a department manager in this division');
-    const updated = await prisma.taskAssignmentRequest.update({
-      where: { id: req.id },
-      data: { status: 'FORWARDED', approverId: actorId, forwardedToId: toDeptManagerId },
+    const updated = await this.transition(prisma, req, ['REQUESTED', 'APPROVED'], {
+      status: 'FORWARDED',
+      approverId: actorId,
+      forwardedToId: toDeptManagerId,
     });
     await notify(toDeptManagerId, req.teamId, 'ASSIGNMENT_REQUESTED', {
       requestId: req.id, taskId: req.taskId, projectId: req.projectId, forwarded: true,
@@ -198,6 +199,16 @@ export class AssignmentRequestsService {
     await this.assertAssigneeWithinTarget(req, assigneeId);
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Claim the request FIRST. If a concurrent approver already decided it
+      // this throws and the whole transaction rolls back, so a writer that lost
+      // the race never reaches the grant upsert below — which is what used to
+      // leave a stray project WRITE grant behind for its assignee.
+      const claimed = await this.transition(tx, req, ['REQUESTED', 'APPROVED', 'FORWARDED'], {
+        status: 'ASSIGNED',
+        assigneeId,
+        approverId: actorId,
+        decidedAt: new Date(),
+      });
       await tx.task.update({ where: { id: req.taskId }, data: { assigneeId } });
       // Auto-grant: project-scoped USER grant at WRITE (D3). higher-wins dedup —
       // a no-op when an equal/greater grant already exists. `source` is
@@ -218,10 +229,7 @@ export class AssignmentRequestsService {
           source: `assignment:${req.id}`,
         },
       });
-      return tx.taskAssignmentRequest.update({
-        where: { id: req.id },
-        data: { status: 'ASSIGNED', assigneeId, approverId: actorId, decidedAt: new Date() },
-      });
+      return claimed;
     });
 
     await notify(req.requesterId, req.teamId, 'ASSIGNMENT_DECIDED', {
@@ -241,9 +249,11 @@ export class AssignmentRequestsService {
     this.assertPending(req, ['REQUESTED', 'APPROVED', 'FORWARDED']);
     await this.assertApprover(req, actorId);
     if (!reason.trim()) throw Errors.badRequest('A decline reason is required');
-    const updated = await prisma.taskAssignmentRequest.update({
-      where: { id: req.id },
-      data: { status: 'DECLINED', approverId: actorId, declineReason: reason, decidedAt: new Date() },
+    const updated = await this.transition(prisma, req, ['REQUESTED', 'APPROVED', 'FORWARDED'], {
+      status: 'DECLINED',
+      approverId: actorId,
+      declineReason: reason,
+      decidedAt: new Date(),
     });
     await notify(req.requesterId, req.teamId, 'ASSIGNMENT_DECIDED', {
       requestId: req.id, taskId: req.taskId, decision: 'declined', reason,
@@ -474,6 +484,33 @@ export class AssignmentRequestsService {
     if (!allowed.includes(req.status)) {
       throw Errors.conflict(`Request is ${req.status.toLowerCase()} and can no longer change`);
     }
+  }
+
+  /**
+   * Apply a status transition ONLY if the row is still in one of `allowed`.
+   *
+   * assertPending() checks a row we read earlier, and between that read and the
+   * write a second approver can move the request — `update({ where: { id } })`
+   * would then happily overwrite their decision. Folding the status into the
+   * WHERE makes check-and-write a single atomic statement; `count === 0` means
+   * we lost the race and must not proceed. This matters most on assign(), where
+   * the losing writer would otherwise still have issued its assignee a WRITE
+   * grant on the project.
+   */
+  private async transition(
+    client: Prisma.TransactionClient | typeof prisma,
+    req: TaskAssignmentRequest,
+    allowed: TaskAssignmentRequest['status'][],
+    data: Prisma.TaskAssignmentRequestUpdateManyMutationInput,
+  ): Promise<TaskAssignmentRequest> {
+    const { count } = await client.taskAssignmentRequest.updateMany({
+      where: { id: req.id, status: { in: allowed } },
+      data,
+    });
+    if (count === 0) {
+      throw Errors.conflict('Request was already decided by someone else');
+    }
+    return client.taskAssignmentRequest.findUniqueOrThrow({ where: { id: req.id } });
   }
 
   /** 404 (not 403) for a non-approver so request existence never leaks. */
