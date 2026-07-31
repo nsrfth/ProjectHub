@@ -1,7 +1,10 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type GlobalRole } from '@prisma/client';
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
 import { isValidPermission, type Permission } from '../lib/permissions.js';
+import { listMembershipPermissions } from '../middleware/requirePermission.js';
+import { resolveTeamMembership } from '../lib/systemUser.js';
+import { logActivity } from './activityLogger.js';
 
 // v1.23: per-team custom roles. CRUD + permission assignment. The route
 // layer gates everything on requirePermission('team.manage_roles'); this
@@ -67,6 +70,45 @@ const ROLE_INCLUDE = {
 } as const;
 
 export class RolesService {
+  /**
+   * Permission boundary: you may only grant what you already hold.
+   *
+   * `team.manage_roles` gates every mutation here, but without this check that
+   * one permission is a self-service escalation to every other — the holder
+   * could mint a role carrying `project.write_all`, then assign it to
+   * themselves via PATCH /teams/:id/members/:userId (gated on
+   * `team.change_role`, which the default Manager also holds). Bounding only
+   * setPermissions would leave that create-then-assign path wide open, so both
+   * call sites go through here.
+   *
+   * Only NEWLY added permissions are checked, so narrowing or re-saving a role
+   * that already carries something the editor lacks still works. Global ADMIN
+   * bypasses, consistently with every other gate in this codebase. Editing a
+   * system role's permissions stays allowed (update() blocks only renaming) —
+   * the boundary applies there the same way.
+   */
+  private async assertMayGrant(
+    teamId: string,
+    actorId: string,
+    actorGlobalRole: GlobalRole,
+    requested: readonly Permission[],
+    alreadyOnRole: readonly string[],
+  ): Promise<void> {
+    if (actorGlobalRole === 'ADMIN') return;
+    const membership = await resolveTeamMembership(actorId, teamId);
+    if (!membership) throw Errors.forbidden('Not a member of this team');
+    const held = await listMembershipPermissions(membership, actorGlobalRole);
+    if (held.has('*')) return;
+    const escalating = requested.filter(
+      (p) => !alreadyOnRole.includes(p) && !held.has(p),
+    );
+    if (escalating.length > 0) {
+      throw Errors.forbidden(
+        `Cannot grant permissions you do not hold: ${escalating.join(', ')}`,
+      );
+    }
+  }
+
   async list(teamId: string): Promise<RoleView[]> {
     const rows = await prisma.role.findMany({
       where: { teamId },
@@ -89,9 +131,14 @@ export class RolesService {
 
   async create(
     teamId: string,
+    actorId: string,
+    actorGlobalRole: GlobalRole,
     input: { name: string; description?: string | null; permissions: string[] },
   ): Promise<RoleView> {
     const perms = validatePermissions(input.permissions);
+    // A brand-new role holds nothing yet, so every requested permission counts
+    // as newly granted.
+    await this.assertMayGrant(teamId, actorId, actorGlobalRole, perms, []);
     try {
       const row = await prisma.role.create({
         data: {
@@ -105,6 +152,12 @@ export class RolesService {
         },
         include: ROLE_INCLUDE,
       });
+      await logActivity(prisma, {
+        teamId,
+        actorId,
+        action: 'role.created',
+        meta: { roleId: row.id, name: row.name, permissions: perms },
+      });
       return toView(row);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -117,6 +170,7 @@ export class RolesService {
   async update(
     teamId: string,
     roleId: string,
+    actorId: string,
     input: { name?: string; description?: string | null },
   ): Promise<RoleView> {
     const existing = await this.get(teamId, roleId);
@@ -133,6 +187,12 @@ export class RolesService {
           ...(input.description !== undefined && { description: input.description }),
         },
         include: ROLE_INCLUDE,
+      });
+      await logActivity(prisma, {
+        teamId,
+        actorId,
+        action: 'role.updated',
+        meta: { roleId, name: row.name },
       });
       return toView(row);
     } catch (err) {
@@ -152,10 +212,14 @@ export class RolesService {
   async setPermissions(
     teamId: string,
     roleId: string,
+    actorId: string,
+    actorGlobalRole: GlobalRole,
     permissions: readonly string[],
   ): Promise<RoleView> {
-    await this.get(teamId, roleId); // 404 if not in this team
+    const before = await this.get(teamId, roleId); // 404 if not in this team
     const perms = validatePermissions(permissions);
+
+    await this.assertMayGrant(teamId, actorId, actorGlobalRole, perms, before.permissions);
 
     // Replace inside a transaction so a half-update can't leave the role in
     // an inconsistent state. DELETE all then INSERT — simpler than computing
@@ -167,10 +231,20 @@ export class RolesService {
         skipDuplicates: true,
       }),
     ]);
+    // Record the diff, not just the end state — "who added project.write_all to
+    // this role" is the question an incident review actually asks.
+    const added = perms.filter((p) => !before.permissions.includes(p));
+    const removed = before.permissions.filter((p) => !(perms as readonly string[]).includes(p));
+    await logActivity(prisma, {
+      teamId,
+      actorId,
+      action: 'role.permissions_changed',
+      meta: { roleId, name: before.name, added, removed },
+    });
     return this.get(teamId, roleId);
   }
 
-  async remove(teamId: string, roleId: string): Promise<void> {
+  async remove(teamId: string, roleId: string, actorId: string): Promise<void> {
     const existing = await this.get(teamId, roleId);
     if (existing.isSystem) {
       throw Errors.badRequest('System roles cannot be deleted');
@@ -181,5 +255,11 @@ export class RolesService {
       );
     }
     await prisma.role.delete({ where: { id: roleId } });
+    await logActivity(prisma, {
+      teamId,
+      actorId,
+      action: 'role.deleted',
+      meta: { roleId, name: existing.name },
+    });
   }
 }

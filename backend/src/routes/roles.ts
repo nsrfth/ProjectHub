@@ -86,7 +86,12 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
       req: FastifyRequest<{ Params: TeamParams; Body: CreateRoleBody }>,
       reply: FastifyReply,
     ) => {
-      const created = await svc.create(req.params.teamId, req.body);
+      const created = await svc.create(
+        req.params.teamId,
+        req.user!.sub,
+        req.user!.globalRole,
+        req.body,
+      );
       return reply.status(201).send(serialize(created));
     },
   });
@@ -105,7 +110,7 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
       req: FastifyRequest<{ Params: RoleParams; Body: UpdateRoleBody }>,
       reply: FastifyReply,
     ) => {
-      const updated = await svc.update(req.params.teamId, req.params.roleId, req.body);
+      const updated = await svc.update(req.params.teamId, req.params.roleId, req.user!.sub, req.body);
       return reply.send(serialize(updated));
     },
   });
@@ -127,6 +132,8 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
       const updated = await svc.setPermissions(
         req.params.teamId,
         req.params.roleId,
+        req.user!.sub,
+        req.user!.globalRole,
         req.body.permissions,
       );
       return reply.send(serialize(updated));
@@ -144,7 +151,7 @@ export async function rolesRoutes(app: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: async (req: FastifyRequest<{ Params: RoleParams }>, reply: FastifyReply) => {
-      await svc.remove(req.params.teamId, req.params.roleId);
+      await svc.remove(req.params.teamId, req.params.roleId, req.user!.sub);
       return reply.status(204).send();
     },
   });
