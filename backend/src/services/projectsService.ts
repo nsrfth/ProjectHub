@@ -465,6 +465,18 @@ export class ProjectsService {
         },
         include: projectInclude,
       });
+      // Ownership transfer changes who holds WRITE on the project, so it needs
+      // an audit trail of its own — actor, both endpoints of the move, and the
+      // timestamp logActivity stamps. Without this the only privileged change
+      // this method recorded was the freeze toggle below.
+      if (input.ownerId !== undefined && input.ownerId !== p.ownerId) {
+        await logActivity(prisma, {
+          teamId,
+          actorId: callerId,
+          action: 'project.owner_transferred',
+          meta: { projectId, from: p.ownerId, to: input.ownerId },
+        });
+      }
       if (input.datesFrozen !== undefined && input.datesFrozen !== p.datesFrozen) {
         await logActivity(prisma, {
           teamId,
