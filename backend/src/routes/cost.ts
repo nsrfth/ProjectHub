@@ -75,7 +75,7 @@ export async function costRoutes(app: FastifyInstance): Promise<void> {
 
   // Expenses (approve posts an actual).
   r.get('/expenses', { preHandler: read, schema: { tags: ['cost'], summary: 'List expenses', params: pp, response: { 200: expenseListResponse }, security: [{ bearerAuth: [] }] }, handler: ctrl.listExpenses });
-  r.post('/expenses', { preHandler: requireScope('projects:write'), schema: { tags: ['cost'], summary: 'Submit an expense', params: pp, body: createExpenseBody, response: { 201: expenseResponse }, security: [{ bearerAuth: [] }] }, handler: ctrl.createExpense });
+  r.post('/expenses', { preHandler: write, schema: { tags: ['cost'], summary: 'Submit an expense', params: pp, body: createExpenseBody, response: { 201: expenseResponse }, security: [{ bearerAuth: [] }] }, handler: ctrl.createExpense });
   r.post('/expenses/:id/approve', { preHandler: write, schema: { tags: ['cost'], summary: 'Approve an expense (posts an actual)', params: ppId, response: { 200: expenseResponse }, security: [{ bearerAuth: [] }] }, handler: ctrl.approveExpense });
   r.post('/expenses/:id/reject', { preHandler: write, schema: { tags: ['cost'], summary: 'Reject an expense', params: ppId, response: { 200: expenseResponse }, security: [{ bearerAuth: [] }] }, handler: ctrl.rejectExpense });
 
