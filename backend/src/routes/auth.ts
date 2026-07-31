@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AuthController } from '../controllers/authController.js';
 import { AuthService } from '../services/authService.js';
 import {
+  authTokensResponse,
   changeOwnPasswordBody,
   loginBody,
   performResetBody,
@@ -11,6 +12,7 @@ import {
   twoFactorConfirmBody,
   twoFactorDisableBody,
   twoFactorLoginBody,
+  twoFactorPendingResponse,
   twoFactorRecoveryCodesResponse,
   twoFactorSetupResponse,
   verificationPerformBody,
@@ -59,9 +61,10 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
       summary: 'Log in with email + password (may return a pending-2FA challenge)',
       body: loginBody,
       // Response is either the full session OR `{ pending2fa: true,
-      // pendingToken }`. z.any() lets both shapes pass — the frontend
-      // dispatches on the presence of `pending2fa`.
-      response: { 200: z.any() },
+      // pendingToken }` — the frontend dispatches on the presence of
+      // `pending2fa`. Modelled as a union of the two concrete shapes rather
+      // than z.any() so the serializer strips anything not on the whitelist.
+      response: { 200: z.union([authTokensResponse, twoFactorPendingResponse]) },
     },
     handler: ctrl.login,
   });
@@ -153,7 +156,7 @@ export async function authRoutes(app: FastifyInstance, opts: { env: Env }): Prom
       tags: ['auth'],
       summary: 'Complete login with a TOTP / recovery code after /login returned pending2fa',
       body: twoFactorLoginBody,
-      response: { 200: z.object({ accessToken: z.string(), user: z.any() }) },
+      response: { 200: authTokensResponse },
     },
     handler: ctrl.twoFactorLogin,
   });
