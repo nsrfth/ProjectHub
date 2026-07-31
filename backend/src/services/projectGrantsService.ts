@@ -4,6 +4,7 @@ import { Errors } from '../lib/errors.js';
 import { loadEnv } from '../config/env.js';
 import { userHasPermission } from '../middleware/requirePermission.js';
 import { notificationsHub } from './notificationsHub.js';
+import { logActivity } from './activityLogger.js';
 
 // v2.8 (Phases 2+3): the unified sharing surface.
 //
@@ -267,6 +268,22 @@ export class ProjectGrantsService {
       }
     }
 
+    // Granting project access is an access-changing privileged action; record
+    // who did it, to whom, and at what level.
+    await logActivity(prisma, {
+      teamId,
+      actorId,
+      action: 'grant.created',
+      meta: {
+        projectId,
+        grantId: grant.id,
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        level: input.level,
+        status,
+      },
+    });
+
     return toView(grant);
   }
 
@@ -403,6 +420,19 @@ export class ProjectGrantsService {
       // The surviving grant's level decides the legacy row's level.
       await this.writeLegacyRow(projectId, grant.subjectType, grant.subjectId, sibling.level);
     }
+
+    await logActivity(prisma, {
+      teamId,
+      actorId,
+      action: 'grant.revoked',
+      meta: {
+        projectId,
+        grantId,
+        subjectType: grant.subjectType,
+        subjectId: grant.subjectId,
+        level: grant.level,
+      },
+    });
   }
 
   // ------------------------------------------------------------------

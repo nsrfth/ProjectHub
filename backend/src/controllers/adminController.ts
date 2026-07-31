@@ -55,7 +55,7 @@ export class AdminController {
     req: FastifyRequest<{ Body: CreateUserBody }>,
     reply: FastifyReply,
   ) => {
-    const result = await this.svc.createUser(req.body);
+    const result = await this.svc.createUser(req.user!.sub, req.body);
     return reply.status(201).send({
       user: serializeUser(result.user),
       generatedPassword: result.generatedPassword,

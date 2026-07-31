@@ -241,15 +241,17 @@ export class AdminService {
     }
 
     // v1.78.1: revoke the target's active refresh tokens whenever their
-    // globalRole actually changes. The access JWT carries globalRole as a
-    // signed claim; requireAuth verifies it WITHOUT a DB re-read (the API-
-    // token path does re-read, but the JWT path doesn't — by design, to
-    // keep requireAuth a pure verify). Without revocation the target would
-    // keep hitting the API with stale role bits up to their refresh token's
-    // lifetime — meaning a freshly-promoted ADMIN couldn't see the cross-
-    // team /api/projects list until they logged out and back in. Mirrors
-    // the soft-revoke idiom from changePassword / performPasswordReset in
-    // authService — set revokedAt; the row stays for audit history.
+    // globalRole actually changes. Mirrors the soft-revoke idiom from
+    // changePassword / performPasswordReset in authService — set revokedAt;
+    // the row stays for audit history.
+    //
+    // NOTE: this comment used to say requireAuth verifies the JWT's globalRole
+    // claim without a DB re-read. That is no longer true — requireAuth now
+    // re-reads the live globalRole on BOTH the JWT and API-token paths
+    // (middleware/auth.ts), so authorization already follows a demotion
+    // immediately. The revocation is kept as defence in depth and to force a
+    // fresh login rather than leave the target on a session whose claims no
+    // longer match their role.
     const roleChanged = target.globalRole !== newRole;
     const [updated] = await prisma.$transaction([
       prisma.user.update({
@@ -269,6 +271,15 @@ export class AdminService {
           ]
         : []),
     ]);
+    // Promotion/demotion between MEMBER and ADMIN is the most privileged action
+    // in the system — "who made this account an admin" must be answerable.
+    if (roleChanged) {
+      await logActivity(prisma, {
+        actorId: callerId,
+        action: 'admin.user.role_changed',
+        meta: { targetUserId, from: target.globalRole, to: newRole },
+      });
+    }
     return toAdminUserView(updated);
   }
 
@@ -473,6 +484,13 @@ export class AdminService {
       }
       throw err;
     }
+    // The row is gone, so capture enough identity to make the entry readable
+    // after the fact — actorId alone would leave "deleted whom?" unanswerable.
+    await logActivity(prisma, {
+      actorId: callerId,
+      action: 'admin.user.deleted',
+      meta: { targetUserId, email: target.email, globalRole: target.globalRole },
+    });
   }
 
   // v1.26: admin-provisioned user account. The admin types email + name and
@@ -482,13 +500,16 @@ export class AdminService {
   // Distinct from self-register: this path bypasses verification (admin
   // vouches for the address by default) and surfaces the password ONCE so
   // the admin can hand it over. Nothing is logged.
-  async createUser(input: {
-    email: string;
-    name: string;
-    password?: string;
-    globalRole: GlobalRole;
-    emailVerified: boolean;
-  }): Promise<{ user: AdminUserView; generatedPassword: string | null }> {
+  async createUser(
+    callerId: string,
+    input: {
+      email: string;
+      name: string;
+      password?: string;
+      globalRole: GlobalRole;
+      emailVerified: boolean;
+    },
+  ): Promise<{ user: AdminUserView; generatedPassword: string | null }> {
     // Resolve password: caller-supplied wins; otherwise generate a 20-char
     // URL-safe token. The schema validator already enforced the policy when
     // a password was supplied, so we trust it here.
@@ -517,6 +538,17 @@ export class AdminService {
           emailVerifiedAt: input.emailVerified ? new Date() : null,
         },
         include: { _count: { select: { memberships: true } } },
+      });
+      // Provisioning an account — especially one created straight into ADMIN —
+      // needs a trail. The password (supplied or generated) is never recorded.
+      await logActivity(prisma, {
+        actorId: callerId,
+        action: 'admin.user.created',
+        meta: {
+          targetUserId: created.id,
+          email: created.email,
+          globalRole: created.globalRole,
+        },
       });
       return {
         user: toAdminUserView({ ...created, directory: null }),
