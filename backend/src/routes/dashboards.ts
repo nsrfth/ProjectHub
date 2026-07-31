@@ -67,7 +67,7 @@ export async function dashboardsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.post('/', {
-    preHandler: requireScope('projects:read'),
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['dashboards'],
       summary: 'Create a dashboard (caller becomes owner)',
@@ -112,7 +112,7 @@ export async function dashboardsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.patch('/:dashboardId', {
-    preHandler: requireScope('projects:read'),
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['dashboards'],
       summary: 'Update dashboard metadata (owner or manager)',
@@ -139,7 +139,7 @@ export async function dashboardsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.delete('/:dashboardId', {
-    preHandler: requireScope('projects:read'),
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['dashboards'],
       summary: 'Delete a dashboard and its widgets',
@@ -161,7 +161,7 @@ export async function dashboardsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   r.put('/:dashboardId/widgets', {
-    preHandler: requireScope('projects:read'),
+    preHandler: requireScope('projects:write'),
     schema: {
       tags: ['dashboards'],
       summary: 'Replace all widgets on a dashboard (idempotent)',
