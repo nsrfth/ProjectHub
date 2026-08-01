@@ -13,6 +13,32 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.22.1] — 2026-08-01 — Authorization hardening and audit coverage
+
+A sweep over authorization gaps found by review. No user-visible feature change;
+several endpoints that were reachable too broadly are now scoped correctly, and
+sensitive mutations that left no trace are now audited.
+
+- **Reports and dashboard widgets are scoped to the caller's projects.** Team
+  reports and `widgetDataResolver` aggregated over every project in the team
+  regardless of the caller's project access; both now restrict to the projects
+  the caller can actually read. `reportsProjectScope.test.ts` covers it.
+- **Role mutations respect a permission boundary.** A role could be granted
+  capabilities the granting user does not hold; `rolesService` now rejects
+  that escalation, and `rolePermissionBoundary.test.ts` guards it.
+- **Audit coverage extended** to role changes, user create/delete, grant
+  mutations, and project ownership transfer — all previously silent.
+- **Expense submission requires project WRITE + `cost.manage`**, not just
+  team membership.
+- **Dashboard mutating routes and group invite accept/decline** now require
+  `projects:write` scope.
+- **Assignment-request status transitions are atomic**, closing a
+  double-transition race.
+- **A failed department-transfer revoke undoes the new grant** instead of
+  leaving the user holding both.
+- **Login response schemas are explicit** rather than `z.any()`, and the login
+  page no longer reads testbed credentials from `VITE_` env vars.
+
 ## [2.22.0] — 2026-07-28 — All-projects timeline is now an interactive Gantt
 
 `/projects/timeline` was a read-only SVG chart. It is now built on a new
