@@ -91,13 +91,17 @@ interface TaskDef {
   status: TaskStatus;
   priority: TaskPriority;
   pct: number;
-  startOff: number;
-  endOff: number;
+  /** Day offsets from TODAY. `null` on both = an activity that cannot be
+   *  scheduled yet — it shows up in the CPM report's exclusions panel. */
+  startOff: number | null;
+  endOff: number | null;
   respEmail: string;
   discipline: string;
   wbs: string;
   milestone?: boolean;
-  dependsOnKey?: string;
+  /** Finish-to-start predecessors. Several are deliberate merge points so the
+   *  CPM report has a driving predecessor worth naming. */
+  dependsOnKeys?: string[];
 }
 
 const PM = 'farhad.ahmadi@epc.local';
@@ -106,32 +110,54 @@ const PROC = 'reza.tehrani@epc.local';
 const CON = 'maryam.hosseini@epc.local';
 const QA = 'kaveh.rostami@epc.local';
 
+// Schedule design (v2.23.0): the dates below are tuned so the CPM Schedule
+// Analysis report is worth opening, not just populated.
+//
+//   Critical path (zero float, 9 nodes, two milestones inline):
+//     e1 → p1 → p2 → c4 → c6 → cMS → x1 → x2 → x3
+//   The absorber-column PO (p2) is the driving predecessor of mechanical
+//   equipment installation (c4) — which is exactly what the project's AMBER
+//   RAG reason claims, so the report corroborates the health status instead of
+//   contradicting it.
+//
+//   Near-critical band (2 days float): c1, c2, c3 — the civil chain. Visible at
+//   the default 3-day threshold, and drops to NORMAL if you drag the slider to 1.
+//   Genuine slack: c5 (15d), the engineering branch (~63d), dangling POs (~140d).
+//   Excluded: the four phase summaries (IS_SUMMARY), the undated spares list
+//   (NO_DATES), and p3 — whose link to it was dropped (ORPHANED_EDGE).
+//
+// Offsets are CALENDAR days from TODAY; edges are declared WORKING, which only
+// bites when the instance turns `scheduling.workingDaysOnly` on.
 const TASKS: TaskDef[] = [
-  // Engineering
+  // Engineering — completed head of the critical path, then a slack branch.
   { key: 'e1', phase: 'Engineering', title: 'Process design basis & PFDs', status: 'DONE', priority: 'HIGH', pct: 100, startOff: -120, endOff: -95, respEmail: ENG, discipline: 'Process', wbs: '1.1' },
-  { key: 'e2', phase: 'Engineering', title: 'HAZOP study & closeout', status: 'DONE', priority: 'HIGH', pct: 100, startOff: -94, endOff: -78, respEmail: ENG, discipline: 'Process', wbs: '1.2', dependsOnKey: 'e1' },
-  { key: 'e3', phase: 'Engineering', title: 'P&ID development (IFC)', status: 'IN_PROGRESS', priority: 'HIGH', pct: 70, startOff: -77, endOff: -10, respEmail: ENG, discipline: 'Process', wbs: '1.3', dependsOnKey: 'e2' },
-  { key: 'e4', phase: 'Engineering', title: 'Equipment datasheets & specs', status: 'IN_PROGRESS', priority: 'MEDIUM', pct: 55, startOff: -60, endOff: 5, respEmail: ENG, discipline: 'Mechanical', wbs: '1.4', dependsOnKey: 'e2' },
-  { key: 'e5', phase: 'Engineering', title: '3D model review (30/60/90%)', status: 'REVIEW', priority: 'MEDIUM', pct: 60, startOff: -40, endOff: 20, respEmail: ENG, discipline: 'Piping', wbs: '1.5', dependsOnKey: 'e3' },
-  { key: 'eMS', phase: 'Engineering', title: 'MILESTONE: Engineering 60% complete', status: 'DONE', priority: 'HIGH', pct: 100, startOff: -30, endOff: -30, respEmail: PM, discipline: 'Process', wbs: '1.6', milestone: true, dependsOnKey: 'e3' },
-  // Procurement
-  { key: 'p1', phase: 'Procurement', title: 'Long-lead equipment RFQ package', status: 'DONE', priority: 'HIGH', pct: 100, startOff: -85, endOff: -60, respEmail: PROC, discipline: 'Mechanical', wbs: '2.1', dependsOnKey: 'e1' },
-  { key: 'p2', phase: 'Procurement', title: 'Amine absorber column — PO & expediting', status: 'IN_PROGRESS', priority: 'URGENT', pct: 45, startOff: -55, endOff: 60, respEmail: PROC, discipline: 'Mechanical', wbs: '2.2', dependsOnKey: 'p1' },
-  { key: 'p3', phase: 'Procurement', title: 'Gas compressor package — PO', status: 'TODO', priority: 'HIGH', pct: 0, startOff: -20, endOff: 90, respEmail: PROC, discipline: 'Mechanical', wbs: '2.3', dependsOnKey: 'p1' },
-  { key: 'p4', phase: 'Procurement', title: 'Bulk piping & valves — material takeoff', status: 'IN_PROGRESS', priority: 'MEDIUM', pct: 30, startOff: -15, endOff: 45, respEmail: PROC, discipline: 'Piping', wbs: '2.4', dependsOnKey: 'e5' },
-  { key: 'pMS', phase: 'Procurement', title: 'MILESTONE: All long-lead POs placed', status: 'TODO', priority: 'HIGH', pct: 0, startOff: 60, endOff: 60, respEmail: PM, discipline: 'Mechanical', wbs: '2.5', milestone: true, dependsOnKey: 'p3' },
-  // Construction
-  { key: 'c1', phase: 'Construction', title: 'Site mobilization & temporary facilities', status: 'DONE', priority: 'HIGH', pct: 100, startOff: -50, endOff: -30, respEmail: CON, discipline: 'Civil', wbs: '3.1', dependsOnKey: 'e1' },
-  { key: 'c2', phase: 'Construction', title: 'Civil foundations & underground', status: 'IN_PROGRESS', priority: 'HIGH', pct: 40, startOff: -25, endOff: 40, respEmail: CON, discipline: 'Civil', wbs: '3.2', dependsOnKey: 'c1' },
-  { key: 'c3', phase: 'Construction', title: 'Structural steel erection', status: 'TODO', priority: 'MEDIUM', pct: 0, startOff: 40, endOff: 90, respEmail: CON, discipline: 'Civil', wbs: '3.3', dependsOnKey: 'c2' },
-  { key: 'c4', phase: 'Construction', title: 'Mechanical equipment installation', status: 'TODO', priority: 'HIGH', pct: 0, startOff: 90, endOff: 150, respEmail: CON, discipline: 'Mechanical', wbs: '3.4', dependsOnKey: 'c3' },
-  { key: 'c5', phase: 'Construction', title: 'Piping fabrication & erection', status: 'TODO', priority: 'MEDIUM', pct: 0, startOff: 100, endOff: 170, respEmail: CON, discipline: 'Piping', wbs: '3.5', dependsOnKey: 'c3' },
-  { key: 'c6', phase: 'Construction', title: 'E&I installation & cable pulling', status: 'TODO', priority: 'MEDIUM', pct: 0, startOff: 120, endOff: 185, respEmail: CON, discipline: 'Electrical', wbs: '3.6', dependsOnKey: 'c4' },
-  { key: 'cMS', phase: 'Construction', title: 'MILESTONE: Mechanical completion', status: 'TODO', priority: 'URGENT', pct: 0, startOff: 190, endOff: 190, respEmail: PM, discipline: 'Mechanical', wbs: '3.7', milestone: true, dependsOnKey: 'c5' },
-  // Commissioning
-  { key: 'x1', phase: 'Commissioning', title: 'Pre-commissioning, flushing & drying', status: 'TODO', priority: 'HIGH', pct: 0, startOff: 190, endOff: 215, respEmail: QA, discipline: 'Process', wbs: '4.1', dependsOnKey: 'cMS' },
-  { key: 'x2', phase: 'Commissioning', title: 'MILESTONE: Ready for start-up (RFSU)', status: 'TODO', priority: 'URGENT', pct: 0, startOff: 220, endOff: 220, respEmail: PM, discipline: 'Process', wbs: '4.2', milestone: true, dependsOnKey: 'x1' },
-  { key: 'x3', phase: 'Commissioning', title: 'Performance test run & handover', status: 'TODO', priority: 'HIGH', pct: 0, startOff: 220, endOff: 240, respEmail: QA, discipline: 'Process', wbs: '4.3', dependsOnKey: 'x2' },
+  { key: 'e2', phase: 'Engineering', title: 'HAZOP study & closeout', status: 'DONE', priority: 'HIGH', pct: 100, startOff: -94, endOff: -78, respEmail: ENG, discipline: 'Process', wbs: '1.2', dependsOnKeys: ['e1'] },
+  { key: 'e3', phase: 'Engineering', title: 'P&ID development (IFC)', status: 'IN_PROGRESS', priority: 'HIGH', pct: 70, startOff: -77, endOff: -10, respEmail: ENG, discipline: 'Process', wbs: '1.3', dependsOnKeys: ['e2'] },
+  { key: 'e4', phase: 'Engineering', title: 'Equipment datasheets & specs', status: 'IN_PROGRESS', priority: 'MEDIUM', pct: 55, startOff: -60, endOff: 5, respEmail: ENG, discipline: 'Mechanical', wbs: '1.4', dependsOnKeys: ['e2'] },
+  { key: 'e5', phase: 'Engineering', title: '3D model review (30/60/90%)', status: 'REVIEW', priority: 'MEDIUM', pct: 60, startOff: -9, endOff: 20, respEmail: ENG, discipline: 'Piping', wbs: '1.5', dependsOnKeys: ['e3'] },
+  { key: 'eMS', phase: 'Engineering', title: 'MILESTONE: Engineering 60% complete', status: 'DONE', priority: 'HIGH', pct: 100, startOff: -9, endOff: -9, respEmail: PM, discipline: 'Process', wbs: '1.6', milestone: true, dependsOnKeys: ['e3'] },
+  // Procurement — p2 is the project driver and the reason the RAG is amber.
+  { key: 'p1', phase: 'Procurement', title: 'Long-lead equipment RFQ package', status: 'DONE', priority: 'HIGH', pct: 100, startOff: -94, endOff: -60, respEmail: PROC, discipline: 'Mechanical', wbs: '2.1', dependsOnKeys: ['e1'] },
+  { key: 'p2', phase: 'Procurement', title: 'Amine absorber column — PO & expediting', status: 'IN_PROGRESS', priority: 'URGENT', pct: 45, startOff: -59, endOff: 95, respEmail: PROC, discipline: 'Mechanical', wbs: '2.2', dependsOnKeys: ['p1'] },
+  { key: 'p3', phase: 'Procurement', title: 'Gas compressor package — PO', status: 'TODO', priority: 'HIGH', pct: 0, startOff: -20, endOff: 90, respEmail: PROC, discipline: 'Mechanical', wbs: '2.3', dependsOnKeys: ['p1'] },
+  { key: 'p4', phase: 'Procurement', title: 'Bulk piping & valves — material takeoff', status: 'TODO', priority: 'MEDIUM', pct: 0, startOff: 21, endOff: 45, respEmail: PROC, discipline: 'Piping', wbs: '2.4', dependsOnKeys: ['e5'] },
+  { key: 'pMS', phase: 'Procurement', title: 'MILESTONE: All long-lead POs placed', status: 'TODO', priority: 'HIGH', pct: 0, startOff: 96, endOff: 96, respEmail: PM, discipline: 'Mechanical', wbs: '2.5', milestone: true, dependsOnKeys: ['p2', 'p3'] },
+  // Undated on purpose: demonstrates the CPM exclusions panel (NO_DATES), and
+  // severs its link from p3, which the report flags as ORPHANED_EDGE.
+  { key: 'pSpare', phase: 'Procurement', title: 'Two-year operational spares list — dates TBC', status: 'TODO', priority: 'LOW', pct: 0, startOff: null, endOff: null, respEmail: PROC, discipline: 'Mechanical', wbs: '2.6', dependsOnKeys: ['p3'] },
+  // Construction — civil chain runs 2 days of float (near-critical).
+  { key: 'c1', phase: 'Construction', title: 'Site mobilization & temporary facilities', status: 'DONE', priority: 'HIGH', pct: 100, startOff: -50, endOff: -30, respEmail: CON, discipline: 'Civil', wbs: '3.1', dependsOnKeys: ['e1'] },
+  { key: 'c2', phase: 'Construction', title: 'Civil foundations & underground', status: 'IN_PROGRESS', priority: 'HIGH', pct: 40, startOff: -29, endOff: 40, respEmail: CON, discipline: 'Civil', wbs: '3.2', dependsOnKeys: ['c1'] },
+  { key: 'c3', phase: 'Construction', title: 'Structural steel erection', status: 'TODO', priority: 'MEDIUM', pct: 0, startOff: 41, endOff: 93, respEmail: CON, discipline: 'Civil', wbs: '3.3', dependsOnKeys: ['c2'] },
+  // Merge point: c3 finishes day 93 but p2 finishes day 95, so the PO drives.
+  { key: 'c4', phase: 'Construction', title: 'Mechanical equipment installation', status: 'TODO', priority: 'HIGH', pct: 0, startOff: 96, endOff: 155, respEmail: CON, discipline: 'Mechanical', wbs: '3.4', dependsOnKeys: ['c3', 'p2'] },
+  { key: 'c5', phase: 'Construction', title: 'Piping fabrication & erection', status: 'TODO', priority: 'MEDIUM', pct: 0, startOff: 94, endOff: 170, respEmail: CON, discipline: 'Piping', wbs: '3.5', dependsOnKeys: ['c3', 'p4'] },
+  { key: 'c6', phase: 'Construction', title: 'E&I installation & cable pulling', status: 'TODO', priority: 'MEDIUM', pct: 0, startOff: 156, endOff: 185, respEmail: CON, discipline: 'Electrical', wbs: '3.6', dependsOnKeys: ['c4'] },
+  { key: 'cMS', phase: 'Construction', title: 'MILESTONE: Mechanical completion', status: 'TODO', priority: 'URGENT', pct: 0, startOff: 186, endOff: 186, respEmail: PM, discipline: 'Mechanical', wbs: '3.7', milestone: true, dependsOnKeys: ['c5', 'c6'] },
+  // Commissioning — the tail of the critical path.
+  { key: 'x1', phase: 'Commissioning', title: 'Pre-commissioning, flushing & drying', status: 'TODO', priority: 'HIGH', pct: 0, startOff: 187, endOff: 212, respEmail: QA, discipline: 'Process', wbs: '4.1', dependsOnKeys: ['cMS'] },
+  { key: 'x2', phase: 'Commissioning', title: 'MILESTONE: Ready for start-up (RFSU)', status: 'TODO', priority: 'URGENT', pct: 0, startOff: 213, endOff: 213, respEmail: PM, discipline: 'Process', wbs: '4.2', milestone: true, dependsOnKeys: ['x1'] },
+  { key: 'x3', phase: 'Commissioning', title: 'Performance test run & handover', status: 'TODO', priority: 'HIGH', pct: 0, startOff: 214, endOff: 234, respEmail: QA, discipline: 'Process', wbs: '4.3', dependsOnKeys: ['x2'] },
 ];
 
 const PHASE_LABEL: Record<string, string> = {
@@ -243,7 +269,7 @@ async function main(): Promise<void> {
       plannedBudget: 48_500_000,
       budgetCurrency: 'USD',
       startDate: addDays(TODAY, -120),
-      endDate: addDays(TODAY, 240),
+      endDate: addDays(TODAY, 234),
       correspondenceEnabled: true,
       ragStatus: 'AMBER',
       ragReason: 'Amine absorber column PO slippage threatens the mechanical-completion milestone; recovery plan in progress.',
@@ -285,8 +311,10 @@ async function main(): Promise<void> {
   const taskDates = new Map<string, { start: Date; end: Date }>();
   let leafOrder = 0;
   for (const t of TASKS) {
-    const start = addDays(TODAY, t.startOff);
-    const end = addDays(TODAY, t.endOff);
+    // A null offset means the activity has no agreed dates yet — it is created
+    // without them so the CPM report can report it as excluded.
+    const start = t.startOff === null ? null : addDays(TODAY, t.startOff);
+    const end = t.endOff === null ? null : addDays(TODAY, t.endOff);
     const done = t.status === 'DONE';
     const created = await prisma.task.create({
       data: {
@@ -307,7 +335,7 @@ async function main(): Promise<void> {
     });
     await prisma.task.update({ where: { id: created.id }, data: { wbsPath: `${phaseSummaryPath.get(t.phase)}/${created.id}` } });
     taskId.set(t.key, created.id);
-    taskDates.set(t.key, { start, end });
+    if (start && end) taskDates.set(t.key, { start, end });
     leafOrder++;
 
     // Labels: phase + milestone/HSE/quality accents
@@ -328,15 +356,17 @@ async function main(): Promise<void> {
     await prisma.task.update({ where: { id }, data: { isSummary: true } });
   }
 
-  // Dependencies (FS network)
+  // Dependencies (FS network). Merge points (c4, c5, cMS, pMS) carry more than
+  // one predecessor so the CPM report has a driving predecessor to identify.
   for (const t of TASKS) {
-    if (!t.dependsOnKey) continue;
-    const from = taskId.get(t.key)!;
-    const dep = taskId.get(t.dependsOnKey);
-    if (!dep) continue;
-    await prisma.taskDependency.create({
-      data: { teamId: team.id, taskId: from, dependsOnId: dep, type: 'FINISH_TO_START', lag: 0, lagUnit: 'DAY', calendarMode: 'WORKING' },
-    });
+    for (const key of t.dependsOnKeys ?? []) {
+      const from = taskId.get(t.key)!;
+      const dep = taskId.get(key);
+      if (!dep) continue;
+      await prisma.taskDependency.create({
+        data: { teamId: team.id, taskId: from, dependsOnId: dep, type: 'FINISH_TO_START', lag: 0, lagUnit: 'DAY', calendarMode: 'WORKING' },
+      });
+    }
   }
 
   // RACI (Consulted / Informed) on key tasks
@@ -515,7 +545,9 @@ async function main(): Promise<void> {
     },
   });
   for (const t of TASKS) {
-    const d = taskDates.get(t.key)!;
+    // Undated activities have nothing to baseline — skip rather than crash.
+    const d = taskDates.get(t.key);
+    if (!d) continue;
     await prisma.baselineEntry.create({ data: { baselineId: baseline.id, taskId: taskId.get(t.key)!, start: d.start, end: d.end } });
   }
 

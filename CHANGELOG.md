@@ -86,8 +86,33 @@ Two related corrections ship with it:
   report and the WBS view cannot disagree on "1.2.3".
 - Removed dead code (`finishFromFinish`) from the CPM engine.
 
+### Demo data
+
+- **`SEED_EPC_DEMO=1 npx prisma db seed`** now routes to the EPC showcase
+  dataset, which previously existed but could only be run by invoking the script
+  by hand. One richly-populated project (South Pars Phase 14 — Gas Sweetening
+  Unit, `SP14-GSU`) touching ~50 models: WBS tree, dependency network, RACI,
+  custom fields, correspondence, cost accounts / budget / commitments / actuals,
+  timesheets and rate cards, resources, EVM snapshots, a baseline, and the risk /
+  change / procurement / quality registers. Logins are `*@epc.local` /
+  `Demo2026!`. Idempotent — re-running once `SP14-GSU` exists is a no-op.
+- Its schedule was retuned so the new CPM report is worth opening: a **9-activity
+  critical path** with two milestones inline, **3 near-critical activities** at
+  exactly 2 days of float (so the threshold slider visibly re-bands them), 9
+  activities with genuine slack, and an exclusions panel showing all three
+  reasons. The driving predecessor of *Mechanical equipment installation* is the
+  *Amine absorber column PO* — which is precisely what the project's AMBER RAG
+  reason claims, so the report corroborates the health status rather than
+  contradicting it.
+
 ### Notes
 
+- **`NEGATIVE` float is not currently reachable.** The band exists and is
+  rendered, but with no schedule constraint types (SNET / FNLT / deadlines) in
+  the schema, total float is provably ≥ 0: early start is the max over stored
+  and predecessor bounds, late finish the min over project end and successor
+  bounds, and project end is the max early finish. The band is in place for when
+  constraints land; until then no dataset can produce it.
 - The engine had **no unit test** before this release. `tests/unit/cpm.test.ts`
   now covers finish-to-start semantics and symmetry, start-to-start and
   finish-to-finish edges, lag in days and hours, the working-day calendar,

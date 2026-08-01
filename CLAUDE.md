@@ -33,6 +33,10 @@ npx prisma migrate dev      # create/apply a migration in dev
 npx prisma generate         # regenerate the Prisma client after schema edits
 npx prisma db seed          # seed admin@taskhub.local / admin (routes via seed-router.ts)
 SEED_IT_DEMO=1 npx prisma db seed   # optional IT demo dataset (~180 tasks)
+SEED_EPC_DEMO=1 npx prisma db seed  # EPC showcase: one project exercising ~50 models
+                                    # (WBS + CPM network, cost/EVM, registers,
+                                    # timesheets, correspondence). Logins *@epc.local
+                                    # / Demo2026!. Idempotent on project code SP14-GSU.
 ```
 
 ### Frontend (`cd frontend`)
