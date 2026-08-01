@@ -1,5 +1,5 @@
 import { Prisma, type Currency, type GlobalRole, type PercentCompleteMode, type TaskPriority, type TaskStatus, type TeamRole } from '@prisma/client';
-import { buildWbsPath, refreshIsSummary, repathDescendants } from '../lib/wbs.js';
+import { buildWbsPath, deriveWbsCodes, refreshIsSummary, repathDescendants } from '../lib/wbs.js';
 import { prisma } from '../data/prisma.js';
 import { AppError, Errors } from '../lib/errors.js';
 import {
@@ -1713,7 +1713,13 @@ export class TasksService {
       if (newParentId) {
         await tx.task.update({ where: { id: newParentId }, data: { isSummary: true } });
       }
+      // v2.23.0: a reparent flips isSummary on the old and/or new parent, and
+      // isSummary is exactly what decides which activities enter the CPM
+      // network. Without this bump a stale critical path is served until some
+      // unrelated schedule edit happens to invalidate it.
+      await bumpScheduleVersion(tx, projectId);
     });
+    invalidateCpmCache(projectId);
 
     return this.get(teamId, projectId, taskId);
   }
@@ -1759,6 +1765,9 @@ export class TasksService {
 
     const out: WbsNodeView[] = [];
     const visited = new Set<string>(); // defensive cycle guard (move prevents cycles)
+    // v2.23.0: outline codes come from the shared deriver so this view and the
+    // CPM Schedule Analysis report always agree on "1.2.3".
+    const codes = deriveWbsCodes(rows);
 
     // DFS. Returns the subtree's { leafCount, weightedPct } so a summary node can
     // average over its leaves. Pushes pre-order; fixes rollup after recursing.
@@ -1772,7 +1781,7 @@ export class TasksService {
         parentId: row.parentId && liveIds.has(row.parentId) ? row.parentId : null,
         title: row.title,
         status: row.status,
-        wbsCode: code,
+        wbsCode: codes.get(row.id) ?? code,
         wbsDepth: depth,
         isSummary,
         childCount: kids.length,
@@ -1915,7 +1924,11 @@ export class TasksService {
       });
       // v2.1.1: parent may no longer have any live children.
       await refreshIsSummary(tx, existing.parentId);
+      // v2.23.0: the task leaves the CPM network and its parent may stop being
+      // a summary — both change which activities are scheduled.
+      await bumpScheduleVersion(tx, projectId);
     });
+    invalidateCpmCache(projectId);
     // Webhook subscribers DO want to know — the delete event fires from the
     // service layer because it's the only place we have the team scope after
     // the row is gone. Awaited so the delivery row exists synchronously.

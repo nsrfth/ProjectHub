@@ -13,6 +13,91 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.23.0] — 2026-08-02 — CPM Schedule Analysis report
+
+A first-class, tabular schedule analysis for planners — plus fixes to the
+scheduling engine underneath it. The Gantt chart keeps its own critical-path
+overlay and is unchanged apart from the date correction noted below.
+
+### ⚠️ Behaviour change — finish-to-start dates shift by one day
+
+The forward pass placed a successor's early start **on** its predecessor's early
+finish, a one-day overlap finish-to-start forbids. The backward pass already
+applied the matching `-1`, so the two directions disagreed. This produced
+**total float of −1 day on activities nobody had actually delayed**, and it was
+invisible on tidy data because the engine takes the later of the stored start
+and the network bound — so it only surfaced on schedules where the dependency
+network, not the typed-in dates, drove the plan.
+
+Finish-to-start now advances the successor to the day **after** its predecessor
+finishes, in both directions and off-day aware. **Projects whose bars were
+network-driven will see those bars move one day later.** That is the corrected
+position, not a regression. Projects whose stored dates already satisfied every
+dependency are unaffected.
+
+Two related corrections ship with it:
+
+- The backward pass stepped back one **calendar** day even on `WORKING`-calendar
+  edges, so a late finish could land on a weekend or holiday. It now steps back
+  one working day on those edges.
+- **Total float is now counted in the schedule's own unit.** With the working-day
+  calendar on, a Friday→Monday gap reported "2 days of float" that a planner
+  could not actually spend. It now reports 0. This only affects instances with
+  `scheduling.workingDaysOnly` enabled (off by default).
+
+### Added
+
+- **CPM Schedule Analysis report** at `/projects/:projectId/reports/cpm`, backed
+  by `GET /teams/:teamId/projects/:projectId/reports/cpm`. Per-activity WBS code,
+  duration, ES/EF/LS/LF, total float, free float, float status and driving
+  predecessor; a project header with the basis of calculation, calculated finish
+  and critical-path length; and the critical path listed in longest-path order
+  with milestones inline. Sortable, filterable by float band, with an adjustable
+  near-critical threshold. EN + FA, RTL, Jalali dates.
+- **CSV export** at `…/reports/cpm.csv` (UTF-8 BOM, so Persian activity names
+  open correctly in Excel).
+- **Free float** (`freeFloatDays`) — how long an activity can slip without moving
+  any successor — reported separately from total float.
+- **Float banding** (`floatStatus`): `NEGATIVE` / `CRITICAL` / `NEAR_CRITICAL` /
+  `NORMAL`. Negative float is a constraint violation and is no longer collapsed
+  into "critical" the way the boolean `isCritical` flag does. The near-critical
+  band comes from `?nearCriticalDays=` (default 3, capped at 30) and re-bands
+  without recomputing the network.
+- **Driving predecessor** — which dependency actually set each early start.
+- **Explicit exclusions.** Activities dropped from the network are now reported
+  in `excluded[]` with a reason instead of vanishing: `NO_DATES`, `IS_SUMMARY`,
+  or `ORPHANED_EDGE`. The last one flags an activity that *is* in the network but
+  had a dependency severed because the other end was excluded — previously an
+  undated task in the middle of a chain silently cut it, and the activities on
+  either side reported float computed over a broken network with no warning.
+  v1 reports the break rather than bridging it; no zero-duration bridging is
+  invented.
+
+### Fixed
+
+- **Stale critical paths after structural edits.** Reparenting a task
+  (`tasksService.move`), soft-deleting one (`remove`), restoring one from trash
+  (`trashService.restoreTask`) and purging one (`purgeTask`) all change which
+  activities enter the network — via the `isSummary` flag — but none of them
+  bumped `scheduleVersion` or invalidated the CPM cache. A stale result was
+  served until some unrelated schedule edit happened to invalidate it. All four
+  now bump and invalidate.
+- WBS outline codes are derived by one shared helper (`lib/wbs.ts`), so the CPM
+  report and the WBS view cannot disagree on "1.2.3".
+- Removed dead code (`finishFromFinish`) from the CPM engine.
+
+### Notes
+
+- The engine had **no unit test** before this release. `tests/unit/cpm.test.ts`
+  now covers finish-to-start semantics and symmetry, start-to-start and
+  finish-to-finish edges, lag in days and hours, the working-day calendar,
+  milestones, free float, driver attribution, path ordering, exclusions and
+  cycle detection.
+- Float is still **derived on demand** — no columns were added to `Task`, and
+  this release ships no migration.
+- Basis of calculation is planned dates only (`basis: 'PLANNED'` in the
+  response). Progress-based and retained-logic scheduling remain future work.
+
 ## [2.22.1] — 2026-08-01 — Authorization hardening and audit coverage
 
 A sweep over authorization gaps found by review. No user-visible feature change;

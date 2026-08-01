@@ -240,10 +240,17 @@ export default function ProjectGanttPage(): JSX.Element {
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
       <div className="mb-4">
-        <div className="text-sm text-slate-500 mb-1">
+        <div className="text-sm text-slate-500 mb-1 flex items-center gap-3">
           <Link to="/projects" className="hover:underline">
             ← Projects
           </Link>
+          {/* v2.23.0: the tabular schedule analysis lives on its own page —
+              shown only when the CPM module is on for this project. */}
+          {cpmEnabled && projectId && (
+            <Link to={`/projects/${projectId}/reports/cpm`} className="hover:underline">
+              {t('cpm.title')}
+            </Link>
+          )}
         </div>
         <h1 className="text-2xl font-semibold">
           Gantt — {project?.name ?? '…'}

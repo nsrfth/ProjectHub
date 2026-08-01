@@ -9,6 +9,7 @@ import { projectsCrossTeamRoutes, projectsRoutes } from './routes/projects.js';
 import { projectTeamSharesRoutes } from './routes/projectTeamShares.js';
 import { grantApprovalsRoutes, projectGrantsRoutes } from './routes/projectGrants.js';
 import { ganttRoutes, scheduleVarianceRoutes } from './routes/gantt.js';
+import { cpmReportRoutes } from './routes/cpmReport.js';
 import { projectStatusRoutes } from './routes/projectStatus.js';
 import { projectBaselinesRoutes } from './routes/projectBaselines.js';
 import {
@@ -258,6 +259,12 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     });
     await api.register(scheduleVarianceRoutes, {
       prefix: '/teams/:teamId/projects/:projectId/reports/variance',
+    });
+    // v2.23.0: CPM Schedule Analysis (+ its .csv sibling). Registered one level
+    // up at /reports so the export lands on `/reports/cpm.csv` rather than a
+    // nested `/reports/cpm/csv`. Same auth cascade and module gate as the Gantt.
+    await api.register(cpmReportRoutes, {
+      prefix: '/teams/:teamId/projects/:projectId/reports',
     });
     // v1.81: per-project one-page status report. Same per-project nesting +
     // requireProjectAccess cascade as the Gantt report.

@@ -8,6 +8,7 @@ import TasksPage from '@/pages/TasksPage';
 import TaskDetailPage from '@/pages/TaskDetailPage';
 import ProjectGanttPage from '@/pages/ProjectGanttPage';
 import ProjectStatusPage from '@/pages/ProjectStatusPage';
+import ProjectCpmPage from '@/pages/ProjectCpmPage';
 import CorrespondencePage from '@/pages/CorrespondencePage';
 import MyReferralsPage from '@/pages/MyReferralsPage';
 import ProjectRiskPage from '@/pages/ProjectRiskPage';
@@ -83,6 +84,8 @@ export const router = createBrowserRouter([
       { path: '/projects/:projectId/reports/gantt', element: <ProjectGanttPage /> },
       // v1.81: per-project one-page status report.
       { path: '/projects/:projectId/reports/status', element: <ProjectStatusPage /> },
+      // v2.23.0: per-project CPM Schedule Analysis (activity table + float).
+      { path: '/projects/:projectId/reports/cpm', element: <ProjectCpmPage /> },
       // v1.89: per-project correspondence (دبیرخانه) register. Enabled per
       // project by a global admin; the page guards on the project being found.
       { path: '/projects/:projectId/correspondence', element: <CorrespondencePage /> },

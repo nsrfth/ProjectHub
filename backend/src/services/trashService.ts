@@ -3,6 +3,8 @@ import { Errors } from '../lib/errors.js';
 import type { GlobalRole, TeamRole } from '@prisma/client';
 import { userHasPermission } from '../middleware/requirePermission.js';
 import { buildWbsPath, refreshIsSummary, repathDescendants } from '../lib/wbs.js';
+import { bumpScheduleVersion } from '../lib/scheduleVersion.js';
+import { invalidateCpmCache } from '../lib/cpm.js';
 
 // v1.21: per-team trash for soft-deleted Tasks + Comments.
 //
@@ -141,7 +143,7 @@ export class TrashService {
   async restoreTask(teamId: string, taskId: string): Promise<void> {
     const t = await prisma.task.findUnique({
       where: { id: taskId },
-      select: { teamId: true, deletedAt: true, parentId: true },
+      select: { teamId: true, deletedAt: true, parentId: true, projectId: true },
     });
     if (!t || t.teamId !== teamId || t.deletedAt === null) {
       throw Errors.notFound('Task not in trash');
@@ -182,7 +184,11 @@ export class TrashService {
           await tx.task.update({ where: { id: t.parentId }, data: { isSummary: true } });
         }
       }
+      // v2.23.0: the restored task re-enters the CPM network and its parent
+      // becomes a summary — both change which activities are scheduled.
+      await bumpScheduleVersion(tx, t.projectId);
     });
+    invalidateCpmCache(t.projectId);
   }
 
   async restoreComment(teamId: string, commentId: string): Promise<void> {
@@ -229,7 +235,11 @@ export class TrashService {
         await tx.task.update({ where: { id: child.id }, data: { wbsPath: newChildPath, wbsDepth: 0 } });
       }
       await tx.task.delete({ where: { id: taskId } });
+      // v2.23.0: purging promotes live children to WBS roots, which can clear
+      // isSummary on them and admit them to the CPM network.
+      await bumpScheduleVersion(tx, t.projectId);
     });
+    invalidateCpmCache(t.projectId);
   }
 
   async purgeComment(

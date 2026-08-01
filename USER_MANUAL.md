@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.22.1** (2026-08-01)
+Version **v2.23.0** (2026-08-02)
 
 
 > **Terminology (v2.10).** The product now uses your organizational vocabulary:
@@ -621,6 +621,64 @@ There's a **Print** button for a clean single-page printout, and the page render
 **Work Breakdown Structure (WBS) — v1.97.** Tasks can now **nest under other tasks**, giving a project an n-level work-breakdown tree (subtasks remain the simple leaf checklist). Create a task with a parent, or **move** a task elsewhere in the tree, via the API; the **`…/projects/:id/wbs`** endpoint returns the whole tree with auto-numbered outline codes (1, 1.1, 1.1.2 …) and a rolled-up percent-complete for summary tasks. A task can't be moved under itself or one of its own descendants. The **WBS** link in the project row opens an on-screen outline view: indented rows with their outline codes and a progress bar (roll-up for summary tasks, own percent for leaves); managers can **add a root task**, **add a child** under any node, and **Move** a node to a new parent/position. **v2.1** also wires WBS leaf tasks into the project Gantt schedule overlay.
 
 **Scheduling & CPM — v2.1.** When the project's profile enables **`cpm_schedule`**, dependencies can carry **lag or lead** (`+2` days after finish-to-start, etc.). ProjectHub runs **Critical Path Method (CPM)** on demand over leaf tasks (summary/WBS parents are excluded). Cyclic dependencies are rejected. Enable overlays on the project Gantt with the toolbar checkboxes: **Critical path** (red bars + labelled links), **Baseline overlay** (ghost bars vs the current baseline — needs **`baselines`** module), and **Milestones** (zero-duration diamond markers; set `isMilestone` on a task via the API).
+
+### CPM Schedule Analysis report (v2.23.0)
+
+Open a project → **CPM Schedule Analysis** (from the Gantt page, or
+`/projects/:id/reports/cpm`). Requires the **`cpm_schedule`** profile module.
+
+Where the Gantt shows you the *shape* of the plan, this report shows you the
+*numbers* behind it — one row per activity:
+
+| Column | What it means |
+|---|---|
+| **WBS** | The activity's outline code (1, 1.1, 1.2.3 …), matching the WBS view. |
+| **Duration** | Working days if *Count working days only* is on, otherwise calendar days. Milestones are 0. |
+| **Early start / Early finish** | The soonest the activity can start and finish given everything it depends on. |
+| **Late start / Late finish** | The latest it can start and finish **without pushing the project's finish date**. |
+| **Total float** | How many days it can slip before the *project* finishes late. Zero = it's on the critical path. |
+| **Free float** | How many days it can slip before *the next activity* has to move. Always ≤ total float. |
+| **Float status** | See below. |
+| **Driving predecessor** | Which dependency actually set this activity's early start — the one to look at first when it's late. |
+
+**Float status** bands each activity:
+
+- **Critical** — zero float. Slip this and the project slips.
+- **Negative** — the schedule is already impossible: something is constrained to
+  finish before its predecessors allow. This is a problem to fix, not a path to
+  protect, which is why it is called out separately from *Critical*.
+- **Near critical** — float within the threshold you set with the slider
+  (default 3 days, up to 30). These are the activities that become critical next.
+- **Normal** — everything else.
+
+Moving the slider re-bands the table instantly; it does not change any float
+figure, only which band each activity falls into.
+
+**Header.** Above the table: the basis of calculation (currently always
+**planned dates** — progress is not yet fed back into the network), which
+calendar is in use, the project's start and calculated finish, the length of the
+critical path, and the activity count. Below the table, the **critical path** is
+listed in order from start to finish, with milestones shown in place.
+
+**Excluded from the network.** An amber panel lists anything left out of the
+calculation and why: activities with **no start or due date** (they cannot be
+scheduled), **WBS summary tasks** (their dates are a roll-up of their children,
+not work in their own right), and activities whose **dependency was dropped**
+because the task at the other end was itself excluded. That last case matters:
+an undated task in the middle of a chain breaks it, and the activities either
+side will show float calculated over the broken chain. Read this panel before
+trusting the float figures.
+
+**Export.** **Export CSV** downloads the table as it is currently filtered and
+banded, encoded so Persian activity names open correctly in Excel.
+
+> **Note for existing schedules (v2.23.0).** Finish-to-start dependencies used to
+> let a successor start *on* the same day its predecessor finished. That was
+> wrong — finish-to-start means the successor starts the day *after* — and it
+> could make activities show **−1 day** of float for no reason. This is now
+> fixed. If your project's dates were driven by its dependency network rather
+> than typed in by hand, some bars will move one day later on the Gantt. That is
+> the corrected position.
 
 **Task RACI — Consulted & Informed — v1.94.** Beyond a task's **Responsible** person and its project's **Accountable** owner, each task can now list the people who are **Consulted** (asked for input) and **Informed** (kept in the loop). A task can have many of each, and the same person may be both. For now the set is managed via the API: read it at `…/tasks/:taskId/raci`, or replace it wholesale with a `PUT` (everyone listed must be a member of the task's team). Anyone who can edit the project's tasks can change it; on-screen editing follows.
 
