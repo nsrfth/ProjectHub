@@ -21,6 +21,49 @@ export function addDaysMs(ms: number, days: number): number {
   return ms + days * MS_PER_DAY;
 }
 
+export interface BarGeometry {
+  /** Clamped left edge, in axis px. */
+  x: number;
+  /** Clamped width, in axis px. */
+  w: number;
+  /** Unclamped left edge — negative when the bar starts before the window. */
+  fullX: number;
+  /** Unclamped width, used so the progress overlay keeps its true scale. */
+  fullW: number;
+  clippedStart: boolean;
+  clippedEnd: boolean;
+}
+
+/**
+ * Bar geometry clamped to the visible axis [0, chartWidth].
+ *
+ * A bar whose span reaches outside the window would otherwise get a negative
+ * `left` (or a right edge past `chartWidth`). Nothing clips between the chart
+ * column and the sidebar, so such a bar painted straight over the task names
+ * — a row would show a bar and no label. Clamping keeps every bar inside its
+ * own lane; `clippedStart`/`clippedEnd` let the caller square off the cut edge
+ * so it reads as "continues beyond the window".
+ *
+ * Returns null when the bar lies entirely outside the axis.
+ */
+export function barGeometry(args: {
+  axisStartMs: number;
+  startMs: number;
+  endMs: number;
+  dayPx: number;
+  chartWidth: number;
+}): BarGeometry | null {
+  const { axisStartMs, startMs, endMs, dayPx, chartWidth } = args;
+  const widthDays = daysBetween(startMs, endMs) + 1;
+  // 2px gutter each side so adjacent bars don't touch.
+  const fullX = daysBetween(axisStartMs, startMs) * dayPx + 2;
+  const fullW = Math.max(4, widthDays * dayPx - 4);
+  const x = Math.max(0, fullX);
+  const w = Math.min(chartWidth, fullX + fullW) - x;
+  if (w <= 0) return null;
+  return { x, w, fullX, fullW, clippedStart: fullX < x, clippedEnd: fullX + fullW > chartWidth };
+}
+
 export function todayUtcMs(): number {
   const n = new Date();
   return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());

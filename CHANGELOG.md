@@ -13,6 +13,22 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.23.2] — 2026-08-02 — Planner timeline bars no longer cover the task names
+
+On **Planner → Calendar → Timeline**, any bar whose span started before the
+visible window was drawn at a negative offset and painted straight across the
+task list on the left — rows appeared to have a bar and no name, and the names
+they covered looked like they belonged to the wrong row.
+
+- **Bars are clamped to the axis.** Geometry is computed for the true span and
+  then clipped to `[0, chartWidth]`, so a bar can never leave its own lane. A
+  cut edge is squared off (instead of rounded) to read as "continues beyond the
+  window", and the progress overlay keeps the *unclipped* scale so a half-done
+  bar still looks half done. A bar entirely outside the window is dropped.
+- **The task sidebar is pinned.** It now sticks to the left of the scroller and
+  sits above the chart, matching the fixed "Tasks" cell in the header — it also
+  used to scroll out of view horizontally, taking every row label with it.
+
 ## [2.23.1] — 2026-08-02 — The project Gantt no longer blanks on task-level schedules
 
 A project whose work is scheduled on its **tasks** (WBS / CPM) rather than on

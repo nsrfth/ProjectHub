@@ -430,12 +430,18 @@ export default function AsanaTimelineView({ selectedTeam, teams }: Props): JSX.E
               className="flex flex-1 overflow-auto"
               onScroll={onBodyScroll}
             >
-              <div className="shrink-0 border-r border-border" style={{ width: SIDEBAR_WIDTH }}>
+              {/* Pinned left of the scroller: it must stay put under
+                  horizontal scroll (matching the fixed header cell above)
+                  and sit above the bars, which start at the axis edge. */}
+              <div
+                className="shrink-0 sticky left-0 z-20 border-r border-border bg-surface"
+                style={{ width: SIDEBAR_WIDTH }}
+              >
                 <div style={{ height: totalBodyHeight, paddingTop: visibleRange.start * ROW_HEIGHT }}>
                   {visibleRows.map((row) => renderSidebarRow(row))}
                 </div>
               </div>
-              <div className="flex-1 relative min-w-0">
+              <div className="flex-1 relative isolate min-w-0">
                 <div className="relative" style={{ width: chartWidth, height: totalBodyHeight }}>
                   {/* Grid lines */}
                   {dayMarkers.map((m, i) => (
@@ -475,6 +481,7 @@ export default function AsanaTimelineView({ selectedTeam, teams }: Props): JSX.E
                         key={row.id}
                         row={row}
                         axisStartMs={axisStartMs}
+                        chartWidth={chartWidth}
                         dayPx={dayPx}
                         rowTop={i * ROW_HEIGHT}
                         todayMs={todayMs}

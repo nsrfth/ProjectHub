@@ -4,6 +4,7 @@ import * as tasksApi from '@/features/tasks/api';
 import * as subtasksApi from '@/features/subtasks/api';
 import { formatShamsiCalendarDate } from '@/lib/shamsi';
 import {
+  barGeometry,
   daysBetween,
   initials,
   statusBarColor,
@@ -17,6 +18,8 @@ import type { BarDragMode, BarDragState, TimelineRow } from './types';
 interface Props {
   row: TimelineRow;
   axisStartMs: number;
+  /** Width of the whole axis in px — bars are clamped to it. */
+  chartWidth: number;
   dayPx: number;
   rowTop: number;
   todayMs: number;
@@ -28,6 +31,7 @@ interface Props {
 export default function TimelineBar({
   row,
   axisStartMs,
+  chartWidth,
   dayPx,
   rowTop,
   todayMs,
@@ -58,14 +62,17 @@ export default function TimelineBar({
     }
   }
 
-  const x = daysBetween(axisStartMs, startMs) * dayPx;
+  // Clamped to the axis so a bar reaching outside the window can never paint
+  // over the sidebar — see barGeometry.
+  const geom = barGeometry({ axisStartMs, startMs, endMs, dayPx, chartWidth });
+  if (!geom) return null;
+  const { x, w, fullX, fullW, clippedStart, clippedEnd } = geom;
   const widthDays = daysBetween(startMs, endMs) + 1;
-  const w = Math.max(4, widthDays * dayPx - 4);
   const y = rowTop + 6;
   const h = 24;
   const fill = statusBarColor(row.status, row.done);
   const overdue = !row.done && endMs < todayMs;
-  const progressW = Math.round((w * row.progress) / 100);
+  const progressW = Math.round((fullW * row.progress) / 100);
 
   const startIso = utcDayIso(startMs);
   const endIso = utcDayIso(endMs);
@@ -105,20 +112,22 @@ export default function TimelineBar({
   return (
     <div
       className="absolute group"
-      style={{ left: x + 2, top: y, width: w, height: h }}
+      style={{ left: x, top: y, width: w, height: h }}
       title={tooltip}
     >
       <div
-        className={`relative h-full rounded-md shadow-sm cursor-grab active:cursor-grabbing ${
-          overdue ? 'ring-2 ring-red-500' : ''
-        } ${isDragging ? 'opacity-90 z-20' : 'z-10'}`}
+        className={`relative h-full overflow-hidden rounded-md shadow-sm cursor-grab active:cursor-grabbing ${
+          clippedStart ? 'rounded-l-none' : ''
+        } ${clippedEnd ? 'rounded-r-none' : ''} ${overdue ? 'ring-2 ring-red-500' : ''} ${
+          isDragging ? 'opacity-90 z-20' : 'z-10'
+        }`}
         style={{ background: fill }}
         onPointerDown={startDrag('move')}
       >
         {row.progress > 0 && row.progress < 100 && (
           <div
-            className="absolute inset-y-0 left-0 rounded-l-md bg-black/15 pointer-events-none"
-            style={{ width: progressW }}
+            className="absolute inset-y-0 rounded-l-md bg-black/15 pointer-events-none"
+            style={{ left: fullX - x, width: progressW }}
           />
         )}
         {showLabel && (
