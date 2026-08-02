@@ -361,7 +361,11 @@ export default function ProjectGanttPage(): JSX.Element {
             )}
           </section>
 
-          {scheduledRows.length > 0 && (
+          {/* v2.23.1: the scale/navigation toolbar also carries the critical-path,
+              baseline and milestone toggles, so gating it on scheduled *subtasks*
+              made those toggles unreachable on a project scheduled at task level.
+              Show it whenever either chart has something to draw. */}
+          {(scheduledRows.length > 0 || scheduleTasks.length > 0) && (
             <section className="bg-white rounded shadow px-4 py-3 mb-2 flex flex-wrap items-center gap-3 text-sm">
               <div
                 className="inline-flex rounded border border-slate-200 overflow-hidden"
@@ -446,7 +450,10 @@ export default function ProjectGanttPage(): JSX.Element {
             </section>
           )}
 
-          {includeParts && (
+          {/* Shown on request via the toggles, and automatically when the subtask
+              chart below has nothing to draw — otherwise a task-level-scheduled
+              project renders an empty page with no way to reveal its schedule. */}
+          {(includeParts || (scheduledRows.length === 0 && scheduleTasks.length > 0)) && (
             <section className="bg-white rounded shadow p-2 overflow-x-auto mb-4">
               <h2 className="text-sm font-semibold px-2 pt-2 pb-1 text-slate-700">
                 {t('gantt.schedule.title')}
@@ -468,8 +475,9 @@ export default function ProjectGanttPage(): JSX.Element {
           <section className="bg-white rounded shadow p-2 overflow-x-auto">
             {scheduledRows.length === 0 ? (
               <p className="text-sm text-slate-500 p-4 italic">
-                No subtasks match the current filters with both startDate and endDate set.
-                Add scheduling dates on subtasks (Task detail → 📅) to populate the chart.
+                {scheduleTasks.length > 0
+                  ? 'The chart above shows this project’s task-level schedule. No subtask has both a start and an end date, so there is nothing to break those bars down into — add scheduling dates on subtasks (Task detail → 📅) to see them here.'
+                  : 'No subtasks match the current filters with both startDate and endDate set. Add scheduling dates on subtasks (Task detail → 📅) to populate the chart.'}
               </p>
             ) : (
               <GanttChart

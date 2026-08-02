@@ -13,6 +13,32 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.23.1] — 2026-08-02 — The project Gantt no longer blanks on task-level schedules
+
+A project whose work is scheduled on its **tasks** (WBS / CPM) rather than on
+its subtasks rendered an empty Gantt with no way to fix it from the UI. The
+EPC showcase demo hit this exactly: 26 fully scheduled activities, and the
+chart said "No subtasks match the current filters".
+
+- **The task-level schedule is always returned now.** `GET …/reports/gantt`
+  only emitted `tasks[]` when `?include=` asked for `criticalPath`, `baseline`
+  or `milestones`, and plain scheduled tasks came back only under
+  `criticalPath`. They are returned unconditionally (the rows were already
+  loaded, so no extra query); CPM, baseline and milestone *decorations* stay
+  behind `?include=` and that contract is unchanged.
+- **The chart toggles are reachable.** The scale/navigation toolbar — which
+  also carries the critical-path, baseline and milestone checkboxes — was
+  hidden whenever no *subtask* was scheduled, so on these projects the very
+  controls that would have revealed the schedule could not be clicked. It now
+  shows when either chart has something to draw, and the task-level chart
+  appears automatically when the subtask chart is empty.
+- **The empty-state text tells the truth.** When the task schedule is on
+  screen, the message says the subtasks have no dates yet rather than implying
+  the project has no schedule at all.
+- **The EPC demo's subtasks carry dates.** All 10 were seeded with no
+  scheduling window; each parent activity's span is now split into consecutive
+  segments, one per subtask, so the subtask chart populates too.
+
 ## [2.23.0] — 2026-08-02 — CPM Schedule Analysis report
 
 A first-class, tabular schedule analysis for planners — plus fixes to the

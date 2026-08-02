@@ -167,6 +167,59 @@ describe('v1.42 Project Gantt report', () => {
     expect(wireframes.parentTaskTitle).toBe('Design phase');
   });
 
+  // v2.23.1: a project scheduled at task level (WBS/CPM) but with undated
+  // subtasks used to return no `tasks` at all without ?include=, so the Gantt
+  // page had nothing to draw and no way to ask for it — the toggles that set
+  // ?include= were themselves hidden when no subtask was scheduled.
+  it('returns the task-level schedule without ?include=', async () => {
+    const s = await setup();
+    const scheduled = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+        headers: { authorization: `Bearer ${s.adminToken}` },
+        payload: {
+          title: 'Civil foundations',
+          startDate: '2026-06-01T00:00:00.000Z',
+          dueDate: '2026-06-20T00:00:00.000Z',
+        },
+      })
+    ).json();
+    // An undated task stays out of the schedule, and its undated subtask keeps
+    // the subtask chart empty — which is the exact case that used to blank the page.
+    const undated = (
+      await inject({
+        method: 'POST',
+        url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks`,
+        headers: { authorization: `Bearer ${s.adminToken}` },
+        payload: { title: 'Not agreed yet' },
+      })
+    ).json();
+    await inject({
+      method: 'POST',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/tasks/${scheduled.id}/subtasks`,
+      headers: { authorization: `Bearer ${s.adminToken}` },
+      payload: { title: 'excavation' },
+    });
+
+    const res = await inject({
+      method: 'GET',
+      url: `/api/teams/${s.teamId}/projects/${s.projectId}/reports/gantt`,
+      headers: { authorization: `Bearer ${s.adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.summary.scheduledSubtasks).toBe(0);
+    expect(body.tasks).toHaveLength(1);
+    expect(body.tasks[0].id).toBe(scheduled.id);
+    expect(body.tasks[0].startDate).toBe('2026-06-01T00:00:00.000Z');
+    expect(body.tasks[0].dueDate).toBe('2026-06-20T00:00:00.000Z');
+    expect(body.tasks.some((t: { id: string }) => t.id === undated.id)).toBe(false);
+    // CPM/baseline decorations stay behind ?include=.
+    expect(body.tasks[0].cpm).toBeUndefined();
+    expect(body.links).toBeUndefined();
+  });
+
   it('includes assignee + responsible on each row when set', async () => {
     const s = await setup();
     const member = await bootMember('m@example.com');

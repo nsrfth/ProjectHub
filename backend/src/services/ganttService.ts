@@ -171,8 +171,14 @@ export class GanttService {
       rows,
     };
 
-    const wantsSchedule = include.criticalPath || include.baseline || include.milestones;
-    if (!wantsSchedule) return base;
+    // v2.23.1: a project's task-level schedule is its own schedule, not an
+    // optional overlay. It used to be returned only when ?include= asked for
+    // criticalPath/baseline/milestones, which left a project whose subtasks
+    // carry no dates with nothing to draw at all. The rows are always returned
+    // now (the tasks are already loaded above, so this costs no extra query);
+    // CPM, baseline and milestone *decorations* stay behind ?include=.
+    const isScheduledTask = (t: (typeof tasks)[number]): boolean =>
+      t.isMilestone ? !!(t.startDate ?? t.dueDate) : !!(t.startDate && t.dueDate);
 
     const baselineMap = include.baseline
       ? await this.baselines.baselineBarsForProject(projectId)
@@ -215,6 +221,7 @@ export class GanttService {
     }
 
     const scheduleTasks = tasks.filter((t) => {
+      if (isScheduledTask(t)) return true;
       if (include.milestones && t.isMilestone) return true;
       if (include.criticalPath && cpmByTask.has(t.id)) return true;
       if (include.baseline && baselineMap.has(t.id)) return true;

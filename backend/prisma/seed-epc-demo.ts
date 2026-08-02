@@ -387,13 +387,27 @@ async function main(): Promise<void> {
   for (const [k, subs] of Object.entries(subDefs)) {
     const id = taskId.get(k);
     if (!id) continue;
+    // Subtasks carry their own scheduling window so the project Gantt has rows
+    // to draw: the parent activity's span is split into consecutive segments,
+    // one per subtask. Parents without agreed dates leave their subtasks
+    // unscheduled, which is a state the chart is meant to show too.
+    const win = taskDates.get(k) ?? null;
+    const totalDays = win
+      ? Math.round((win.end.getTime() - win.start.getTime()) / 86_400_000) + 1
+      : 0;
     for (let i = 0; i < subs.length; i++) {
       const isDone = k === 'c2' ? i === 0 : k === 'e3' ? i === 0 : false;
+      const from = Math.floor((totalDays * i) / subs.length);
+      // -1 so consecutive segments don't overlap; never before `from`, so the
+      // "endDate >= startDate" CHECK holds even on a one-day parent window.
+      const to = Math.max(from, Math.floor((totalDays * (i + 1)) / subs.length) - 1);
       await prisma.subtask.create({
         data: {
           taskId: id, title: subs[i]!, position: i,
           done: isDone, status: isDone ? 'DONE' : i === 1 ? 'IN_PROGRESS' : 'NOT_STARTED',
           responsibleId: userId.get(ENG)!, assigneeId: userId.get(QA)!,
+          startDate: win ? addDays(win.start, from) : null,
+          endDate: win ? addDays(win.start, to) : null,
         },
       });
     }
