@@ -6,11 +6,21 @@ import { generateCompliantPassword } from '../lib/passwordPolicy.js';
 import { passwordPolicyService } from './passwordPolicyService.js';
 import { logActivity } from './activityLogger.js';
 import { assertNotSystemUserTarget, getSystemUserId, isSystemUser } from '../lib/systemUser.js';
+import {
+  assertEnabledAdminSurvives,
+  withAdminInvariantLock,
+} from '../lib/adminInvariant.js';
 
 // Admin operations bypass team-level RBAC and instead require GlobalRole=ADMIN
 // (enforced by the route layer). The hard invariant this service guards is
-// "there must always be at least one ADMIN" — losing the last admin would
-// lock everyone out of admin operations forever.
+// "there must always be at least one ENABLED, non-system ADMIN" — losing the
+// last one would lock everyone out of admin operations forever.
+//
+// v2.23.3 (S-14): that invariant is no longer enforced by counting here and
+// mutating there. Demotion, disable and delete each run inside
+// `withAdminInvariantLock` — one transaction holding a Postgres advisory
+// lock — so two administrators removing each other at the same instant
+// cannot both succeed. See lib/adminInvariant.ts.
 
 export interface AdminUserView {
   id: string;
@@ -228,16 +238,11 @@ export class AdminService {
     if (!target) throw Errors.notFound('User not found');
     if (isSystemUser(target)) throw Errors.conflict('Cannot change the system account role');
 
-    // Demoting yourself or the last ADMIN would orphan the admin role and
-    // leave the system unmanageable. Reject before mutating.
-    if (target.globalRole === 'ADMIN' && newRole !== 'ADMIN') {
-      const adminCount = await prisma.user.count({ where: { globalRole: 'ADMIN' } });
-      if (adminCount <= 1) throw Errors.conflict('Cannot demote the last ADMIN');
-      if (target.id === callerId) {
-        // Even if other admins exist, blocking self-demotion avoids a footgun
-        // where the operator changes their own role without realising.
-        throw Errors.conflict('Cannot change your own role — ask another admin');
-      }
+    // Self-demotion is a footgun regardless of how many admins exist, so it
+    // is rejected up front — no lock needed for a decision that depends only
+    // on the caller's own id.
+    if (target.globalRole === 'ADMIN' && newRole !== 'ADMIN' && target.id === callerId) {
+      throw Errors.conflict('Cannot change your own role — ask another admin');
     }
 
     // v1.78.1: revoke the target's active refresh tokens whenever their
@@ -252,34 +257,55 @@ export class AdminService {
     // immediately. The revocation is kept as defence in depth and to force a
     // fresh login rather than leave the target on a session whose claims no
     // longer match their role.
-    const roleChanged = target.globalRole !== newRole;
-    const [updated] = await prisma.$transaction([
-      prisma.user.update({
+    // v2.23.3 (S-14): the re-read, the last-admin check, the role write, the
+    // token revocation and the audit row all live in ONE locked transaction.
+    // A concurrent demotion of the OTHER admin either happens entirely before
+    // this one (and this one then sees no survivor and is refused) or
+    // entirely after — never interleaved.
+    const updated = await withAdminInvariantLock(async (tx) => {
+      const fresh = await tx.user.findUnique({
+        where: { id: targetUserId },
+        select: { globalRole: true, disabledAt: true, isSystemUser: true },
+      });
+      if (!fresh) throw Errors.notFound('User not found');
+      if (fresh.isSystemUser) throw Errors.conflict('Cannot change the system account role');
+
+      const losingAdmin =
+        fresh.globalRole === 'ADMIN' && newRole !== 'ADMIN' && fresh.disabledAt === null;
+      if (losingAdmin) {
+        await assertEnabledAdminSurvives(tx, {
+          targetUserIds: [targetUserId],
+          operation: 'role_change',
+          actorId: callerId,
+          message: 'Cannot demote the last ADMIN',
+        });
+      }
+
+      const changed = fresh.globalRole !== newRole;
+      const row = await tx.user.update({
         where: { id: targetUserId },
         data: { globalRole: newRole },
         include: {
           _count: { select: { memberships: true } },
           directory: { select: { name: true, host: true } },
         },
-      }),
-      ...(roleChanged
-        ? [
-            prisma.refreshToken.updateMany({
-              where: { userId: targetUserId, revokedAt: null },
-              data: { revokedAt: new Date() },
-            }),
-          ]
-        : []),
-    ]);
-    // Promotion/demotion between MEMBER and ADMIN is the most privileged action
-    // in the system — "who made this account an admin" must be answerable.
-    if (roleChanged) {
-      await logActivity(prisma, {
-        actorId: callerId,
-        action: 'admin.user.role_changed',
-        meta: { targetUserId, from: target.globalRole, to: newRole },
       });
-    }
+      if (changed) {
+        await tx.refreshToken.updateMany({
+          where: { userId: targetUserId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        // Promotion/demotion between MEMBER and ADMIN is the most privileged
+        // action in the system — "who made this account an admin" must be
+        // answerable.
+        await logActivity(tx, {
+          actorId: callerId,
+          action: 'admin.user.role_changed',
+          meta: { targetUserId, from: fresh.globalRole, to: newRole },
+        });
+      }
+      return row;
+    });
     return toAdminUserView(updated);
   }
 
@@ -294,26 +320,41 @@ export class AdminService {
       if (targetUserId === callerId) {
         throw Errors.conflict('Cannot disable your own account');
       }
-      if (target.globalRole === 'ADMIN' && !target.disabledAt) {
-        const enabledAdmins = await prisma.user.count({
-          where: { globalRole: 'ADMIN', disabledAt: null, isSystemUser: false },
+      // v2.23.3 (S-14): check + disable + token revocation in one locked
+      // transaction, so two admins disabling each other cannot both win.
+      const updated = await withAdminInvariantLock(async (tx) => {
+        const fresh = await tx.user.findUnique({
+          where: { id: targetUserId },
+          select: { globalRole: true, disabledAt: true },
         });
-        if (enabledAdmins <= 1) throw Errors.conflict('Cannot disable the last enabled ADMIN');
-      }
-      const now = new Date();
-      await revokeAllRefreshTokens(targetUserId, now);
-      const updated = await prisma.user.update({
-        where: { id: targetUserId },
-        data: { disabledAt: now },
-        include: USER_LIST_INCLUDE,
-      });
-      await logActivity(prisma, {
-        actorId: callerId,
-        action: 'admin.user.disabled',
-        meta: {
-          targetUserId,
-          external: !!target.directoryId,
-        },
+        if (!fresh) throw Errors.notFound('User not found');
+        if (fresh.globalRole === 'ADMIN' && !fresh.disabledAt) {
+          await assertEnabledAdminSurvives(tx, {
+            targetUserIds: [targetUserId],
+            operation: 'disable',
+            actorId: callerId,
+            message: 'Cannot disable the last enabled ADMIN',
+          });
+        }
+        const now = new Date();
+        await tx.refreshToken.updateMany({
+          where: { userId: targetUserId, revokedAt: null },
+          data: { revokedAt: now },
+        });
+        const row = await tx.user.update({
+          where: { id: targetUserId },
+          data: { disabledAt: now },
+          include: USER_LIST_INCLUDE,
+        });
+        await logActivity(tx, {
+          actorId: callerId,
+          action: 'admin.user.disabled',
+          meta: {
+            targetUserId,
+            external: !!target.directoryId,
+          },
+        });
+        return row;
       });
       return toAdminUserView(updated);
     }
@@ -472,24 +513,36 @@ export class AdminService {
     const target = await prisma.user.findUnique({ where: { id: targetUserId } });
     if (!target) throw Errors.notFound('User not found');
     await assertNotSystemUserTarget(targetUserId, 'Cannot delete the system account');
-    if (target.globalRole === 'ADMIN') {
-      const adminCount = await prisma.user.count({ where: { globalRole: 'ADMIN' } });
-      if (adminCount <= 1) throw Errors.conflict('Cannot delete the last ADMIN');
-    }
-    try {
-      await prisma.user.delete({ where: { id: targetUserId } });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
-        throw Errors.notFound('User not found');
+    // v2.23.3 (S-14): check + delete + audit in one locked transaction.
+    await withAdminInvariantLock(async (tx) => {
+      const fresh = await tx.user.findUnique({
+        where: { id: targetUserId },
+        select: { globalRole: true, disabledAt: true, email: true },
+      });
+      if (!fresh) throw Errors.notFound('User not found');
+      if (fresh.globalRole === 'ADMIN' && fresh.disabledAt === null) {
+        await assertEnabledAdminSurvives(tx, {
+          targetUserIds: [targetUserId],
+          operation: 'delete',
+          actorId: callerId,
+          message: 'Cannot delete the last ADMIN',
+        });
       }
-      throw err;
-    }
-    // The row is gone, so capture enough identity to make the entry readable
-    // after the fact — actorId alone would leave "deleted whom?" unanswerable.
-    await logActivity(prisma, {
-      actorId: callerId,
-      action: 'admin.user.deleted',
-      meta: { targetUserId, email: target.email, globalRole: target.globalRole },
+      try {
+        await tx.user.delete({ where: { id: targetUserId } });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+          throw Errors.notFound('User not found');
+        }
+        throw err;
+      }
+      // The row is gone, so capture enough identity to make the entry readable
+      // after the fact — actorId alone would leave "deleted whom?" unanswerable.
+      await logActivity(tx, {
+        actorId: callerId,
+        action: 'admin.user.deleted',
+        meta: { targetUserId, email: fresh.email, globalRole: fresh.globalRole },
+      });
     });
   }
 

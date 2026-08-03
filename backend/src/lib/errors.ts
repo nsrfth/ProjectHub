@@ -60,6 +60,26 @@ export const Errors = {
         ? `${targetName} is in another unit — request the assignment; their manager will assign.`
         : 'This person is in another unit — request the assignment; their manager will assign.',
     ),
+  // v2.23.3 (S-13): backup-restore outcomes that need their own stable
+  // codes because the operator response differs sharply per code.
+  //
+  // BACKUP_ARCHIVE_INVALID — the uploaded bundle failed structural
+  // validation. Nothing was extracted; the live schema was never
+  // touched. 400: the admin picked a bad file.
+  backupArchiveInvalid: (msg: string, details?: unknown) =>
+    new AppError(400, 'BACKUP_ARCHIVE_INVALID', msg, details),
+  // RESTORE_ROLLED_BACK — the requested restore failed AFTER the schema
+  // was replaced, and the automatic safety dump was restored
+  // successfully. The database is back to its pre-restore contents and
+  // the app is usable. 500: the operation failed, but not the admin's
+  // fault, and the response body carries the recovery artefacts.
+  restoreRolledBack: (msg: string, details?: unknown) =>
+    new AppError(500, 'RESTORE_ROLLED_BACK', msg, details),
+  // RESTORE_FATAL — the requested restore AND the rollback both failed.
+  // The database may be empty or half-restored. Maintenance mode stays
+  // ON; `details` carries the paths a human needs to recover by hand.
+  restoreFatal: (msg: string, details?: unknown) =>
+    new AppError(500, 'RESTORE_FATAL', msg, details),
   internal: (msg = 'Internal server error') => new AppError(500, 'INTERNAL', msg),
   serviceUnavailable: (msg = 'Service temporarily unavailable') =>
     new AppError(503, 'SERVICE_UNAVAILABLE', msg),

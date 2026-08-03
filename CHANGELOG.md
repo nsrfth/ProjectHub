@@ -13,6 +13,86 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.23.3] — 2026-08-03 — Security: pinned webhook DNS, fail-safe restore, atomic last-admin guard
+
+Three high-severity findings, each fixed with the invariant written down next
+to the code that enforces it. No API shape changed; two response bodies gained
+fields.
+
+### Webhooks can no longer be DNS-rebound into the perimeter (S-11b)
+
+`assertWebhookUrlSafe()` resolved a webhook host, approved the answers, and
+then handed the **URL** to `fetch()` — which resolved it a second time. An
+attacker running the authoritative DNS for their own name answered "public"
+for the guard's query and `127.0.0.1` / `169.254.169.254` / an RFC1918 host
+for the connection's query, and the socket landed inside the network.
+
+- **Resolution happens once and the address is pinned.** `resolveSafeTarget()`
+  returns the validated IP alongside the parsed URL, and delivery connects to
+  *that address* through a per-request DNS lookup
+  ([backend/src/lib/pinnedHttp.ts](backend/src/lib/pinnedHttp.ts)). No second
+  resolution, no process-wide DNS override, no global state.
+- **Host header and TLS are untouched.** The original hostname still drives the
+  `Host` header, the SNI `servername` and the certificate check; chain
+  validation is never weakened.
+- Redirects are still refused (3xx is a failed delivery, never a second
+  request), HTTP/HTTPS remain the only schemes, and timeouts, HMAC signature,
+  delivery headers, retry/backoff and `WEBHOOK_ALLOWED_HOSTS` all behave as
+  before — allow-listed hosts are pinned too.
+
+### Restoring a backup is now fail-safe (S-13)
+
+The restore flow extracted an uploaded `.tar.gz` with barely any validation and
+wiped the live schema *before* proving the candidate dump could be restored. A
+corrupt upload left an empty database — and maintenance mode was cleared on top
+of it, so the instance came back up serving nothing.
+
+- **Archives are validated before extraction.** A tar reader
+  ([backend/src/lib/tarArchive.ts](backend/src/lib/tarArchive.ts)) refuses
+  absolute paths, `..` traversal, symlinks, hard links, device nodes and fifos,
+  anything outside the documented `database.dump` / `manifest.json` /
+  `secrets.env` / `uploads/**` layout, duplicates, and long-name/pax headers
+  smuggling a different path — without relying on the host `tar`'s own
+  hardening. Extraction then runs with `--no-same-owner --no-same-permissions`
+  and the staging tree is re-walked afterwards.
+- **New order: validate → `pg_restore --list` preflight → automatic safety dump
+  → wipe → restore.** Everything before the wipe touches temp files only, so a
+  bad archive can no longer cost you your database.
+- **Automatic rollback.** If the restore fails after the schema was replaced,
+  the pre-restore safety dump is restored automatically. Maintenance mode is
+  cleared only when the restore succeeded *or* the rollback succeeded; if both
+  fail the instance **stays** in maintenance and the error names the recovery
+  artefacts. Rollback and fatal outcomes emit security-audit events.
+- The safety dump (`pre-restore-*.dump`) is kept in `BACKUP_DIR` and is exempt
+  from retention rotation. The restore response gained `safetyDump` and
+  `warnings` — upload-copy and secrets-sidecar failures are surfaced instead of
+  being silently swallowed. New stable error codes: `BACKUP_ARCHIVE_INVALID`,
+  `RESTORE_ROLLED_BACK`, `RESTORE_FATAL`.
+
+### The last enabled administrator can no longer be raced away (S-14)
+
+Demotion, disable and delete each counted administrators in one statement and
+mutated in another. Two admins acting at the same moment both read "2 admins",
+both concluded "safe", and both removed the other — leaving an instance nobody
+could administer.
+
+- **One invariant, one place**
+  ([backend/src/lib/adminInvariant.ts](backend/src/lib/adminInvariant.ts)): at
+  least one `globalRole=ADMIN`, `disabledAt IS NULL`, `isSystemUser=false` user
+  at all times. Every removing path — admin demote / disable / delete, SCIM
+  deprovision and delete, directory-sync demotion, and the **login-time LDAP
+  group mapping** — runs the count *and* the mutation inside one transaction
+  holding a Postgres advisory lock, so concurrent operations serialise across
+  connections and processes.
+- The login-time mapping is the one path that does not fail loudly: if the
+  mapping would demote the last enabled administrator the role is left alone
+  and the sign-in continues, with the refusal recorded in the audit log.
+- Refresh tokens are revoked inside the same transaction as the role or
+  disabled-state change, and a refused operation rolls back whole. Blocked
+  attempts emit an `admin.last_admin_protected` security-audit event.
+- Self-demotion, self-disable and self-delete protections are unchanged, and a
+  **disabled** admin no longer counts as a survivor.
+
 ## [2.23.2] — 2026-08-02 — Planner timeline bars no longer cover the task names
 
 On **Planner → Calendar → Timeline**, any bar whose span started before the

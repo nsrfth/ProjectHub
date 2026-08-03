@@ -542,6 +542,14 @@ describe('/api/admin/backups', () => {
         where: { key: 'system.maintenanceMode' },
       });
       expect(setting).toBeNull();
+
+      // v2.23.3 (S-13): and the schema must still be there. Before the
+      // fail-safe ordering this test WIPED the live schema — the restore
+      // dropped it and only then discovered the dump was garbage, which
+      // is precisely the production incident being fixed. The rows the
+      // test set up must still be readable.
+      const survivors = await prisma.user.count();
+      expect(survivors).toBeGreaterThan(0);
     });
   });
 });

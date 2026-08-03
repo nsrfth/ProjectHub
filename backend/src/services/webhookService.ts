@@ -7,7 +7,10 @@ import {
   SsrfBlockedError,
   assertWebhookUrlSafe,
   parseAllowedHosts,
+  resolveSafeTarget,
+  type AddressResolver,
 } from '../lib/ssrfGuard.js';
+import { sendPinnedRequest, type PinnedRequester } from '../lib/pinnedHttp.js';
 
 // Webhook management + delivery.
 //
@@ -84,6 +87,16 @@ export interface WebhookUpdateInput {
   secret?: string;
 }
 
+// v2.23.3 (S-11b): resolution + transport are injectable so the
+// rebinding regression tests can drive a deterministic "public first,
+// private second" resolver and observe exactly which address the
+// transport was handed. Production passes nothing and gets
+// dns.lookup + node:http/https.
+export interface WebhookServiceDeps {
+  resolve?: AddressResolver;
+  request?: PinnedRequester;
+}
+
 export class WebhookService {
   // v1.30.7 (S-11): SSRF allow-list is read at instance construction so
   // the env-cache check happens once per service instance. The test
@@ -93,13 +106,24 @@ export class WebhookService {
     process.env.WEBHOOK_ALLOWED_HOSTS,
   );
 
+  private readonly resolve?: AddressResolver;
+  private readonly request: PinnedRequester;
+
+  constructor(deps: WebhookServiceDeps = {}) {
+    this.resolve = deps.resolve;
+    this.request = deps.request ?? sendPinnedRequest;
+  }
+
   // Convert an SsrfBlockedError into a domain 400 so it bubbles through
   // the standard route error handler. We DON'T leak the resolved IP to
   // a non-admin caller — the user with `webhooks.manage` IS the admin
   // for this surface, so the diagnostic is appropriate here.
   private async guardUrl(url: string): Promise<void> {
     try {
-      await assertWebhookUrlSafe(url, { allowedHosts: this.allowedHosts });
+      await assertWebhookUrlSafe(url, {
+        allowedHosts: this.allowedHosts,
+        resolve: this.resolve,
+      });
     } catch (err) {
       if (err instanceof SsrfBlockedError) {
         throw Errors.badRequest(err.message);
@@ -278,14 +302,21 @@ export class WebhookService {
     payload: unknown,
     deliveryId: string,
   ): Promise<{ ok: boolean; httpStatus?: number; errorMessage?: string }> {
-    // v1.30.7 (S-11): re-resolve the host RIGHT BEFORE sending. The
-    // create-time check defends against typos; this check defends
-    // against DNS rebinding (host public at create, private now). A
-    // refusal here marks the delivery FAILED without contacting the
-    // target — the dispatcher's retry/backoff then drives it through
-    // the usual failure path.
+    // v1.30.7 (S-11) / v2.23.3 (S-11b): resolve + validate + PIN right
+    // before sending. The create-time check defends against typos; this
+    // one defends against DNS rebinding (host public at create, private
+    // now). Crucially the address validated here is the address the
+    // socket connects to — `sendPinnedRequest` never resolves the
+    // hostname again, so there is no second answer to poison. A refusal
+    // marks the delivery FAILED without contacting the target; the
+    // dispatcher's retry/backoff drives it through the usual failure
+    // path.
+    let target;
     try {
-      await assertWebhookUrlSafe(webhook.url, { allowedHosts: this.allowedHosts });
+      target = await resolveSafeTarget(webhook.url, {
+        allowedHosts: this.allowedHosts,
+        resolve: this.resolve,
+      });
     } catch (err) {
       if (err instanceof SsrfBlockedError) {
         return { ok: false, errorMessage: `SSRF guard refused delivery: ${err.message}` };
@@ -301,41 +332,40 @@ export class WebhookService {
     const secret = decrypt(webhook.secretEnc);
     const signature = crypto.createHmac('sha256', secret).update(bodyText).digest('hex');
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
-      const res = await fetch(webhook.url, {
+      const res = await this.request({
+        target,
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           [SIGNATURE_HEADER]: `sha256=${signature}`,
           [EVENT_HEADER]: eventType,
           [DELIVERY_HEADER]: deliveryId,
+          'content-length': String(Buffer.byteLength(bodyText)),
         },
         body: bodyText,
-        signal: controller.signal,
-        // SSRF hardening: the assertWebhookUrlSafe() guard above only vets the
-        // ORIGINAL URL's host. fetch() follows 3xx redirects by default, so a
-        // target that returns `302 -> http://169.254.169.254/…` (or any private
-        // host) would sail past the guard. Refuse to auto-follow; a redirect
-        // then surfaces as an opaqueredirect (status 0) and is treated as a
-        // failed delivery below rather than a request to an internal address.
-        redirect: 'manual',
+        timeoutMs: HTTP_TIMEOUT_MS,
       });
-      // 2xx is success; everything else (including a refused redirect, which
-      // arrives as status 0) queues a retry.
+      // 2xx is success; everything else queues a retry.
       if (res.status >= 200 && res.status < 300) {
         return { ok: true, httpStatus: res.status };
       }
-      if (res.status === 0 || res.type === 'opaqueredirect') {
-        return { ok: false, errorMessage: 'Webhook target attempted a redirect (refused)' };
+      // SSRF hardening: the guard above vets the ORIGINAL URL's host only.
+      // A target that answers `302 -> http://169.254.169.254/…` (or any
+      // private host) would sail past it if we followed redirects, so the
+      // transport never does — a 3xx is a failed delivery, not a second
+      // request.
+      if (res.redirected) {
+        return {
+          ok: false,
+          httpStatus: res.status,
+          errorMessage: 'Webhook target attempted a redirect (refused)',
+        };
       }
       return { ok: false, httpStatus: res.status, errorMessage: `HTTP ${res.status}` };
     } catch (e) {
-      const errorMessage = (e as Error).message || 'fetch failed';
+      const errorMessage = (e as Error).message || 'webhook request failed';
       return { ok: false, errorMessage };
-    } finally {
-      clearTimeout(timer);
     }
   }
 }

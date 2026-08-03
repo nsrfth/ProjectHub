@@ -3,8 +3,26 @@ import { promises as fs, createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import { Errors } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
 import { prisma } from '../data/prisma.js';
+import {
+  ArchiveValidationError,
+  assertExtractedTreeIsSafe,
+  inspectBackupArchive,
+} from '../lib/tarArchive.js';
+import { securityAudit } from './securityAuditService.js';
+
+// v2.23.3 (S-13): every external tool invocation goes through this
+// interface so the restore regression suite can simulate a pg_restore
+// failure (and a failing rollback) without a Postgres server. Production
+// gets the spawn-backed implementation below and nothing else changes.
+export interface ProcessRunner {
+  run(bin: string, args: string[]): Promise<void>;
+  capture(
+    bin: string,
+    args: string[],
+  ): Promise<{ ok: true; stdout: string } | { ok: false; code: number | null; stderr: string }>;
+}
 
 // v1.32.3: optional bundle of secrets to include in the all-in-one tarball
 // format. None of these are required; the legacy `.dump`-only format is
@@ -25,6 +43,8 @@ export interface BackupsServiceConfig {
     // reads status.json from.
     secretsDir?: string | null;
   };
+  // v2.23.3 (S-13): test seam for pg_dump / pg_restore / psql / tar.
+  runner?: ProcessRunner;
 }
 
 // v2.5.36: online backup (Kopia → Google Drive) policy.
@@ -113,6 +133,11 @@ const ACCEPTED_SUFFIXES = [FILE_SUFFIX_LEGACY, FILE_SUFFIX_BUNDLE] as const;
 // restarts the backend — we can't apply them from within the running
 // process (env is read once at boot).
 const RESTORED_SECRETS_FILENAME = 'restored-secrets.env';
+// v2.23.3 (S-13): automatic pre-restore safety dump. Its own prefix so
+// it is NOT picked up by list()/applyRetention() — a rotation that
+// deleted the artefact a failed restore needs would defeat the point.
+// Deliberately never auto-deleted: a human may need it days later.
+const SAFETY_DUMP_PREFIX = 'pre-restore-';
 
 const MIN_INTERVAL_HOURS = 1;
 const MAX_INTERVAL_HOURS = 24 * 30; // 30 days
@@ -129,6 +154,7 @@ export class BackupsService {
   private readonly uploadDir: string | null;
   private readonly secrets: BackupsServiceConfig['secrets'];
   private readonly kopia: BackupsServiceConfig['kopia'];
+  private readonly proc: ProcessRunner;
 
   constructor(
     private readonly databaseUrl: string,
@@ -138,6 +164,7 @@ export class BackupsService {
     this.uploadDir = config.uploadDir ?? null;
     this.secrets = config.secrets;
     this.kopia = config.kopia;
+    this.proc = config.runner ?? spawnRunner;
   }
 
   // v1.32.3: bundled backups carry these alongside the DB so cross-server
@@ -418,7 +445,7 @@ export class BackupsService {
     const args = ['--format=custom', '--no-owner', '--no-acl'];
     if (schema) args.push('--schema', schema);
     args.push('--file', filePath, connectionUrl);
-    await runChild('pg_dump', args);
+    await this.proc.run('pg_dump', args);
   }
 
   // v1.32.3: assemble a tarball that round-trips the whole instance —
@@ -483,17 +510,17 @@ export class BackupsService {
       // 5. tar -czf <out> -C <staging> . — bundle everything at the
       // staging root so restore can extract directly into another temp
       // dir and find database.dump etc. at the expected names.
-      await runChild('tar', ['-czf', outPath, '-C', staging, '.']);
+      await this.proc.run('tar', ['-czf', outPath, '-C', staging, '.']);
     } finally {
       await fs.rm(staging, { recursive: true, force: true });
     }
   }
 
-  // v1.28: pg_restore the given dump back into the live database. DESTRUCTIVE:
-  // we drop+recreate the public schema before pg_restore so a destination
-  // that's already seeded doesn't fight the restore's drops with FK
-  // dependencies. The admin must explicitly opt in from the UI confirm
-  // dialog; the caller is expected to have already taken a safety dump.
+  // v1.28: pg_restore the given dump back into the live database.
+  // DESTRUCTIVE: we drop+recreate the public schema before pg_restore so a
+  // destination that's already seeded doesn't fight the restore's drops
+  // with FK dependencies. The admin must explicitly opt in from the UI
+  // confirm dialog.
   //
   // v1.32.3: auto-detects format from filename suffix.
   //   - .dump   → legacy pg_restore-direct.
@@ -501,6 +528,27 @@ export class BackupsService {
   //               restore uploads/ into UPLOAD_DIR and write secrets.env
   //               next to the backups as a sidecar the operator applies
   //               by hand (we can't re-read .env from inside the process).
+  //
+  // v2.23.3 (S-13): FAIL-SAFE ordering. Up to v2.23.2 the flow extracted
+  // an unvalidated archive, wiped the live schema, and only then found
+  // out whether the candidate dump was restorable — a corrupt or hostile
+  // upload left an empty database and the route cleared maintenance mode
+  // on top of it. The order is now:
+  //
+  //   1. validate the archive structurally (no traversal / links / stray
+  //      members) and extract it with ownership+permission restoration
+  //      disabled, then re-walk the staging tree;
+  //   2. `pg_restore --list` preflight — prove the candidate dump is a
+  //      readable archive with a non-empty TOC;
+  //   3. take an automatic safety dump of the CURRENT database;
+  //   4. only now wipe + restore;
+  //   5. on failure, wipe + restore the safety dump. If that succeeds the
+  //      instance is exactly where it started (RESTORE_ROLLED_BACK). If it
+  //      does not, RESTORE_FATAL — the route leaves maintenance mode ON
+  //      and the error carries the artefact paths a human needs.
+  //
+  // Steps 1–3 touch nothing but temp files, so any failure there is a
+  // plain 400 with the live database untouched.
   //
   // The connection is bounced around the restore: Prisma's pool would
   // otherwise hold connections to objects that pg_restore is about to
@@ -513,6 +561,13 @@ export class BackupsService {
     secretsApplied: boolean;
     secretsSidecar: string | null;
     uploadsRestored: boolean;
+    // The automatic pre-restore dump. Retained on disk in BACKUP_DIR
+    // whatever the outcome, so an operator always has a way back.
+    safetyDump: string | null;
+    // Non-fatal problems that happened AFTER the database was restored
+    // (upload copy / sidecar write). Surfaced rather than swallowed — the
+    // DB is good, the filesystem may be partial.
+    warnings: string[];
   }> {
     const safe = sanitiseFilename(filename);
     const fullPath = join(this.backupDir, safe);
@@ -524,100 +579,51 @@ export class BackupsService {
 
     const isBundle = safe.endsWith(FILE_SUFFIX_BUNDLE);
     const startedAt = Date.now();
+    const warnings: string[] = [];
     let secretsApplied = false;
     let secretsSidecar: string | null = null;
     let uploadsRestored = false;
     let staging: string | null = null;
+    let safetyDumpName: string | null = null;
 
     try {
-      // Resolve where pg_restore should read its custom-format dump from.
-      // Legacy `.dump` files ARE that file; bundled `.tar.gz` files need
-      // unpacking first and we read database.dump out of staging.
+      // ── 1. Resolve + validate the candidate dump ────────────────────
       let dumpPath = fullPath;
       if (isBundle) {
-        staging = await fs.mkdtemp(join(tmpdir(), 'taskhub-restore-'));
-        await runChild('tar', ['-xzf', fullPath, '-C', staging]);
+        staging = await this.unpackBundle(fullPath);
         dumpPath = join(staging, 'database.dump');
-        try {
-          await fs.access(dumpPath);
-        } catch {
-          throw Errors.badRequest('Backup archive is missing database.dump');
-        }
       }
+      await this.assertRestorableDump(dumpPath);
 
-      // v1.32.3: drop+recreate the public schema BEFORE pg_restore. Without
-      // this step `pg_restore --clean --if-exists --exit-on-error` fails on
-      // any FK dependency the destination already carries (e.g. on a
-      // freshly-seeded box, DirectoryGroupMapping_roleId_fkey vs
-      // Role_pkey). We disconnect Prisma first so its pool doesn't hold the
-      // tables open.
+      // ── 2. Preflight: is this dump readable at all? ─────────────────
+      await this.preflightDump(dumpPath);
+
+      // ── 3. Safety dump of the CURRENT database ──────────────────────
+      safetyDumpName = await this.writeSafetyDump();
+      const safetyDumpPath = join(this.backupDir, safetyDumpName);
+
+      // ── 4. Destructive section ──────────────────────────────────────
       await prisma.$disconnect();
       await this.wipeSchema();
-
-      const { connectionUrl, schema } = cleanPrismaUrl(this.databaseUrl);
-      // v1.30.4 (S-12): --exit-on-error makes pg_restore stop AND exit
-      // non-zero on the first SQL error rather than logging and pressing
-      // on with a partial restore.
-      // We can drop `--clean --if-exists` now that we wipe the schema
-      // manually first; keeping `--if-exists` would be a no-op against an
-      // empty schema and avoid noisy stderr on objects pg_restore decides
-      // to redrop.
-      const args = [
-        '--no-owner',
-        '--no-acl',
-        '--exit-on-error',
-        '--dbname',
-        connectionUrl,
-      ];
-      if (schema) args.push('--schema', schema);
-      args.push(dumpPath);
-
-      const result = await runChildCapture('pg_restore', args);
-      if (!result.ok) {
-        const msg = result.stderr.length > 0 ? result.stderr : 'unknown error';
-        throw Errors.badRequest(
-          `pg_restore exited ${result.code ?? 'with spawn error'}: ${msg}`,
+      const restored = await this.runPgRestore(dumpPath);
+      if (!restored.ok) {
+        // ── 5. Rollback ───────────────────────────────────────────────
+        await this.rollbackTo(safetyDumpPath, safe, restored.message);
+        throw Errors.restoreRolledBack(
+          `Restore of ${safe} failed and was rolled back to the pre-restore state: ${restored.message}`,
+          { safetyDump: safetyDumpName, safetyDumpPath, failure: restored.message },
         );
       }
 
+      // ── 6. Uploads + sidecar. Only now can the restore be reported
+      //      successful; a failure here is a warning, never a silent
+      //      no-op, because the DB rows already reference these blobs.
       if (isBundle && staging) {
-        // Uploads — overwrite UPLOAD_DIR contents with whatever the
-        // backup carried. Refuses to act when UPLOAD_DIR wasn't wired in
-        // (the operator restores via CLI, not the admin UI); skip
-        // silently in that case so the DB-only path still completes.
-        const stagedUploads = join(staging, 'uploads');
-        if (this.uploadDir) {
-          try {
-            await fs.access(stagedUploads);
-            await fs.mkdir(this.uploadDir, { recursive: true });
-            // Wipe + replace. We don't try to merge — the backup is the
-            // source of truth for what attachments exist.
-            for (const entry of await fs.readdir(this.uploadDir)) {
-              await fs.rm(join(this.uploadDir, entry), { recursive: true, force: true });
-            }
-            await fs.cp(stagedUploads, this.uploadDir, { recursive: true });
-            uploadsRestored = true;
-          } catch {
-            // Bundle didn't carry uploads (or copy failed) — proceed.
-          }
-        }
-
-        // Secrets sidecar — written next to the backups in BACKUP_DIR. We
-        // can't apply these to the running process; the operator copies
-        // them into .env and restarts the backend (the restore endpoint
-        // already triggers a graceful exit so compose restarts the
-        // container, which picks up the new env on boot).
-        const stagedSecrets = join(staging, 'secrets.env');
-        try {
-          await fs.access(stagedSecrets);
-          const sidecarPath = join(this.backupDir, RESTORED_SECRETS_FILENAME);
-          await fs.copyFile(stagedSecrets, sidecarPath);
-          await fs.chmod(sidecarPath, 0o600).catch(() => undefined);
-          secretsApplied = true;
-          secretsSidecar = RESTORED_SECRETS_FILENAME;
-        } catch {
-          // Bundle didn't carry secrets — proceed.
-        }
+        const outcome = await this.restoreSidecars(staging);
+        uploadsRestored = outcome.uploadsRestored;
+        secretsApplied = outcome.secretsApplied;
+        secretsSidecar = outcome.secretsSidecar;
+        warnings.push(...outcome.warnings);
       }
 
       return {
@@ -626,12 +632,223 @@ export class BackupsService {
         secretsApplied,
         secretsSidecar,
         uploadsRestored,
+        safetyDump: safetyDumpName,
+        warnings,
       };
     } finally {
+      // Temp staging always goes. The safety dump deliberately does NOT
+      // — it lives in BACKUP_DIR under its own prefix until a human
+      // removes it.
       if (staging) {
-        await fs.rm(staging, { recursive: true, force: true });
+        await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
       }
     }
+  }
+
+  // Validate the bundle's member list BEFORE extraction, then extract
+  // with ownership/permission restoration off, then re-verify the tree
+  // that actually landed. Returns the staging directory.
+  private async unpackBundle(archivePath: string): Promise<string> {
+    let entries;
+    try {
+      entries = await inspectBackupArchive(archivePath);
+    } catch (err) {
+      if (err instanceof ArchiveValidationError) {
+        throw Errors.backupArchiveInvalid(`Backup archive rejected: ${err.message}`);
+      }
+      throw err;
+    }
+    const hasDump = entries.some((e) => e.path === 'database.dump' && e.type === 'file');
+    if (!hasDump) {
+      throw Errors.backupArchiveInvalid('Backup archive is missing database.dump');
+    }
+
+    const staging = await fs.mkdtemp(join(tmpdir(), 'taskhub-restore-'));
+    try {
+      // --no-same-owner / --no-same-permissions: never let an archive
+      // dictate uid/gid or setuid bits on what it drops in staging.
+      await this.proc.run('tar', [
+        '-xzf',
+        archivePath,
+        '-C',
+        staging,
+        '--no-same-owner',
+        '--no-same-permissions',
+      ]);
+      await assertExtractedTreeIsSafe(staging);
+    } catch (err) {
+      await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      if (err instanceof ArchiveValidationError) {
+        throw Errors.backupArchiveInvalid(`Backup archive rejected: ${err.message}`);
+      }
+      throw err;
+    }
+    return staging;
+  }
+
+  // The dump must exist, be a regular file, and carry bytes.
+  private async assertRestorableDump(dumpPath: string): Promise<void> {
+    let st;
+    try {
+      st = await fs.lstat(dumpPath);
+    } catch {
+      throw Errors.backupArchiveInvalid('Backup archive is missing database.dump');
+    }
+    if (!st.isFile()) {
+      throw Errors.backupArchiveInvalid('database.dump is not a regular file');
+    }
+    if (st.size === 0) {
+      throw Errors.backupArchiveInvalid('database.dump is empty');
+    }
+  }
+
+  // `pg_restore --list` reads the archive TOC without touching the
+  // database. A dump that cannot be listed can never be restored, so
+  // finding out here means the live schema is never wiped for nothing.
+  private async preflightDump(dumpPath: string): Promise<void> {
+    const result = await this.proc.capture('pg_restore', ['--list', dumpPath]);
+    if (!result.ok) {
+      const msg = result.stderr.length > 0 ? result.stderr : 'unknown error';
+      throw Errors.badRequest(
+        `pg_restore exited ${result.code ?? 'with spawn error'} reading the dump (preflight, database untouched): ${msg}`,
+      );
+    }
+    const meaningful = result.stdout
+      .split('\n')
+      .filter((line) => line.trim().length > 0 && !line.trim().startsWith(';'));
+    if (meaningful.length === 0) {
+      throw Errors.badRequest(
+        'pg_restore preflight found an empty archive table of contents (database untouched)',
+      );
+    }
+  }
+
+  // Dump the CURRENTLY RUNNING database next to the backups. Kept
+  // whatever happens next.
+  private async writeSafetyDump(): Promise<string> {
+    await fs.mkdir(this.backupDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const name = `${SAFETY_DUMP_PREFIX}${stamp}${FILE_SUFFIX_LEGACY}`;
+    try {
+      await this.runDbDump(join(this.backupDir, name));
+    } catch (err) {
+      // No safety net means no restore. Refuse rather than proceed —
+      // the live database is still untouched at this point.
+      throw Errors.badRequest(
+        `Refusing to restore: could not take a pre-restore safety dump (${(err as Error).message})`,
+      );
+    }
+    return name;
+  }
+
+  private async runPgRestore(dumpPath: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    const { connectionUrl, schema } = cleanPrismaUrl(this.databaseUrl);
+    // v1.30.4 (S-12): --exit-on-error makes pg_restore stop AND exit
+    // non-zero on the first SQL error rather than logging and pressing
+    // on with a partial restore.
+    const args = ['--no-owner', '--no-acl', '--exit-on-error', '--dbname', connectionUrl];
+    if (schema) args.push('--schema', schema);
+    args.push(dumpPath);
+    const result = await this.proc.capture('pg_restore', args);
+    if (result.ok) return { ok: true };
+    const msg = result.stderr.length > 0 ? result.stderr : 'unknown error';
+    return { ok: false, message: `pg_restore exited ${result.code ?? 'with spawn error'}: ${msg}` };
+  }
+
+  // Put the database back the way it was. Throws RESTORE_FATAL when it
+  // cannot — the ONE case where the caller must keep maintenance mode on.
+  private async rollbackTo(
+    safetyDumpPath: string,
+    attemptedFilename: string,
+    failure: string,
+  ): Promise<void> {
+    try {
+      await this.wipeSchema();
+      const back = await this.runPgRestore(safetyDumpPath);
+      if (!back.ok) throw new Error(back.message);
+    } catch (rollbackErr) {
+      const detail = (rollbackErr as Error).message;
+      await securityAudit.log('backup.restore.fatal', null, {
+        filename: attemptedFilename,
+        failure,
+        rollbackError: detail,
+        safetyDumpPath,
+      });
+      throw Errors.restoreFatal(
+        `Restore of ${attemptedFilename} failed AND the automatic rollback failed. The database may be ` +
+          `empty or partially restored and the instance stays in maintenance mode. Restore ` +
+          `${safetyDumpPath} by hand (pg_restore --no-owner --no-acl --exit-on-error). ` +
+          `Restore error: ${failure}. Rollback error: ${detail}`,
+        { safetyDumpPath, failure, rollbackError: detail },
+      );
+    }
+    await securityAudit.log('backup.restore.rolled_back', null, {
+      filename: attemptedFilename,
+      failure,
+      safetyDumpPath,
+    });
+  }
+
+  // Uploads + secrets sidecar. Distinguishes "the bundle didn't carry
+  // this" (fine, silent) from "we tried and failed" (a warning the admin
+  // sees), which the pre-v2.23.3 catch-all swallowed identically.
+  private async restoreSidecars(staging: string): Promise<{
+    uploadsRestored: boolean;
+    secretsApplied: boolean;
+    secretsSidecar: string | null;
+    warnings: string[];
+  }> {
+    const warnings: string[] = [];
+    let uploadsRestored = false;
+    let secretsApplied = false;
+    let secretsSidecar: string | null = null;
+
+    const stagedUploads = join(staging, 'uploads');
+    const hasUploads = await this.fileExists(stagedUploads);
+    if (hasUploads && !this.uploadDir) {
+      warnings.push(
+        'The backup carried uploads/ but UPLOAD_DIR is not configured — attachment files were not restored.',
+      );
+    } else if (hasUploads && this.uploadDir) {
+      try {
+        await fs.mkdir(this.uploadDir, { recursive: true });
+        // Wipe + replace. We don't try to merge — the backup is the
+        // source of truth for what attachments exist.
+        for (const entry of await fs.readdir(this.uploadDir)) {
+          await fs.rm(join(this.uploadDir, entry), { recursive: true, force: true });
+        }
+        await fs.cp(stagedUploads, this.uploadDir, { recursive: true });
+        uploadsRestored = true;
+      } catch (err) {
+        warnings.push(
+          `The database was restored but copying uploads into UPLOAD_DIR failed: ${(err as Error).message}. ` +
+            'Attachment files may be missing or partial.',
+        );
+      }
+    }
+
+    // Secrets sidecar — written next to the backups in BACKUP_DIR. We
+    // can't apply these to the running process; the operator copies them
+    // into .env and restarts the backend (the restore endpoint already
+    // triggers a graceful exit so compose restarts the container, which
+    // picks up the new env on boot).
+    const stagedSecrets = join(staging, 'secrets.env');
+    if (await this.fileExists(stagedSecrets)) {
+      try {
+        const sidecarPath = join(this.backupDir, RESTORED_SECRETS_FILENAME);
+        await fs.copyFile(stagedSecrets, sidecarPath);
+        await fs.chmod(sidecarPath, 0o600).catch(() => undefined);
+        secretsApplied = true;
+        secretsSidecar = RESTORED_SECRETS_FILENAME;
+      } catch (err) {
+        warnings.push(
+          `The database was restored but writing the secrets sidecar failed: ${(err as Error).message}. ` +
+            'Encrypted columns may be unreadable until MASTER_KEY is applied by hand.',
+        );
+      }
+    }
+
+    return { uploadsRestored, secretsApplied, secretsSidecar, warnings };
   }
 
   // v1.32.3: drop+recreate the public schema. Used at the start of every
@@ -646,7 +863,7 @@ export class BackupsService {
       throw new Error(`Refusing to wipe schema with suspicious name: ${target}`);
     }
     const sql = `DROP SCHEMA IF EXISTS "${target}" CASCADE; CREATE SCHEMA "${target}";`;
-    await runChild('psql', ['-v', 'ON_ERROR_STOP=1', '-c', sql, connectionUrl]);
+    await this.proc.run('psql', ['-v', 'ON_ERROR_STOP=1', '-c', sql, connectionUrl]);
   }
 
   // v1.28: stream an admin-uploaded .dump into BACKUP_DIR. The caller-supplied
@@ -843,6 +1060,13 @@ function uploadedFilename(original: string): string {
   return `${UPLOAD_PREFIX}${stamp}-${stem}${suffix}`;
 }
 
+// v2.23.3 (S-13): true when the restore left the database in a state a
+// human must repair — the ONLY case where the caller keeps maintenance
+// mode enabled. Exported so the route doesn't hard-code the code string.
+export function isFatalRestoreError(err: unknown): boolean {
+  return err instanceof AppError && err.code === 'RESTORE_FATAL';
+}
+
 // v1.32.3: spawn a child process; reject on non-zero exit. Used for
 // fire-and-forget invocations where the captured stderr is good enough as
 // the error message.
@@ -866,14 +1090,19 @@ async function runChild(bin: string, args: string[]): Promise<void> {
 // Like runChild but resolves with the capture result instead of throwing —
 // the caller decides how to surface the failure. pg_restore wants this
 // because we tunnel the stderr verbatim into a 400 response so the admin
-// can see the actual SQL error.
+// can see the actual SQL error. stdout is captured too: the `--list`
+// preflight reads the archive TOC from it.
 async function runChildCapture(
   bin: string,
   args: string[],
-): Promise<{ ok: true } | { ok: false; code: number | null; stderr: string }> {
+): Promise<{ ok: true; stdout: string } | { ok: false; code: number | null; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
+    let stdout = '';
+    child.stdout?.on('data', (b) => {
+      stdout += b.toString();
+    });
     child.stderr.on('data', (b) => {
       stderr += b.toString();
     });
@@ -881,8 +1110,14 @@ async function runChildCapture(
       resolve({ ok: false, code: null, stderr: `${bin} failed to start: ${err.message}` });
     });
     child.on('close', (code) => {
-      if (code === 0) return resolve({ ok: true });
+      if (code === 0) return resolve({ ok: true, stdout });
       resolve({ ok: false, code, stderr: stderr.trim() });
     });
   });
 }
+
+// The production ProcessRunner: real child processes.
+const spawnRunner: ProcessRunner = {
+  run: runChild,
+  capture: runChildCapture,
+};

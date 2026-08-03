@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.23.2** (2026-08-02)
+Version **v2.23.3** (2026-08-03)
 
 
 > **Terminology (v2.10).** The product now uses your organizational vocabulary:
@@ -942,6 +942,33 @@ The **Settings** link in the left sidebar opens the Settings shell. Sidebar item
 - **API & Webhooks** — everyone (tokens) + MANAGER (webhooks for that team).
 - **Backups** — global ADMIN only (scheduled DB backups, download/restore).
 - **Admin** — global ADMIN only (user accounts, instance management). **v1.52:** the user list supports search (name/email), filters (role, auth source, status, directory), sortable columns, and page-numbered navigation with total count. **v1.53:** lifecycle actions — disable/enable, unlock, force-logout, edit local profiles.
+
+### Restoring a backup (safety behaviour, v2.23.3)
+
+**Settings → Backups → Restore** replaces the live database with the contents
+of a backup. It is destructive by design, so the flow protects you at every
+step:
+
+- The uploaded archive is **checked before anything is unpacked**. A `.tar.gz`
+  may contain only `database.dump`, `manifest.json`, an optional `secrets.env`
+  and files under `uploads/`. Anything else — a path escaping the bundle, a
+  symlink, a device file — is rejected and nothing happens to your data.
+- The dump is **test-read** and a **safety dump of the current database is
+  taken automatically** before the existing data is removed. Both happen before
+  anything is dropped, so a corrupt or wrong file costs you nothing.
+- If the restore fails partway, the safety dump is **restored automatically**
+  and the instance returns to exactly where it was. The response tells you what
+  failed.
+- If that automatic rollback also fails — the rare bad case — ProjectHub
+  **stays in maintenance mode** rather than serving a half-restored database,
+  and the error message names the `pre-restore-…dump` file in your backups
+  folder to restore by hand.
+- Safety dumps (`pre-restore-…`) are kept in the backup folder and are never
+  removed by retention cleanup. Delete them yourself once you're confident.
+
+A successful restore also reports **warnings** when the database came back
+correctly but something after it did not — for example attachment files that
+could not be copied — instead of quietly reporting success.
 
 ### Admin user list (v1.52)
 

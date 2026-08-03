@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { BackupsService } from '../services/backupsService.js';
+import { BackupsService, isFatalRestoreError } from '../services/backupsService.js';
 import { requireAuth, requireGlobalRole } from '../middleware/auth.js';
 import { requireScope } from '../middleware/requireScope.js';
 import {
@@ -26,13 +26,17 @@ import { _resetMaintenanceCache } from '../middleware/maintenance.js';
 
 export async function backupsRoutes(
   app: FastifyInstance,
-  opts: { env: Env },
+  // v2.23.3 (S-13): `service` is a test seam — the restore regression
+  // suite needs a BackupsService whose pg_restore can be made to fail on
+  // demand so the rollback / maintenance-mode behaviour is observable
+  // through the real route. Production passes only `env`.
+  opts: { env: Env; service?: BackupsService },
 ): Promise<void> {
   // v1.32.3: bundle uploads + secrets into every scheduled backup so
   // cross-server restores carry attachment blobs and the encryption keys
   // for 2FA secrets / LDAP bind passwords. The restore endpoint surfaces
   // a secrets-sidecar path the operator hand-applies to .env.
-  const svc = new BackupsService(opts.env.DATABASE_URL, opts.env.BACKUP_DIR, {
+  const svc = opts.service ?? new BackupsService(opts.env.DATABASE_URL, opts.env.BACKUP_DIR, {
     uploadDir: opts.env.UPLOAD_DIR,
     secrets: {
       masterKey: opts.env.MASTER_KEY ?? null,
@@ -229,6 +233,11 @@ export async function backupsRoutes(
           secretsApplied: z.boolean().default(false),
           secretsSidecar: z.string().nullable().default(null),
           uploadsRestored: z.boolean().default(false),
+          // v2.23.3 (S-13): the automatic pre-restore dump kept in
+          // BACKUP_DIR, plus anything that went wrong after the database
+          // itself was restored (upload copy / secrets sidecar).
+          safetyDump: z.string().nullable().default(null),
+          warnings: z.array(z.string()).default([]),
         }),
       },
       security: [{ bearerAuth: [] }],
@@ -247,22 +256,36 @@ export async function backupsRoutes(
       //      manually so the very next request sees 503.
       //   2. Stop in-process schedulers. A TASK_DUE / RECURRENCE /
       //      BACKUP tick mid-restore would race the table drops.
-      //   3. Run pg_restore (the service now uses --exit-on-error +
-      //      strict exit-code handling; S-12).
+      //   3. Run the fail-safe restore (validate → preflight → safety
+      //      dump → wipe + pg_restore → rollback on failure; S-13).
       //   4a. On success: respond 200 with duration, then schedule a
       //       process.exit shortly after the response flushes. Compose
       //       restarts the container; the fresh boot's server.ts
       //       clears the maintenance setting.
-      //   4b. On failure: clear maintenance + leave the schedulers off
-      //       (caller can restart the container to recover them, or
-      //       trigger another restore). Surface the pg_restore stderr
-      //       verbatim in the 400 response so the admin can debug.
+      //   4b. On a recoverable failure (bad archive, failed preflight,
+      //       or a failed restore that rolled back cleanly): clear
+      //       maintenance + leave the schedulers off (the caller can
+      //       restart the container to recover them, or trigger another
+      //       restore) and surface the stderr verbatim so the admin can
+      //       debug.
+      //   4c. On RESTORE_FATAL — the restore AND its rollback both
+      //       failed — maintenance mode stays ON deliberately. Serving
+      //       traffic off a half-restored schema is worse than serving
+      //       503 until an operator restores the safety dump by hand.
       const filename = req.params.filename;
       await setMaintenance(`restoring backup ${filename}`, req.user.sub);
       _resetMaintenanceCache();
       req.server.lifecycle.stopBackground();
       try {
         const result = await svc.restoreBackup(filename);
+        // v2.23.3 (S-13): clear maintenance as soon as the restore is
+        // complete — database, uploads and sidecar all done. The process
+        // restart below also clears it on boot, but relying on that alone
+        // bricked any deployment where the restart didn't happen (dev,
+        // tests, a supervisor configured not to restart): the flag stayed
+        // on and every route answered 503 forever.
+        await clearMaintenance();
+        _resetMaintenanceCache();
         // Respond first so the admin sees the success, THEN exit. Using
         // setImmediate lets the response flush before the listener
         // closes. A 250ms safety margin makes the test still pass with
@@ -273,8 +296,19 @@ export async function backupsRoutes(
         setTimeout(() => req.server.lifecycle.processExit(0), 250);
         return reply;
       } catch (err) {
-        // Failure path — restore did NOT complete. Re-enable the app
-        // for the admin who's about to investigate.
+        if (isFatalRestoreError(err)) {
+          // Restore failed AND rollback failed. The schema is not in a
+          // known-good state — keep the instance locked down and let the
+          // error body tell the operator which artefacts to restore.
+          req.log.error(
+            { err },
+            'backup restore failed and rollback failed — maintenance mode stays enabled',
+          );
+          throw err;
+        }
+        // Recoverable failure — the database is either untouched or was
+        // rolled back to its pre-restore contents. Re-enable the app for
+        // the admin who's about to investigate.
         await clearMaintenance();
         _resetMaintenanceCache();
         // Preserve the original status when the service threw a typed

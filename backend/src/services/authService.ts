@@ -1,7 +1,8 @@
 import type { Prisma, User } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { prisma } from '../data/prisma.js';
-import { Errors } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
+import { assertEnabledAdminSurvives, withAdminInvariantLock } from '../lib/adminInvariant.js';
 import { hashPassword, randomTokenHex, sha256, verifyPassword } from '../lib/hashing.js';
 import { parseDuration } from '../lib/time.js';
 import type { Env } from '../config/env.js';
@@ -23,6 +24,52 @@ import type { TimeFormatValue } from '../schemas/datetimePrefs.js';
 // than detected theft. Narrow enough that a real attacker can't hide
 // inside it; wide enough to cover SPA double-tabs and retried fetches.
 const REUSE_GRACE_MS = 5_000;
+
+// v2.23.3 (S-14): the login-time group mapping can DEMOTE an administrator
+// (a mapping that resolves to MEMBER for someone whose local row says
+// ADMIN), so it is one of the paths that can strip the last enabled
+// administrator — and it runs unattended, on every LDAP login.
+//
+// It goes through the same advisory-locked check as the admin UI, with one
+// difference: a refusal must not fail the login. If demoting this account
+// would leave the instance with no enabled administrator we keep the
+// existing ADMIN role, let the sign-in continue, and rely on the
+// `admin.last_admin_protected` audit event the guard writes to make the
+// skipped demotion visible.
+async function applyDirectoryGlobalRole(
+  userId: string,
+  newGlobal: 'ADMIN' | 'MEMBER',
+): Promise<void> {
+  try {
+    await withAdminInvariantLock(async (tx) => {
+      const fresh = await tx.user.findUnique({
+        where: { id: userId },
+        select: { globalRole: true, disabledAt: true },
+      });
+      if (!fresh || fresh.globalRole === newGlobal) return;
+      const losingAdmin = fresh.globalRole === 'ADMIN' && !fresh.disabledAt;
+      if (losingAdmin) {
+        await assertEnabledAdminSurvives(tx, {
+          targetUserIds: [userId],
+          operation: 'directory_sync',
+          message: 'Directory mapping would demote the last enabled ADMIN — role left unchanged',
+        });
+      }
+      await tx.user.update({ where: { id: userId }, data: { globalRole: newGlobal } });
+      if (losingAdmin) {
+        // Atomic with the demotion: sessions minted while this account was
+        // an administrator must not outlive it.
+        await tx.refreshToken.updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+    });
+  } catch (err) {
+    if (err instanceof AppError && err.statusCode === 409) return;
+    throw err;
+  }
+}
 
 export interface IssuedSession {
   accessToken: string;
@@ -433,7 +480,7 @@ export class AuthService {
       : globalRoles.includes('MEMBER') ? 'MEMBER'
       : null;
     if (newGlobal) {
-      await prisma.user.update({ where: { id: userId }, data: { globalRole: newGlobal } });
+      await applyDirectoryGlobalRole(userId, newGlobal);
     }
 
     // Team memberships: upsert what matched; remove directory-managed

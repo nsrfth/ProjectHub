@@ -58,6 +58,7 @@ import { contactsRoutes } from './routes/contacts.js';
 import { correspondenceRoutes } from './routes/correspondence.js';
 import { correspondenceAdminRoutes } from './routes/correspondenceAdmin.js';
 import { backupsRoutes } from './routes/backups.js';
+import type { BackupsService } from './services/backupsService.js';
 import {
   resourceAssignmentRoutes,
   resourceCatalogRoutes,
@@ -89,9 +90,21 @@ import { maintenanceGate } from './middleware/maintenance.js';
 import { decorateLifecycle } from './lib/lifecycle.js';
 import { prisma } from './data/prisma.js';
 
+// v2.23.3 (S-13): narrow test seam. Same idea as `decorateLifecycle`'s
+// no-op default — production calls buildApp(env) and gets the real
+// services; the backup-restore regression suite injects a BackupsService
+// whose pg_restore fails on demand so the rollback + maintenance-mode
+// behaviour can be observed through the real route.
+export interface BuildAppOverrides {
+  backupsService?: BackupsService;
+}
+
 // App factory — separate from server.ts so tests can spin up the app without
 // binding a port. Returns a ready-to-use Fastify instance.
-export async function buildApp(env: Env): Promise<FastifyInstance> {
+export async function buildApp(
+  env: Env,
+  overrides: BuildAppOverrides = {},
+): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
       level: env.NODE_ENV === 'test' ? 'silent' : env.NODE_ENV === 'development' ? 'debug' : 'info',
@@ -195,7 +208,12 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     // v1.27: backup management — sits under /admin so it shares the
     // GlobalRole=ADMIN gate. Separate file so the route module stays small
     // and the BackupsService receives env (DATABASE_URL + BACKUP_DIR).
-    await api.register(backupsRoutes, { prefix: '/admin/backups', env });
+    await api.register(backupsRoutes, {
+      prefix: '/admin/backups',
+      env,
+      // v2.23.3 (S-13): only ever set by the restore regression tests.
+      service: overrides.backupsService,
+    });
     // v1.80: global "predefined" labels — admin-managed, shared by every team.
     // Under /admin so it inherits the GlobalRole=ADMIN gate.
     await api.register(globalLabelsRoutes, { prefix: '/admin/labels' });

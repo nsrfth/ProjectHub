@@ -5,6 +5,14 @@ import { prisma } from '../data/prisma.js';
 import type { LdapService } from './ldapService.js';
 import { groupDnsMatch, hasEscapedComma, mergeGroupDns, normalizeLdapDn } from '../lib/ldapDn.js';
 import { systemRoleIdFor } from '../lib/teamRoles.js';
+import { AppError } from '../lib/errors.js';
+import {
+  ENABLED_ADMIN_WHERE,
+  LastAdminProtectedError,
+  assertEnabledAdminSurvives,
+  countEnabledAdmins,
+  withAdminInvariantLock,
+} from '../lib/adminInvariant.js';
 
 // v2.6 (Phase 0a): scheduled directory synchronisation.
 //
@@ -837,18 +845,21 @@ export class DirectorySyncService {
 
     if (opts.dryRun) return;
 
+    // v2.23.3 (S-14): a mapping-driven global-role change is applied in its
+    // OWN transaction, under the admin advisory lock, because it can strip
+    // the last enabled administrator exactly like an admin-initiated
+    // demotion can. Keeping it out of the membership transaction means a
+    // refusal costs the user their role change, not their team placements.
+    if (desiredGlobal && resolved.globalRole !== desiredGlobal) {
+      const applied = await this.applyGlobalRole(resolved, desiredGlobal, result);
+      if (!applied) result.globalRolesChanged -= 1;
+    }
+
     // One transaction per user. Per user rather than per run: a directory-wide
     // transaction would hold locks for the length of the scan. The login path
     // issues these as separate statements, which is why a concurrent login can
     // currently interleave with itself.
     await prisma.$transaction(async (tx) => {
-      if (desiredGlobal && resolved.globalRole !== desiredGlobal) {
-        await tx.user.update({
-          where: { id: resolved.id },
-          data: { globalRole: desiredGlobal },
-        });
-      }
-
       for (const g of desiredTeams) {
         const roleId = resolvedRoleIds.get(g.teamId) ?? null;
         await tx.teamMembership.upsert({
@@ -915,11 +926,65 @@ export class DirectorySyncService {
   }
 
   /**
-   * Global-role demotion, with the last-admin interlock.
+   * Apply one mapping-driven global-role change under the last-admin
+   * invariant. Returns false when the change was refused (a conflict has
+   * been recorded on `result`); the caller then un-counts it.
+   *
+   * v2.23.3 (S-14): the count and the write share one advisory-locked
+   * transaction, so a sync running while an administrator demotes someone
+   * from the UI cannot collectively strip the last enabled admin.
+   */
+  private async applyGlobalRole(
+    user: { id: string; email: string; globalRole: GlobalRole; disabledAt: Date | null },
+    desired: GlobalRole,
+    result: DirectorySyncDirectoryResult,
+  ): Promise<boolean> {
+    const losingAdmin = user.globalRole === 'ADMIN' && desired !== 'ADMIN' && !user.disabledAt;
+    try {
+      await withAdminInvariantLock(async (tx) => {
+        if (losingAdmin) {
+          await assertEnabledAdminSurvives(tx, {
+            targetUserIds: [user.id],
+            operation: 'directory_sync',
+            message:
+              `refusing to demote ${user.email} — it is the last enabled global administrator`,
+          });
+        }
+        await tx.user.update({ where: { id: user.id }, data: { globalRole: desired } });
+        // Revoked atomically with the role change: a session minted while
+        // the account was an admin must not outlive the demotion.
+        await tx.refreshToken.updateMany({
+          where: { userId: user.id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof AppError && err.statusCode === 409) {
+        result.conflicts.push({
+          code: 'LAST_ADMIN_PROTECTED',
+          userId: user.id,
+          message: err.message,
+        });
+        return false;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Global-role demotion of accounts that no longer match any mapping,
+   * with the last-admin interlock.
    *
    * Never runs on an aborted directory: the caller only reaches this after a
    * complete enumeration, because "absent from the directory" and "we failed
    * to see the whole directory" are indistinguishable downstream.
+   *
+   * v2.23.3 (S-14): the whole batch — count, updates, token revocations and
+   * audit rows — runs in ONE advisory-locked transaction. Previously the
+   * count and the per-candidate updates were separate transactions, so an
+   * admin demoting someone in the UI between the two could leave the
+   * instance with no administrator at all.
    */
   private async applyDemotions(
     candidates: { userId: string; email: string }[],
@@ -927,34 +992,60 @@ export class DirectorySyncService {
     result: DirectorySyncDirectoryResult,
     runId: string,
   ): Promise<void> {
-    const adminCount = await prisma.user.count({
-      where: { globalRole: 'ADMIN', disabledAt: null },
-    });
+    if (candidates.length === 0) return;
 
-    if (adminCount - candidates.length < 1) {
-      result.conflicts.push({
-        code: 'LAST_ADMIN_PROTECTED',
-        message:
-          `refusing to demote ${candidates.length} of ${adminCount} global admin(s) — ` +
-          'the instance would be left with none. No demotions applied.',
-      });
+    if (opts.dryRun) {
+      // A dry run must not take locks or write; approximate the decision
+      // with a plain count so the summary still reports it.
+      const adminCount = await prisma.user.count({ where: ENABLED_ADMIN_WHERE });
+      if (adminCount - candidates.length < 1) {
+        result.conflicts.push({
+          code: 'LAST_ADMIN_PROTECTED',
+          message:
+            `refusing to demote ${candidates.length} of ${adminCount} global admin(s) — ` +
+            'the instance would be left with none. No demotions applied.',
+        });
+        return;
+      }
+      result.globalRolesChanged += candidates.length;
       return;
     }
 
-    result.globalRolesChanged += candidates.length;
-    if (opts.dryRun) return;
-
-    for (const c of candidates) {
-      await prisma.$transaction(async (tx) => {
-        await tx.user.update({ where: { id: c.userId }, data: { globalRole: 'MEMBER' } });
-        await tx.securityAuditEvent.create({
-          data: {
-            kind: 'directory_sync.global_role_revoked',
-            actorId: null,
-            details: { runId, userId: c.userId, email: c.email, from: 'ADMIN', to: 'MEMBER' },
-          },
-        });
+    const ids = candidates.map((c) => c.userId);
+    try {
+      await withAdminInvariantLock(async (tx) => {
+        const survivors = await countEnabledAdmins(tx, ids);
+        if (survivors < 1) {
+          throw new LastAdminProtectedError(
+            `refusing to demote ${candidates.length} global admin(s) — ` +
+              'the instance would be left with none. No demotions applied.',
+            'directory_sync',
+            ids,
+            null,
+          );
+        }
+        for (const c of candidates) {
+          await tx.user.update({ where: { id: c.userId }, data: { globalRole: 'MEMBER' } });
+          await tx.refreshToken.updateMany({
+            where: { userId: c.userId, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+          await tx.securityAuditEvent.create({
+            data: {
+              kind: 'directory_sync.global_role_revoked',
+              actorId: null,
+              details: { runId, userId: c.userId, email: c.email, from: 'ADMIN', to: 'MEMBER' },
+            },
+          });
+        }
       });
+      result.globalRolesChanged += candidates.length;
+    } catch (err) {
+      if (err instanceof AppError && err.statusCode === 409) {
+        result.conflicts.push({ code: 'LAST_ADMIN_PROTECTED', message: err.message });
+        return;
+      }
+      throw err;
     }
   }
 

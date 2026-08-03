@@ -1,5 +1,6 @@
 import { prisma } from '../data/prisma.js';
 import { Errors } from '../lib/errors.js';
+import { assertEnabledAdminSurvives, withAdminInvariantLock } from '../lib/adminInvariant.js';
 import { ensureSystemRoles } from '../lib/teamRoles.js';
 import {
   assertNotSystemUserTarget,
@@ -160,15 +161,12 @@ export class ScimService {
     const email = pickPrimaryEmail(body) ?? userName;
     const active = asBoolean(body.active, true);
 
-    const updated = await prisma.user.update({
-      where: { id },
-      data: {
-        email,
-        externalId,
-        name: combinedName({ displayName, ...name, userName }),
-        ...(active ? { disabledAt: null } : await this.deprovisionFields(id)),
-      },
-    });
+    const updated = await this.applyUserUpdate(id, {
+      email,
+      externalId,
+      name: combinedName({ displayName, ...name, userName }),
+      ...(active ? { disabledAt: null } : {}),
+    }, !active);
     return this.userToResource(updated);
   }
 
@@ -183,6 +181,11 @@ export class ScimService {
     if (!ops) throw Errors.badRequest('Invalid PATCH body');
 
     const data: AnyRecord = {};
+    // v2.23.3 (S-14): deactivation is decided here and APPLIED in one
+    // advisory-locked transaction below, together with the rest of the
+    // patch — an IdP deprovisioning the last enabled administrator must
+    // be refused just like an admin doing it by hand.
+    let deactivate = false;
     for (const op of ops) {
       if (op.op === 'remove') {
         // SCIM remove on `active` is rare; we ignore unsupported removes.
@@ -194,16 +197,22 @@ export class ScimService {
         if (asString(v.userName)) data.email = asString(v.userName);
         if (asString(v.displayName)) data.name = asString(v.displayName);
         if (typeof v.active === 'boolean') {
-          if (v.active === false) Object.assign(data, await this.deprovisionFields(id));
-          else data.disabledAt = null;
+          if (v.active === false) deactivate = true;
+          else {
+            deactivate = false;
+            data.disabledAt = null;
+          }
         }
         continue;
       }
       // Path-scoped replace.
       switch (op.path) {
         case 'active':
-          if (op.value === false) Object.assign(data, await this.deprovisionFields(id));
-          else data.disabledAt = null;
+          if (op.value === false) deactivate = true;
+          else {
+            deactivate = false;
+            data.disabledAt = null;
+          }
           break;
         case 'userName':
           if (asString(op.value)) data.email = asString(op.value);
@@ -220,7 +229,7 @@ export class ScimService {
           break;
       }
     }
-    const updated = await prisma.user.update({ where: { id }, data: data as never });
+    const updated = await this.applyUserUpdate(id, data, deactivate);
     return this.userToResource(updated);
   }
 
@@ -231,7 +240,25 @@ export class ScimService {
   async deleteUser(directoryId: string, id: string): Promise<void> {
     const existing = await prisma.user.findFirst({ where: { id, directoryId } });
     if (!existing) throw Errors.notFound('User not found');
-    await prisma.user.delete({ where: { id } });
+    // v2.23.3 (S-14): the last enabled administrator is not deletable, no
+    // matter which surface asks. Count + delete share one advisory-locked
+    // transaction so a SCIM DELETE racing an admin DELETE cannot combine
+    // into "no administrators left".
+    await withAdminInvariantLock(async (tx) => {
+      const fresh = await tx.user.findUnique({
+        where: { id },
+        select: { globalRole: true, disabledAt: true },
+      });
+      if (!fresh) throw Errors.notFound('User not found');
+      if (fresh.globalRole === 'ADMIN' && fresh.disabledAt === null) {
+        await assertEnabledAdminSurvives(tx, {
+          targetUserIds: [id],
+          operation: 'scim',
+          message: 'Cannot delete the last ADMIN',
+        });
+      }
+      await tx.user.delete({ where: { id } });
+    });
   }
 
   // ── Groups ───────────────────────────────────────────────────────────
@@ -420,15 +447,51 @@ export class ScimService {
   }
 
   // ── Internals ────────────────────────────────────────────────────────
-  // Deprovision: set disabledAt + revoke every active refresh token. Used
-  // by PUT/PATCH whenever active=false is observed.
-  private async deprovisionFields(userId: string): Promise<{ disabledAt: Date }> {
-    const now = new Date();
-    await prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: now },
+  // v2.23.3 (S-14): the single write path for SCIM user mutations.
+  //
+  // A plain attribute update goes straight through. A DEPROVISION
+  // (active=false) additionally sets disabledAt and revokes every active
+  // refresh token — and all three, plus the last-enabled-admin check, run
+  // inside one advisory-locked transaction. Before this, the token
+  // revocation happened in its own statement while the count (there
+  // wasn't one) and the update happened in another: an IdP could disable
+  // the last administrator outright.
+  private async applyUserUpdate(
+    id: string,
+    data: AnyRecord,
+    deactivate: boolean,
+  ): Promise<{
+    id: string;
+    email: string;
+    name: string;
+    externalId: string | null;
+    disabledAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }> {
+    if (!deactivate) {
+      return prisma.user.update({ where: { id }, data: data as never });
+    }
+    return withAdminInvariantLock(async (tx) => {
+      const fresh = await tx.user.findUnique({
+        where: { id },
+        select: { globalRole: true, disabledAt: true },
+      });
+      if (!fresh) throw Errors.notFound('User not found');
+      if (fresh.globalRole === 'ADMIN' && fresh.disabledAt === null) {
+        await assertEnabledAdminSurvives(tx, {
+          targetUserIds: [id],
+          operation: 'scim',
+          message: 'Cannot disable the last enabled ADMIN',
+        });
+      }
+      const now = new Date();
+      await tx.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      return tx.user.update({ where: { id }, data: { ...data, disabledAt: now } as never });
     });
-    return { disabledAt: now };
   }
 
   private userToResource(u: {

@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2.23.2 (unified — frontend, backend, and manual share one number) (2026-08-02)
+**Version:** v2.23.3 (unified — frontend, backend, and manual share one number) (2026-08-03)
 
 This document captures the *why* behind TaskHub's design. The *what* is in the
 code; the *how to run* is in [README.md](README.md). User-facing behaviour is
@@ -671,6 +671,91 @@ Three complementary layers (a backup you have never restored is not a backup):
    a dump into a **throwaway** Postgres (never the live DB) and asserts schema +
    applied-migrations + core tables are present, exiting non-zero on any
    failure so monitoring catches a corrupt backup. See `scripts/README.md`.
+
+### Restore is fail-safe (v2.23.3)
+
+An admin-supplied archive is untrusted input, and the old flow trusted it
+twice: it let the host `tar` decide whether member names were safe, and it
+wiped the live schema before knowing whether the candidate dump could be
+restored. Both are now ordered so that a bad input costs nothing.
+
+`lib/tarArchive.ts` parses the bundle itself (gzip → 512-byte tar headers)
+and accepts **only** `database.dump`, `manifest.json`, optional `secrets.env`
+and regular files/directories under `uploads/`. Absolute paths, `..` segments,
+symlinks, hard links, device nodes, fifos, duplicates, and GNU long-name /
+pax headers that smuggle a different path are refused. This deliberately does
+not depend on which `tar` the host ships: GNU, bsdtar and busybox each refuse
+a different subset. Extraction then runs `--no-same-owner
+--no-same-permissions`, and the staging tree is re-walked with `lstat` to
+confirm nothing unexpected (a symlink, a special file, an escaped path)
+landed.
+
+Restore order, all of it in `backupsService.restoreBackup`:
+
+```
+validate archive → pg_restore --list preflight → automatic safety dump
+   → prisma.$disconnect → wipe schema → pg_restore candidate
+        └─ on failure: wipe → pg_restore the safety dump
+```
+
+Nothing before the wipe touches the database, so a corrupt or hostile file
+fails as a plain 400 against an untouched instance. If the candidate fails
+*after* the wipe, the safety dump goes back automatically. Maintenance mode —
+set by the route before the restore, with schedulers stopped — is cleared only
+when the restore succeeded **or** the rollback succeeded. If both fail the
+instance stays in maintenance on purpose (`RESTORE_FATAL`), because serving
+traffic off a half-restored schema is worse than serving 503, and the error
+names the `pre-restore-*.dump` to restore by hand. `pre-restore-*` files carry
+their own prefix so retention rotation can never delete the artefact a failed
+restore depends on.
+
+## Webhook egress: validated once, connected to the validated address (v2.23.3)
+
+Webhooks let a team admin point the backend at an arbitrary URL, so the SSRF
+guard (`lib/ssrfGuard.ts`, ipaddr.js range policy) is the only thing between
+that and the cloud metadata endpoint. Checking the hostname is not enough: a
+guard that resolves a name and then hands the *name* to `fetch()` has checked
+one DNS answer and connected on another — classic DNS rebinding, fully under
+the attacker's control since they run the authoritative server for their own
+domain.
+
+So `resolveSafeTarget()` returns the validated IP with the parsed URL, and
+`lib/pinnedHttp.ts` connects to that address via a per-request `lookup`
+(node:http/https accept one; Node's global `fetch` exposes no such hook
+without depending on undici directly). The pin is per request — no global DNS
+override, no mutable module state. The original hostname still drives the
+`Host` header and the TLS `servername`, so virtual hosts and certificate
+validation behave exactly as before. Redirects are never followed: a 3xx is
+recorded as a failed delivery, because following it would re-enter the
+network on an unvalidated address. `WEBHOOK_ALLOWED_HOSTS` still exempts named
+internal receivers from the range policy — and pins them too.
+
+## The last-administrator invariant (v2.23.3)
+
+There must always be at least one user with `globalRole=ADMIN`,
+`disabledAt IS NULL` and `isSystemUser=false`. Losing it cannot be repaired
+from inside the app: nobody is left who can promote anyone.
+
+Every path that used to protect it counted admins in one statement and mutated
+in another, which under READ COMMITTED is not a check at all — two admins
+demoting each other simultaneously both saw two admins and both succeeded. The
+rule now lives in `lib/adminInvariant.ts`: `withAdminInvariantLock` opens one
+transaction, takes `pg_advisory_xact_lock` on a fixed key, and runs both the
+count and the mutation inside it. Postgres releases the lock at transaction
+end, including on rollback or connection loss, so there is no leak path — and
+unlike a process-local mutex it holds across backend processes.
+
+Callers: `adminService` (role change, disable, delete), `scimService`
+(deprovision, delete), `directorySyncService` (mapping-driven demotion and the
+absent-from-directory demotion batch) and `authService.applyDirectoryGroups`
+(the login-time LDAP group mapping, which can also demote). The login path is
+the only one that swallows the refusal: it keeps the existing ADMIN role and
+lets the sign-in continue rather than locking a user out over an invariant the
+audit log already records. Refresh-token revocation lives in
+the same transaction as the role/disabled change, so a refused operation
+leaves nothing behind, and a blocked attempt writes an
+`admin.last_admin_protected` security-audit event. New mutation paths must go
+through the same wrapper — that is the whole point of centralising it.
 
 ## Testing strategy
 
