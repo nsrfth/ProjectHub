@@ -13,6 +13,17 @@ When shipping a change, bump the single version in `frontend/package.json`,
 `backend/package.json`, `ARCHITECTURE.md`, `USER_MANUAL.md`, `USER_MANUAL.fa.md`,
 `CLAUDE.md`, and `TASKHUB_VERSION` in the deployment `.env` — keep them all in lockstep.
 
+## [2.23.4] — 2026-08-03 — Filter-aware projects dashboard
+
+- Added a third **Dashboard** view to the cross-team Projects page. It rolls up
+  visible project totals, active delivery, amber/red health, average progress,
+  status and RAG distributions, and schedule alerts without adding another API.
+- Dashboard project cards prioritize red and amber health, show progress and
+  end dates, and link to tasks, the status report, and Gantt.
+- Existing Projects filters scope both the dashboard metrics and its cards; the
+  selected view persists across navigation and reloads. English and Persian
+  labels, responsive layouts, and focused roll-up tests are included.
+
 ## [2.23.3] — 2026-08-03 — Security: pinned webhook DNS, fail-safe restore, atomic last-admin guard
 
 Three high-severity findings, each fixed with the invariant written down next

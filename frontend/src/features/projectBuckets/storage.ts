@@ -4,12 +4,12 @@ const VIEW_KEY = 'projects.viewMode';
 // calendar.selectedTeam / reports.selectedTeam pattern. undefined = all teams.
 const SELECTED_TEAM_KEY = 'projects.selectedTeam';
 
-export type ProjectsViewMode = 'all' | 'buckets';
+export type ProjectsViewMode = 'all' | 'dashboard' | 'buckets';
 
 export function loadProjectsViewMode(): ProjectsViewMode {
   if (typeof window === 'undefined') return 'all';
   const v = window.localStorage.getItem(VIEW_KEY);
-  return v === 'buckets' ? 'buckets' : 'all';
+  return v === 'buckets' || v === 'dashboard' ? v : 'all';
 }
 
 export function saveProjectsViewMode(mode: ProjectsViewMode): void {

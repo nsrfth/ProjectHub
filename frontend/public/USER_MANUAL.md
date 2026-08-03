@@ -1,6 +1,6 @@
 # ProjectHub — User Manual
 
-Version **v2.23.2** (2026-08-02)
+Version **v2.23.4** (2026-08-03)
 
 
 > **Terminology (v2.10).** The product now uses your organizational vocabulary:
@@ -192,6 +192,7 @@ department's manager — both remain editable.
 - **User groups** (v1.50 / v1.51) — on team detail, the **User groups** section appears when you have the `group.manage` permission (system Manager role by default). Create a group, add team members (or search **any user** for cross-team invites), set each member to **Full access** or **Read only**, and grant projects. In-team members join immediately; external users receive an invitation they must **Accept** (see the notifications bell). Read-only members can view tasks and comments but cannot create or edit them. Removing a member or deleting the group revokes access on the next request.
 - **Projects** page (`/projects`) — cross-team list of every project you can see (projects you **own**, plus any granted via a user group; managers with `project.edit` also see all team projects). **New project** when you belong to at least one team. Optional **start** and **end** dates (calendar dates, stored UTC-midnight — same day for every viewer). Create and **Edit project** expose the same fields: name, description, status, dates, accountable (RACI), budget (currency, planned), and **labels** (team-wide coloured tags — same catalog as tasks). Assigned labels show as chips on each project row. **Owner (v1.85):** the **create** form has an **Owner** picker (the person who gets full project access — edit + add/edit tasks), pre-selected to you and choosable from the team's members; leave it as-is and you stay the owner, exactly as before. The owner must be a member of the project's team. **Reassign owner (v1.86):** the **Edit project** form now also has the Owner picker, so the current owner (or a system admin) can hand the project to another team member directly. **Full-edit delegates (v1.86):** below the Owner picker, the owner (or a system admin) can pick team members who may **fully edit this project's tasks and subtasks** — including the dates and the responsible person, even where those are normally manager-only — for **this project only**. Delegates can reach and edit the project's tasks; the restriction stays in place for everyone else.
   - **⋯ Actions menu** (v1.60.1) on each row you may manage (owner, admin, or team manager): **Edit project** (full field set), **Edit budget** (opens the same edit dialog), **Delete** (with confirm). Managers with rename-only rights can change the name on someone else's project; other fields are disabled in the UI and rejected by the API (403).
+- **Projects dashboard (v2.23.4)** — switch the Projects page to **Dashboard** for a filtered roll-up of project count, active work, amber/red health, average progress, status and health distributions, and schedule alerts. The overview cards put red and amber projects first and link directly to tasks, the status report, and Gantt. The same search, status, division, department, owner, and date filters used by the project list also scope every dashboard metric.
 - **Personal buckets** (v1.45) — on the Projects page, switch to **Personal buckets** to organize projects into your own columns (e.g. *My Priorities*, *This Quarter*). Buckets are private to you and never change project permissions or data.
   - **+ New bucket** — name, optional description, color.
   - Drag projects into buckets; drag to reorder within a bucket or reorder bucket columns.
@@ -942,6 +943,33 @@ The **Settings** link in the left sidebar opens the Settings shell. Sidebar item
 - **API & Webhooks** — everyone (tokens) + MANAGER (webhooks for that team).
 - **Backups** — global ADMIN only (scheduled DB backups, download/restore).
 - **Admin** — global ADMIN only (user accounts, instance management). **v1.52:** the user list supports search (name/email), filters (role, auth source, status, directory), sortable columns, and page-numbered navigation with total count. **v1.53:** lifecycle actions — disable/enable, unlock, force-logout, edit local profiles.
+
+### Restoring a backup (safety behaviour, v2.23.3)
+
+**Settings → Backups → Restore** replaces the live database with the contents
+of a backup. It is destructive by design, so the flow protects you at every
+step:
+
+- The uploaded archive is **checked before anything is unpacked**. A `.tar.gz`
+  may contain only `database.dump`, `manifest.json`, an optional `secrets.env`
+  and files under `uploads/`. Anything else — a path escaping the bundle, a
+  symlink, a device file — is rejected and nothing happens to your data.
+- The dump is **test-read** and a **safety dump of the current database is
+  taken automatically** before the existing data is removed. Both happen before
+  anything is dropped, so a corrupt or wrong file costs you nothing.
+- If the restore fails partway, the safety dump is **restored automatically**
+  and the instance returns to exactly where it was. The response tells you what
+  failed.
+- If that automatic rollback also fails — the rare bad case — ProjectHub
+  **stays in maintenance mode** rather than serving a half-restored database,
+  and the error message names the `pre-restore-…dump` file in your backups
+  folder to restore by hand.
+- Safety dumps (`pre-restore-…`) are kept in the backup folder and are never
+  removed by retention cleanup. Delete them yourself once you're confident.
+
+A successful restore also reports **warnings** when the database came back
+correctly but something after it did not — for example attachment files that
+could not be copied — instead of quietly reporting success.
 
 ### Admin user list (v1.52)
 

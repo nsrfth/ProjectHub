@@ -29,6 +29,7 @@ import ProjectEditModal, { type ProjectFormValues } from '@/features/projects/Pr
 import ProjectHealthModal from '@/features/projects/ProjectHealthModal';
 import ProjectListRow from '@/features/projects/ProjectListRow';
 import ProjectActionsMenu from '@/features/projects/ProjectActionsMenu';
+import ProjectsDashboard from '@/features/projects/ProjectsDashboard';
 import { toggleActionsMenuProjectId } from '@/features/projects/projectActionsLogic';
 import Modal from '@/features/ui/Modal';
 import { useT } from '@/lib/i18n';
@@ -440,7 +441,7 @@ export default function ProjectsPage(): JSX.Element {
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {(['all', 'buckets'] as const).map((mode) => (
+        {(['all', 'dashboard', 'buckets'] as const).map((mode) => (
           <button
             key={mode}
             type="button"
@@ -451,7 +452,11 @@ export default function ProjectsPage(): JSX.Element {
                 : 'border border-border'
             }`}
           >
-            {mode === 'all' ? 'All projects' : 'Personal buckets'}
+            {mode === 'all'
+              ? t('projects.view.all')
+              : mode === 'dashboard'
+                ? t('projects.view.dashboard')
+                : t('projects.view.buckets')}
           </button>
         ))}
       </div>
@@ -548,6 +553,13 @@ export default function ProjectsPage(): JSX.Element {
           }
           renderBucketMenu={renderBucketAssignMenu}
           renderActionsMenu={renderActionsMenu}
+        />
+      )}
+
+      {!isLoading && viewMode === 'dashboard' && (
+        <ProjectsDashboard
+          projects={filteredProjects}
+          onOpenProject={(id) => nav(`/projects/${id}/tasks`)}
         />
       )}
 
